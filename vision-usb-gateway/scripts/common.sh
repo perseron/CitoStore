@@ -32,7 +32,10 @@ cmdline_has() {
 cmdline_add() {
   local key="$1"
   if ! cmdline_has "$key"; then
-    sed -i "1 s#$# ${key}#" /boot/firmware/cmdline.txt
+    # Escape replacement to avoid breaking sed when key contains #, &, or backslashes.
+    local key_escaped
+    key_escaped=$(printf '%s' "$key" | sed -e 's/[#&\\]/\\&/g')
+    sed -i "1 s#$# ${key_escaped}#" /boot/firmware/cmdline.txt
   fi
 }
 
