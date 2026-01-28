@@ -38,6 +38,19 @@ check_exists() {
   if [[ -e "$path" ]]; then ok "$desc"; else warn "$desc"; fi
 }
 
+check_exists_any() {
+  local desc="$1"
+  shift
+  local path
+  for path in "$@"; do
+    if [[ -e "$path" ]]; then
+      ok "$desc"
+      return
+    fi
+  done
+  warn "$desc"
+}
+
 check_cmd lvm
 check_cmd lvcreate
 check_cmd lvs
@@ -62,7 +75,7 @@ check_file_contains /etc/modules '^libcomposite' "libcomposite in /etc/modules"
 
 check_exists "$NVME_DEVICE" "NVMe device $NVME_DEVICE"
 check_exists "/dev/$LVM_VG/$MIRROR_LV" "mirror LV"
-check_exists "/dev/$LVM_VG/$THINPOOL_LV" "thinpool LV"
+check_exists_any "thinpool LV" "/dev/$LVM_VG/$THINPOOL_LV" "/dev/mapper/${LVM_VG}-${THINPOOL_LV}"
 
 if [[ ${#USB_LVS[@]} -eq 0 ]]; then
   warn "USB_LVS not set; default will be usb_0"
