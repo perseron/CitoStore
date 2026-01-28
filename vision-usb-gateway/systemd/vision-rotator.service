@@ -1,0 +1,16 @@
+[Unit]
+Description=Vision Rotator
+After=vision-monitor.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/vision-rotator.sh
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/run /sys/kernel/config
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
+
+[Install]
+WantedBy=multi-user.target

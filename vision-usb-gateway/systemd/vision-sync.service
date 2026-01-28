@@ -1,0 +1,16 @@
+[Unit]
+Description=Vision Snapshot Sync
+After=local-fs.target usb-gadget.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vision-gw.env
+ExecStart=/usr/bin/python3 -m vision_sync.sync --config /etc/vision-gw.conf
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/srv/vision_mirror /run /mnt
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
+
+[Install]
+WantedBy=multi-user.target

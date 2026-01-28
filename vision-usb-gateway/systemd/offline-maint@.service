@@ -1,0 +1,16 @@
+[Unit]
+Description=Offline Maintenance for %i
+After=local-fs.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/offline-maint.sh %i
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/srv/vision_mirror /run /mnt
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
+
+[Install]
+WantedBy=multi-user.target

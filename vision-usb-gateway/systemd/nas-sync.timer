@@ -1,0 +1,9 @@
+[Unit]
+Description=NAS Sync Timer
+
+[Timer]
+OnUnitActiveSec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

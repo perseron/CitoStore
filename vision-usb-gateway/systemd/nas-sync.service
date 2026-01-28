@@ -1,0 +1,16 @@
+[Unit]
+Description=NAS Sync
+After=local-fs.target mnt-nas.mount
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/nas-sync.sh
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/srv/vision_mirror /run /mnt
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_SYS_ADMIN
+
+[Install]
+WantedBy=multi-user.target

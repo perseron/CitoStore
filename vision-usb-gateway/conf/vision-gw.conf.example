@@ -1,0 +1,61 @@
+# Vision USB Gateway config
+# Copy to /etc/vision-gw.conf and edit.
+
+# Repo home for scripts
+GATEWAY_HOME=/opt/vision-usb-gateway
+
+# NVMe and LVM (1TB NVMe defaults)
+NVME_DEVICE=/dev/nvme0n1
+LVM_VG=vg0
+MIRROR_LV=mirror
+MIRROR_MOUNT=/srv/vision_mirror
+MIRROR_SIZE=300G
+THINPOOL_LV=usbpool
+THINPOOL_SIZE=650G
+THINPOOL_META_SIZE=8G
+USB_LVS=(usb_0 usb_1 usb_2)
+USB_LABEL=VISIONUSB
+USB_LV_SIZE=100G
+
+# USB gadget
+USB_GADGET_NAME=vision
+USB_VENDOR_ID=0x1d6b
+USB_PRODUCT_ID=0x0104
+USB_MANUFACTURER=VisionGateway
+USB_PRODUCT=VisionUSBStorage
+USB_SERIAL=CM5-0001
+USB_CONFIG=Config 1
+USB_MAX_POWER=250
+
+# Snapshot sync
+SYNC_SNAPSHOT_NAME=usb_sync_snap
+SYNC_MOUNT=/mnt/vision_snap
+SYNC_INTERVAL_MIN=2
+STABLE_SCAN_REQUIRED=2
+MAX_FILE_SIZE_BYTES=4294967296
+COPY_CHUNK_BYTES=8388608
+
+# Rotation thresholds (percent)
+THRESH_HI=80
+THRESH_CRIT=92
+META_HI=70
+META_CRIT=85
+SWITCH_WINDOW_START=00:00
+SWITCH_WINDOW_END=23:59
+
+# Mirror retention
+RETENTION_HI=90
+RETENTION_LO=85
+
+# NAS optional
+NAS_ENABLED=false
+NAS_MOUNT=/mnt/nas
+NAS_REMOTE=//nas/vision
+NAS_CREDENTIALS=/etc/vision-nas.creds
+NAS_RSYNC_OPTS="-aH --partial --inplace --timeout=30"
+NAS_RETRY_MAX=5
+NAS_RETRY_BACKOFF=10
+
+# Samba
+SMB_BIND_INTERFACE=eth0
+SMB_GUEST_OK=yes

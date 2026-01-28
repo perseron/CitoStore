@@ -1,0 +1,9 @@
+[Unit]
+Description=Vision Monitor Timer
+
+[Timer]
+OnUnitActiveSec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

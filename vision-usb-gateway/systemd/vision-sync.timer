@@ -1,0 +1,9 @@
+[Unit]
+Description=Vision Snapshot Sync Timer
+
+[Timer]
+OnUnitActiveSec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

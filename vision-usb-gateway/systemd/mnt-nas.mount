@@ -1,0 +1,14 @@
+[Unit]
+Description=NAS Mount
+After=network-online.target
+Wants=network-online.target
+EnvironmentFile=/etc/vision-gw.env
+
+[Mount]
+What=%E{NAS_REMOTE}
+Where=%E{NAS_MOUNT}
+Type=cifs
+Options=credentials=%E{NAS_CREDENTIALS},iocharset=utf8,vers=3.0,nofail,x-systemd.automount
+
+[Install]
+WantedBy=multi-user.target

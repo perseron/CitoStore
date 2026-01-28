@@ -1,0 +1,10 @@
+[Unit]
+Description=NAS Automount
+EnvironmentFile=/etc/vision-gw.env
+
+[Automount]
+Where=%E{NAS_MOUNT}
+TimeoutIdleSec=600
+
+[Install]
+WantedBy=multi-user.target
