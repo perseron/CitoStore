@@ -7,6 +7,14 @@ source "$SCRIPT_DIR/../scripts/common.sh"
 
 require_root
 
+if mountpoint -q /boot/firmware; then
+  opts=$(findmnt -no OPTIONS /boot/firmware 2>/dev/null || true)
+  if echo ",$opts," | grep -q ",ro,"; then
+    log "remounting /boot/firmware read-write"
+    mount -o remount,rw /boot/firmware
+  fi
+fi
+
 BOOT_RW=false
 for arg in "$@"; do
   case "$arg" in
