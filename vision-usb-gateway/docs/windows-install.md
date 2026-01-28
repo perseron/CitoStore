@@ -52,13 +52,7 @@ sudo install/00_prereqs.sh
 sudo install/10_configure_otg.sh
 ```
 
-## 7) Enable read-only overlay
-```
-sudo install/20_enable_readonly_overlay.sh
-sudo reboot
-```
-
-## 8) SSH back in and run dry-run verifier
+## 7) SSH back in and run dry-run verifier
 ```
 ssh <user>@<ip>
 sudo install/05_verify_dryrun.sh
@@ -67,7 +61,7 @@ sudo install/05_verify_dryrun.sh
 - Exit `2` = warnings (review)
 - Exit `1` = failures (fix before proceeding)
 
-## 9) Initialize NVMe + LVM (destructive)
+## 8) Initialize NVMe + LVM (destructive)
 **WARNING:** This destroys NVMe contents.
 
 To create the LVM layout:
@@ -79,21 +73,27 @@ If you already created LVM manually:
 sudo install/30_setup_nvme_lvm.sh
 ```
 
-## 10) Install services and Python package
+## 9) Install services and Python package
 ```
 sudo install/40_install_services.sh
 ```
 
-## 11) Configure Samba
+## 10) Configure Samba
 ```
 sudo install/50_configure_samba.sh
 ```
 
-## 12) Optional NAS
+## 11) Optional NAS
 ```
 sudo install/60_configure_nas_optional.sh
 ```
 Edit `/etc/vision-nas.creds` with NAS credentials.
+
+## 12) Enable read-only overlay
+```
+sudo install/20_enable_readonly_overlay.sh
+sudo reboot
+```
 
 ## 13) Final reboot
 ```

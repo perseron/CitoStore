@@ -35,6 +35,11 @@ Validation checklist
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
 - Offline processing logs: `journalctl -u offline-maint@usb_0`
+- Maintenance (overlay off):
+  - `sudo install/21_disable_readonly_overlay.sh`
+  - Reboot, perform changes
+  - `sudo install/20_enable_readonly_overlay.sh`
+  - Reboot
 
 Windows host setup
 - See `docs/windows-install.md` for a Windows-first, empty system install path.
