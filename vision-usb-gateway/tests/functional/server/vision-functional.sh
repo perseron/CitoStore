@@ -165,7 +165,7 @@ else
 fi
 
 # Monitor + rotator
-if "$SCRIPT_DIR/../../scripts/vision-monitor.sh" >/dev/null 2>&1; then
+if "$SCRIPT_DIR/../../../scripts/vision-monitor.sh" >/dev/null 2>&1; then
   if [[ -f /run/vision-rotate.state ]]; then
     state=$(grep '^state=' /run/vision-rotate.state | cut -d= -f2)
     pass "vision-monitor produced state: $state"
@@ -189,7 +189,7 @@ if [[ -n "$active_before" ]]; then
   echo "reason=test" >> /run/vision-rotate.state
 fi
 
-if "$SCRIPT_DIR/../../scripts/vision-rotator.sh" >/dev/null 2>&1; then
+if "$SCRIPT_DIR/../../../scripts/vision-rotator.sh" >/dev/null 2>&1; then
   active_after=$(cat /run/vision-usb-active 2>/dev/null || true)
   if [[ "$DESTRUCTIVE" == "true" ]]; then
     pass "vision-rotator executed (destructive mode)"
