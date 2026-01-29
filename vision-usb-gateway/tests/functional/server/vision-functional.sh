@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=/dev/null
-source "$SCRIPT_DIR/../../scripts/common.sh"
+source "$SCRIPT_DIR/../../../scripts/common.sh"
 
 require_root
 
