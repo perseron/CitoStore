@@ -186,7 +186,11 @@ fi
 
 active_before=$(cat /run/vision-usb-active 2>/dev/null || true)
 if [[ -n "$active_before" ]]; then
-  echo "state=ok" > /run/vision-rotate.state
+  if [[ "$DESTRUCTIVE" == "true" ]]; then
+    echo "state=panic" > /run/vision-rotate.state
+  else
+    echo "state=ok" > /run/vision-rotate.state
+  fi
   echo "active=$active_before" >> /run/vision-rotate.state
   echo "reason=test" >> /run/vision-rotate.state
 fi
@@ -194,7 +198,22 @@ fi
 if "$SCRIPT_DIR/../../../scripts/vision-rotator.sh" >/dev/null 2>&1; then
   active_after=$(cat /run/vision-usb-active 2>/dev/null || true)
   if [[ "$DESTRUCTIVE" == "true" ]]; then
-    pass "vision-rotator executed (destructive mode)"
+    if [[ -n "$active_before" && -n "$active_after" && "$active_before" != "$active_after" ]]; then
+      pass "vision-rotator switched LVs: $active_before -> $active_after"
+    else
+      fail "vision-rotator did not switch LVs in destructive mode"
+    fi
+    gadget_lun="/sys/kernel/config/usb_gadget/$USB_GADGET_NAME/functions/mass_storage.0/lun.0/file"
+    if [[ -f "$gadget_lun" ]]; then
+      lun_dev=$(cat "$gadget_lun" || true)
+      if [[ -n "$lun_dev" && "$lun_dev" == "$active_after" ]]; then
+        pass "gadget LUN points to active LV"
+      else
+        fail "gadget LUN mismatch: $lun_dev"
+      fi
+    else
+      warn "gadget LUN file missing: $gadget_lun"
+    fi
   else
     if [[ "$active_before" == "$active_after" ]]; then
       pass "vision-rotator did not switch LVs (non-destructive)"

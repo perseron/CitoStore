@@ -12,7 +12,7 @@ sudo /opt/vision-usb-gateway/tests/functional/server/vision-functional.sh
 
 Options:
 - `--config /etc/vision-gw.conf` (override config path)
-- `--destructive` (allows LV switching during rotator test)
+- `--destructive` (forces LV switching during rotator test and validates gadget LUN)
 - `--nas-sync` (runs NAS sync when `NAS_ENABLED=true`)
 
 Notes:
