@@ -25,8 +25,8 @@ fi
 
 lv_name=$(basename "$active_dev")
 
-usage=$(lvs --noheadings --units % -o data_percent "/dev/$LVM_VG/$lv_name" | tr -d ' %' | awk '{print int($1)}')
-meta=$(lvs --noheadings --units % -o metadata_percent "/dev/$LVM_VG/$THINPOOL_LV" | tr -d ' %' | awk '{print int($1)}')
+usage=$(lvs --noheadings -o data_percent "/dev/$LVM_VG/$lv_name" | tr -d ' %' | awk '{print int($1)}')
+meta=$(lvs --noheadings -o metadata_percent "/dev/$LVM_VG/$THINPOOL_LV" | tr -d ' %' | awk '{print int($1)}')
 
 state=ok
 reason="usage=${usage} meta=${meta}"
