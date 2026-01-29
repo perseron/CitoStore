@@ -195,7 +195,8 @@ if [[ -n "$active_before" ]]; then
   echo "reason=test" >> /run/vision-rotate.state
 fi
 
-if "$SCRIPT_DIR/../../../scripts/vision-rotator.sh" >/dev/null 2>&1; then
+rotator_err=$(mktemp)
+if "$SCRIPT_DIR/../../../scripts/vision-rotator.sh" >/dev/null 2>"$rotator_err"; then
   active_after=$(cat /run/vision-usb-active 2>/dev/null || true)
   if [[ "$DESTRUCTIVE" == "true" ]]; then
     if [[ -n "$active_before" && -n "$active_after" && "$active_before" != "$active_after" ]]; then
@@ -222,8 +223,9 @@ if "$SCRIPT_DIR/../../../scripts/vision-rotator.sh" >/dev/null 2>&1; then
     fi
   fi
 else
-  fail "vision-rotator script failed"
+  fail "vision-rotator script failed: $(cat "$rotator_err")"
 fi
+rm -f "$rotator_err"
 
 if [[ -n "$ROTATE_STATE_BACKUP" ]]; then
   cp "$ROTATE_STATE_BACKUP" /run/vision-rotate.state
