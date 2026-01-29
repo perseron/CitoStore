@@ -207,7 +207,9 @@ if "$SCRIPT_DIR/../../../scripts/vision-rotator.sh" >/dev/null 2>"$rotator_err";
     gadget_lun="/sys/kernel/config/usb_gadget/$USB_GADGET_NAME/functions/mass_storage.0/lun.0/file"
     if [[ -f "$gadget_lun" ]]; then
       lun_dev=$(cat "$gadget_lun" || true)
-      if [[ -n "$lun_dev" && "$lun_dev" == "$active_after" ]]; then
+      lun_real=$(readlink -f "$lun_dev" 2>/dev/null || echo "$lun_dev")
+      active_real=$(readlink -f "$active_after" 2>/dev/null || echo "$active_after")
+      if [[ -n "$lun_dev" && "$lun_real" == "$active_real" ]]; then
         pass "gadget LUN points to active LV"
       else
         fail "gadget LUN mismatch: $lun_dev"

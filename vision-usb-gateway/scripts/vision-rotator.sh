@@ -52,7 +52,7 @@ fi
 old_lv=$(basename "$active")
 log "switching USB gadget from $old_lv"
 
-"$(dirname "${BASH_SOURCE[0]}")/usb-gadget.sh" switch
+/bin/bash "$(dirname "${BASH_SOURCE[0]}")/usb-gadget.sh" switch
 
 systemctl start "offline-maint@${old_lv}.service"
 
