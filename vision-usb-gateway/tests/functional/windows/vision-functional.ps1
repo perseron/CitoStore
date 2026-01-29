@@ -6,6 +6,7 @@ param(
     [string]$SmbPass = "",
     [int]$TimeoutSec = 180,
     [int]$PollSec = 5,
+    [switch]$WaitForRotate,
     [switch]$Cleanup
 )
 
@@ -90,6 +91,34 @@ if (Test-Path $bydatePath) {
     } else {
         Warn "Synced file not found in bydate (yet): $bydateFile"
     }
+}
+
+if ($WaitForRotate.IsPresent) {
+    Write-Host "Waiting for USB volume to detach..."
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        $gone = -not (Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1)
+        if ($gone) { break }
+        Start-Sleep -Seconds $PollSec
+    }
+    if (-not $gone) {
+        Fail "USB volume did not detach within $TimeoutSec seconds"
+    }
+    Pass "USB volume detached"
+
+    Write-Host "Waiting for USB volume to reattach..."
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $newVol = $null
+    while ((Get-Date) -lt $deadline) {
+        $newVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($newVol) { break }
+        Start-Sleep -Seconds $PollSec
+    }
+    if (-not $newVol) {
+        Fail "USB volume did not reattach within $TimeoutSec seconds"
+    }
+    $newDrive = if ($newVol.DriveLetter) { "$($newVol.DriveLetter):" } else { "<no-drive-letter>" }
+    Pass "USB volume reattached: $newDrive"
 }
 
 if ($Cleanup.IsPresent) {

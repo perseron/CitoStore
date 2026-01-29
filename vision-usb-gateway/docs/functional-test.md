@@ -51,6 +51,7 @@ Parameters:
 - `-ShareName` (default `vision_mirror`)
 - `-TimeoutSec` (default `180`)
 - `-PollSec` (default `5`)
+- `-WaitForRotate` (wait for USB detach/reattach after server rotation)
 - `-Cleanup` (removes the USB test file)
 
 ## Expected results
