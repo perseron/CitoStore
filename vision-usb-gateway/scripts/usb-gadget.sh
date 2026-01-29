@@ -103,12 +103,21 @@ force_switch() {
   done
 
   # Switch LUN with retries in case host is still releasing.
+  local switched=false
   for _ in {1..20}; do
     if echo "$dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file" 2>/dev/null; then
+      switched=true
       break
     fi
     sleep 0.1
   done
+
+  if [[ "$switched" != "true" ]]; then
+    log "LUN busy, rebuilding gadget"
+    remove_gadget
+    setup_gadget
+    echo "$dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file"
+  fi
 
   echo "$udc" > "$GADGET_DIR/UDC"
   echo "$dev" > "$ACTIVE_FILE"
