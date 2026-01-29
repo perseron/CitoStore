@@ -28,6 +28,8 @@ def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
     subprocess.run(["lvremove", "-y", snap_path], check=False)
     subprocess.run(["lvcreate", "-s", "-n", snap_name, active_dev], check=True)
     # Ensure the snapshot is activatable and active so a device node appears.
+    # Different LVM versions expose different flags, so try both.
+    subprocess.run(["lvchange", "--setactivationskip", "n", snap_path], check=False)
     subprocess.run(["lvchange", "-K", "n", snap_path], check=False)
     subprocess.run(["lvchange", "-ay", snap_path], check=False)
     return wait_for_dev(snap_path, vg, snap_name)
