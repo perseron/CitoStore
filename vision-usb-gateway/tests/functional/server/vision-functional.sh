@@ -165,7 +165,8 @@ else
 fi
 
 # Monitor + rotator
-if "$SCRIPT_DIR/../../../scripts/vision-monitor.sh" >/dev/null 2>&1; then
+monitor_err=$(mktemp)
+if "$SCRIPT_DIR/../../../scripts/vision-monitor.sh" >/dev/null 2>"$monitor_err"; then
   if [[ -f /run/vision-rotate.state ]]; then
     state=$(grep '^state=' /run/vision-rotate.state | cut -d= -f2)
     pass "vision-monitor produced state: $state"
@@ -173,8 +174,9 @@ if "$SCRIPT_DIR/../../../scripts/vision-monitor.sh" >/dev/null 2>&1; then
     fail "vision-monitor did not create state file"
   fi
 else
-  fail "vision-monitor script failed"
+  fail "vision-monitor script failed: $(cat "$monitor_err")"
 fi
+rm -f "$monitor_err"
 
 ROTATE_STATE_BACKUP=""
 if [[ -f /run/vision-rotate.state ]]; then
