@@ -64,6 +64,12 @@ setup_gadget() {
   ln -sf "$GADGET_DIR/functions/mass_storage.0" "$GADGET_DIR/configs/c.1/"
 }
 
+ensure_gadget() {
+  if [[ ! -d "$GADGET_DIR" ]]; then
+    setup_gadget
+  fi
+}
+
 bind_gadget() {
   local dev="$1"
   echo "$dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file"
@@ -161,7 +167,7 @@ case "${1:-}" in
     remove_gadget
     ;;
   switch)
-    setup_gadget
+    ensure_gadget
     local_current=$(current_active)
     new_dev="${2:-$(next_lv "$local_current")}"
     force_switch "$new_dev"
