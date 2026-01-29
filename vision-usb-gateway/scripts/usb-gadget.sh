@@ -56,9 +56,10 @@ setup_gadget() {
 
   mkdir -p "$GADGET_DIR/functions/mass_storage.0"
   echo 1 > "$GADGET_DIR/functions/mass_storage.0/stall"
-  echo 1 > "$GADGET_DIR/functions/mass_storage.0/removable"
-  echo 0 > "$GADGET_DIR/functions/mass_storage.0/ro"
-  echo 1 > "$GADGET_DIR/functions/mass_storage.0/nofua"
+  # Mass storage attributes live under lun.0 on newer kernels.
+  echo 1 > "$GADGET_DIR/functions/mass_storage.0/lun.0/removable"
+  echo 0 > "$GADGET_DIR/functions/mass_storage.0/lun.0/ro"
+  echo 1 > "$GADGET_DIR/functions/mass_storage.0/lun.0/nofua"
 
   ln -sf "$GADGET_DIR/functions/mass_storage.0" "$GADGET_DIR/configs/c.1/"
 }

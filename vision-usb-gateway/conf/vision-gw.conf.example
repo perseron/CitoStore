@@ -58,4 +58,7 @@ NAS_RETRY_BACKOFF=10
 
 # Samba
 SMB_BIND_INTERFACE=eth0
-SMB_GUEST_OK=yes
+SMB_GUEST_OK=no
+SMB_USER=smbuser
+# SMB_PASS is required to create the Samba user non-interactively.
+# SMB_PASS=change-me

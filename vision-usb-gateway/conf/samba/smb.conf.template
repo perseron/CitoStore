@@ -9,7 +9,7 @@
   disable netbios = yes
   smb ports = 445
   bind interfaces only = yes
-  interfaces = {{SMB_BIND_INTERFACE}}
+  interfaces = lo {{SMB_BIND_INTERFACE}}
   log file = /var/log/samba/log.%m
   max log size = 1000
 
@@ -18,5 +18,6 @@
   browseable = yes
   read only = yes
   guest ok = {{SMB_GUEST_OK}}
-  force user = nobody
+  valid users = {{SMB_USER}}
+  force user = {{SMB_USER}}
   force group = nogroup
