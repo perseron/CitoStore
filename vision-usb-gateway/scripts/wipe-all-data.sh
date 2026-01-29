@@ -15,11 +15,12 @@ USB_LVS=("${USB_LVS[@]:-usb_0 usb_1 usb_2}")
 
 CONFIRM=false
 DRY_RUN=false
+FORCE_UMOUNT=false
 
 usage() {
   cat <<'EOF'
 Usage:
-  wipe-all-data.sh --i-know-what-im-doing [--dry-run]
+  wipe-all-data.sh --i-know-what-im-doing [--dry-run] [--force-umount]
 
 This wipes ALL data:
  - mirror LV (/dev/<vg>/<mirror>) is reformatted (ext4)
@@ -36,6 +37,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --dry-run)
       DRY_RUN=true
+      shift
+      ;;
+    --force-umount)
+      FORCE_UMOUNT=true
       shift
       ;;
     -h|--help)
@@ -66,10 +71,23 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
+systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer || true
 systemctl stop vision-sync.service vision-monitor.service vision-rotator.service || true
 systemctl stop usb-gadget.service || true
 
-umount "$MIRROR_MOUNT" || true
+if mountpoint -q "$MIRROR_MOUNT"; then
+  if ! umount "$MIRROR_MOUNT"; then
+    if [[ "$FORCE_UMOUNT" == "true" ]]; then
+      if command -v fuser >/dev/null 2>&1; then
+        fuser -km "$MIRROR_MOUNT" || true
+      fi
+      umount "$MIRROR_MOUNT" || umount -l "$MIRROR_MOUNT" || true
+    else
+      echo "Mirror mount busy: $MIRROR_MOUNT (use --force-umount)" >&2
+      exit 1
+    fi
+  fi
+fi
 mkfs.ext4 -F "/dev/$VG/$MIRROR_LV"
 mount "/dev/$VG/$MIRROR_LV" "$MIRROR_MOUNT"
 rm -rf "$MIRROR_MOUNT/.state" || true
