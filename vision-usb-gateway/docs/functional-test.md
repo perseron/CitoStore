@@ -54,6 +54,26 @@ Parameters:
 - `-WaitForRotate` (wait for USB detach/reattach after server rotation)
 - `-Cleanup` (removes the USB test file)
 
+## Load test (Windows + server)
+
+Windows (generate load):
+```
+powershell -ExecutionPolicy Bypass -File .\tests\functional\windows\vision-load.ps1 `
+  -UsbLabel VISIONUSB `
+  -FileSizeMB 2 `
+  -IntervalSec 1 `
+  -DurationSec 300
+```
+
+Server (verify rotation under load using low temporary thresholds):
+```
+sudo ./tests/functional/server/vision-load-test.sh --test-thresh 5 --timeout 300
+```
+
+Notes:
+- The server script uses a temporary config with low thresholds to force a rotation once usage grows.
+- Run the Windows load first, then start the server load test.
+
 ## Expected results
 
 PASS:

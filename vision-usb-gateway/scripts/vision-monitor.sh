@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 require_root
-load_config
+load_config "${CONF_FILE:-}"
 
 : "${LVM_VG:=vg0}"
 : "${THINPOOL_LV:=usbpool}"

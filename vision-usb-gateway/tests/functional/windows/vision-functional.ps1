@@ -1,9 +1,9 @@
 param(
     [string]$UsbLabel = "VISIONUSB",
-    [string]$ShareHost = "",
+    [string]$ShareHost = "192.168.2.162",
     [string]$ShareName = "vision_mirror",
-    [string]$SmbUser = "",
-    [string]$SmbPass = "",
+    [string]$SmbUser = "smbuser",
+    [string]$SmbPass = "citomat",
     [int]$TimeoutSec = 180,
     [int]$PollSec = 5,
     [switch]$WaitForRotate,
@@ -43,6 +43,8 @@ Start-Sleep -Milliseconds 200
 $fileInfo = Get-Item $filePath
 $size = $fileInfo.Length
 $mtime = $fileInfo.LastWriteTime
+$epochUtc = [int][double](Get-Date $fileInfo.LastWriteTimeUtc -UFormat %s)
+$epochLocal = [int][double](Get-Date $fileInfo.LastWriteTime -UFormat %s)
 Pass "Wrote test file: $fileName ($size bytes)"
 
 $unc = "\\$ShareHost\$ShareName"
@@ -69,17 +71,27 @@ if (-not (Test-Path $bydatePath)) {
 
 $stem = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
 $ext = [System.IO.Path]::GetExtension($fileName)
+$expectedRegexUtc = "^" + [regex]::Escape($stem + "_" + $epochUtc + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
+$expectedRegexLocal = "^" + [regex]::Escape($stem + "_" + $epochLocal + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $foundRaw = $null
 
 while ((Get-Date) -lt $deadline) {
-    $foundRaw = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -ErrorAction SilentlyContinue | Where-Object { $_.Length -eq $size } | Select-Object -First 1
+    $foundRaw = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Length -eq $size -and ($_.Name -match $expectedRegexUtc -or $_.Name -match $expectedRegexLocal) } |
+        Select-Object -First 1
     if ($foundRaw) { break }
     Start-Sleep -Seconds $PollSec
 }
 
 if (-not $foundRaw) {
-    Fail "Synced file not found in SMB raw within $TimeoutSec seconds"
+    $candidates = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 5
+    if ($candidates) {
+        Write-Host "Recent candidates in raw:"
+        $candidates | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
+    }
+    Fail "Synced file not found in SMB raw within $TimeoutSec seconds (expected name like ${stem}_${epochUtc or epochLocal}_<hash>${ext})"
 }
 
 Pass "Synced file found in raw: $($foundRaw.Name)"

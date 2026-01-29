@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 require_root
-load_config
+load_config "${CONF_FILE:-}"
 
 STATE_FILE=/run/vision-rotate.state
 ACTIVE_FILE=/run/vision-usb-active
