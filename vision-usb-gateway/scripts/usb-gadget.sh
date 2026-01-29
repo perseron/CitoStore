@@ -79,6 +79,19 @@ unbind_gadget() {
   fi
 }
 
+force_switch() {
+  local dev="$1"
+  local udc
+  udc=$(get_udc)
+
+  # Force detach from host, then switch LUN, then rebind.
+  unbind_gadget
+  sleep 0.2
+  echo "$dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file"
+  echo "$udc" > "$GADGET_DIR/UDC"
+  echo "$dev" > "$ACTIVE_FILE"
+}
+
 remove_gadget() {
   unbind_gadget
   rm -f "$GADGET_DIR/configs/c.1/mass_storage.0"
@@ -120,8 +133,7 @@ case "${1:-}" in
     setup_gadget
     local_current=$(current_active)
     new_dev="${2:-$(next_lv "$local_current")}"
-    unbind_gadget
-    bind_gadget "$new_dev"
+    force_switch "$new_dev"
     ;;
   status)
     echo "gadget: $GADGET_DIR"
