@@ -27,7 +27,7 @@ def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
     snap_path = f"/dev/{vg}/{snap_name}"
     subprocess.run(["lvremove", "-y", snap_path], check=False)
     subprocess.run(["lvcreate", "-s", "-n", snap_name, active_dev], check=True)
-    return snap_path
+    return wait_for_dev(snap_path, vg, snap_name)
 
 
 def lv_remove(snap_name: str, vg: str) -> None:
@@ -38,6 +38,33 @@ def mount_ro(dev: str, mount_point: Path) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
     subprocess.run(["mount", "-t", "vfat", "-o", opts, dev, str(mount_point)], check=True)
+
+
+def wait_for_dev(snap_path: str, vg: str, snap_name: str) -> str:
+    mapper_path = f"/dev/mapper/{vg}-{snap_name}"
+
+    # Give udev a moment to create nodes after lvcreate.
+    udevadm = "/sbin/udevadm"
+    if os.path.exists(udevadm):
+        subprocess.run([udevadm, "settle"], check=False)
+
+    for _ in range(50):  # ~5s total
+        if os.path.exists(snap_path):
+            return snap_path
+        if os.path.exists(mapper_path):
+            return mapper_path
+        time.sleep(0.1)
+
+    # Last attempt to create nodes directly.
+    dmsetup = "/sbin/dmsetup"
+    if os.path.exists(dmsetup):
+        subprocess.run([dmsetup, "mknodes"], check=False)
+        if os.path.exists(snap_path):
+            return snap_path
+        if os.path.exists(mapper_path):
+            return mapper_path
+
+    raise RuntimeError(f"snapshot device node missing: {snap_path}")
 
 
 def umount(mount_point: Path) -> None:
