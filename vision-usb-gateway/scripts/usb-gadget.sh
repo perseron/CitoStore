@@ -83,11 +83,33 @@ force_switch() {
   local dev="$1"
   local udc
   udc=$(get_udc)
+  local force_eject="$GADGET_DIR/functions/mass_storage.0/lun.0/forced_eject"
 
   # Force detach from host, then switch LUN, then rebind.
+  if [[ -f "$force_eject" ]]; then
+    echo 1 > "$force_eject" || true
+  fi
+
   unbind_gadget
-  sleep 0.2
-  echo "$dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file"
+
+  # Wait for unbind to complete.
+  for _ in {1..20}; do
+    if [[ -f "$GADGET_DIR/UDC" ]]; then
+      [[ -z "$(cat "$GADGET_DIR/UDC" 2>/dev/null)" ]] && break
+    else
+      break
+    fi
+    sleep 0.1
+  done
+
+  # Switch LUN with retries in case host is still releasing.
+  for _ in {1..20}; do
+    if echo "$dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file" 2>/dev/null; then
+      break
+    fi
+    sleep 0.1
+  done
+
   echo "$udc" > "$GADGET_DIR/UDC"
   echo "$dev" > "$ACTIVE_FILE"
 }
