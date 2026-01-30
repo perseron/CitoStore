@@ -120,10 +120,14 @@ conn.close()
 PY
 
 export MIRROR_MOUNT="$MIRROR"
-export RETENTION_HI=0
-export RETENTION_LO=0
 export DRY_RUN=false
-export CONF_FILE=""
+
+TMP_CONF="$TMP_DIR/retention.conf"
+cat >"$TMP_CONF" <<'CONF'
+RETENTION_HI=0
+RETENTION_LO=0
+CONF
+export CONF_FILE="$TMP_CONF"
 
 "$SCRIPT_DIR/../../../scripts/mirror-retention.sh"
 
