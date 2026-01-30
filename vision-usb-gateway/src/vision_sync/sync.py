@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .config import get_config
 from .db import init_db, update_state, is_already_synced, mark_synced
-from .fsops import iter_files, atomic_copy
+from .fsops import iter_files, atomic_copy, safe_join
 
 
 ACTIVE_FILE = "/run/vision-usb-active"
@@ -104,10 +104,11 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
         suffix = Path(name).suffix
         final_name = f"{stem}_{mtime}{suffix}"
 
-        dest_path, digest = atomic_copy(path, raw_dir, final_name, cfg.copy_chunk)
+        raw_subdir = safe_join(raw_dir, rel.parent)
+        dest_path, digest = atomic_copy(path, raw_subdir, final_name, cfg.copy_chunk)
 
         hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
-        hash_path = raw_dir / hash_name
+        hash_path = raw_subdir / hash_name
         if hash_path.exists():
             dest_path.unlink(missing_ok=True)
             final_path = hash_path

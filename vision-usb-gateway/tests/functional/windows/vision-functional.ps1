@@ -77,7 +77,7 @@ $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $foundRaw = $null
 
 while ((Get-Date) -lt $deadline) {
-    $foundRaw = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -ErrorAction SilentlyContinue |
+    $foundRaw = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -Recurse -ErrorAction SilentlyContinue |
         Where-Object { $_.Length -eq $size -and ($_.Name -match $expectedRegexUtc -or $_.Name -match $expectedRegexLocal) } |
         Select-Object -First 1
     if ($foundRaw) { break }
@@ -85,7 +85,7 @@ while ((Get-Date) -lt $deadline) {
 }
 
 if (-not $foundRaw) {
-    $candidates = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -ErrorAction SilentlyContinue |
+    $candidates = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -Recurse -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 5
     if ($candidates) {
         Write-Host "Recent candidates in raw:"
