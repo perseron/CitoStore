@@ -10,6 +10,9 @@ class Config:
     snapshot_name: str
     snapshot_mount: Path
     lvm_vg: str
+    usb_lvs: list[str]
+    usb_persist_dir: str
+    usb_persist_backing: Path
     stable_scans: int
     max_file_size: int
     copy_chunk: int
@@ -53,6 +56,13 @@ def get_config(path: str) -> Config:
     snapshot_name = data.get("SYNC_SNAPSHOT_NAME", "usb_sync_snap")
     snapshot_mount = Path(data.get("SYNC_MOUNT", "/mnt/vision_snap"))
     lvm_vg = data.get("LVM_VG", "vg0")
+    usb_lvs = data.get("USB_LVS", ["usb_0"])
+    if isinstance(usb_lvs, str):
+        usb_lvs = [usb_lvs]
+    usb_persist_dir = data.get("USB_PERSIST_DIR", "aoi_settings")
+    usb_persist_backing = Path(
+        data.get("USB_PERSIST_BACKING", str(mirror_mount / ".state" / usb_persist_dir))
+    )
     stable_scans = int(data.get("STABLE_SCAN_REQUIRED", "2"))
     max_file_size = int(data.get("MAX_FILE_SIZE_BYTES", str(4 * 1024 ** 3)))
     copy_chunk = int(data.get("COPY_CHUNK_BYTES", str(8 * 1024 ** 2)))
@@ -62,6 +72,9 @@ def get_config(path: str) -> Config:
         snapshot_name=snapshot_name,
         snapshot_mount=snapshot_mount,
         lvm_vg=lvm_vg,
+        usb_lvs=usb_lvs,
+        usb_persist_dir=usb_persist_dir,
+        usb_persist_backing=usb_persist_backing,
         stable_scans=stable_scans,
         max_file_size=max_file_size,
         copy_chunk=copy_chunk,

@@ -2,6 +2,8 @@ import argparse
 import os
 import subprocess
 import time
+import hashlib
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -75,6 +77,108 @@ def wait_for_dev(snap_path: str, vg: str, snap_name: str) -> str:
 def umount(mount_point: Path) -> None:
     subprocess.run(["umount", str(mount_point)], check=False)
 
+def persist_enabled(cfg) -> bool:
+    return bool(cfg.usb_persist_dir) and cfg.usb_persist_dir != "none"
+
+
+def next_lv(active_dev: str, lvm_vg: str, usb_lvs: list[str]) -> str | None:
+    if not usb_lvs:
+        return None
+    name = Path(active_dev).name
+    idx = -1
+    for i, lv in enumerate(usb_lvs):
+        if lv == name:
+            idx = i
+            break
+    if idx < 0:
+        return f"/dev/{lvm_vg}/{usb_lvs[0]}"
+    if len(usb_lvs) == 1:
+        return None
+    nxt = (idx + 1) % len(usb_lvs)
+    return f"/dev/{lvm_vg}/{usb_lvs[nxt]}"
+
+
+def compute_manifest(root: Path) -> str:
+    if not root.exists():
+        return ""
+    entries: list[str] = []
+    for dirpath, _, filenames in os.walk(root):
+        for name in filenames:
+            p = Path(dirpath) / name
+            try:
+                st = p.stat()
+            except FileNotFoundError:
+                continue
+            if not p.is_file():
+                continue
+            rel = p.relative_to(root).as_posix()
+            entries.append(f"{rel}\t{int(st.st_size)}\t{int(st.st_mtime)}")
+    entries.sort()
+    h = hashlib.sha256()
+    for line in entries:
+        h.update(line.encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def read_manifest(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text().strip()
+
+
+def write_manifest(path: Path, digest: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(digest + "\n")
+
+
+def sync_dir(src: Path, dst: Path) -> None:
+    dst.mkdir(parents=True, exist_ok=True)
+    rsync = shutil.which("rsync")
+    if rsync:
+        subprocess.run([rsync, "-a", "--delete", f"{src}/", f"{dst}/"], check=True)
+        return
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
+
+
+def mount_rw(dev: str, mount_point: Path) -> None:
+    mount_point.mkdir(parents=True, exist_ok=True)
+    opts = "utf8,shortname=mixed,nodev,nosuid,noexec"
+    subprocess.run(["mount", "-t", "vfat", "-o", opts, dev, str(mount_point)], check=True)
+
+
+def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
+    if not persist_enabled(cfg):
+        return
+    persist_src = mount_root / cfg.usb_persist_dir
+    if not persist_src.exists():
+        return
+
+    manifest_path = cfg.state_dir / "usb_persist.manifest"
+    new_digest = compute_manifest(persist_src)
+    old_digest = read_manifest(manifest_path)
+    if new_digest == old_digest:
+        return
+
+    log(f"persist changed: syncing {cfg.usb_persist_dir}")
+    cfg.usb_persist_backing.mkdir(parents=True, exist_ok=True)
+    sync_dir(persist_src, cfg.usb_persist_backing)
+
+    next_dev = next_lv(active_dev, cfg.lvm_vg, cfg.usb_lvs)
+    if next_dev:
+        persist_mnt = Path("/mnt/vision_persist_next")
+        try:
+            mount_rw(next_dev, persist_mnt)
+            dest = persist_mnt / cfg.usb_persist_dir
+            sync_dir(cfg.usb_persist_backing, dest)
+        except Exception as exc:
+            log(f"persist preseed failed for {next_dev}: {exc}")
+        finally:
+            umount(persist_mnt)
+
+    write_manifest(manifest_path, new_digest)
 
 def stable_and_copy(cfg, mount_root: Path, conn) -> None:
     raw_dir = cfg.mirror_mount / "raw"
@@ -144,6 +248,8 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
     snap = lv_snapshot(active, cfg.lvm_vg, cfg.snapshot_name)
     try:
         mount_ro(snap, cfg.snapshot_mount)
+        if not offline:
+            maybe_sync_persist(cfg, cfg.snapshot_mount, active)
         stable_and_copy(cfg, cfg.snapshot_mount, conn)
     finally:
         umount(cfg.snapshot_mount)
