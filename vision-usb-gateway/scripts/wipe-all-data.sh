@@ -12,6 +12,8 @@ MIRROR_LV="${MIRROR_LV:-mirror}"
 MIRROR_MOUNT="${MIRROR_MOUNT:-/srv/vision_mirror}"
 USB_LABEL="${USB_LABEL:-VISIONUSB}"
 USB_LVS=("${USB_LVS[@]:-usb_0 usb_1 usb_2}")
+: "${USB_PERSIST_DIR:=aoi_settings}"
+: "${USB_PERSIST_BACKING:=$MIRROR_MOUNT/.state/$USB_PERSIST_DIR}"
 
 CONFIRM=false
 DRY_RUN=false
@@ -65,6 +67,10 @@ echo "  VG: $VG"
 echo "  Mirror LV: /dev/$VG/$MIRROR_LV -> $MIRROR_MOUNT"
 echo "  USB LVs: ${USB_LVS[*]}"
 echo "  USB label: $USB_LABEL"
+if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
+  echo "  USB persist dir: $USB_PERSIST_DIR"
+  echo "  USB persist backing: $USB_PERSIST_BACKING"
+fi
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "DRY-RUN: no changes will be made"
@@ -93,8 +99,20 @@ mount "/dev/$VG/$MIRROR_LV" "$MIRROR_MOUNT"
 rm -rf "$MIRROR_MOUNT/.state" || true
 mkdir -p "$MIRROR_MOUNT/.state" "$MIRROR_MOUNT/raw" "$MIRROR_MOUNT/bydate"
 
+if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
+  mkdir -p "$USB_PERSIST_BACKING"
+fi
+
 for lv in "${USB_LVS[@]}"; do
   mkfs.vfat -F 32 -n "$USB_LABEL" "/dev/$VG/$lv"
+  if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
+    persist_mnt="/mnt/vision_wipe_${lv}"
+    safe_mkdir "$persist_mnt"
+    if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "/dev/$VG/$lv" "$persist_mnt"; then
+      safe_mkdir "$persist_mnt/$USB_PERSIST_DIR"
+      umount "$persist_mnt" || true
+    fi
+  fi
 done
 
 systemctl start usb-gadget.service || true

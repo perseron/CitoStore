@@ -12,6 +12,11 @@ ACTIVE_FILE=/run/vision-usb-active
 
 : "${SWITCH_WINDOW_START:=00:00}"
 : "${SWITCH_WINDOW_END:=23:59}"
+: "${MIRROR_MOUNT:=/srv/vision_mirror}"
+: "${USB_PERSIST_DIR:=aoi_settings}"
+: "${USB_PERSIST_BACKING:=$MIRROR_MOUNT/.state/$USB_PERSIST_DIR}"
+
+PERSIST_MNT="/mnt/vision_persist_next"
 
 within_window() {
   local now start end
@@ -22,6 +27,41 @@ within_window() {
     [[ $now -ge $start && $now -le $end ]]
   else
     [[ $now -ge $start || $now -le $end ]]
+  fi
+}
+
+persist_enabled() {
+  [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]
+}
+
+persist_sync_dir() {
+  local src="$1" dst="$2"
+  safe_mkdir "$dst"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete "$src" "$dst"
+  else
+    rm -rf "$dst"
+    safe_mkdir "$dst"
+    cp -a "$src/." "$dst/"
+  fi
+}
+
+next_lv() {
+  local current="$1"
+  local name
+  name=$(basename "$current")
+  local idx=-1
+  for i in "${!USB_LVS[@]}"; do
+    if [[ "${USB_LVS[$i]}" == "$name" ]]; then
+      idx=$i
+      break
+    fi
+  done
+  if [[ $idx -lt 0 ]]; then
+    echo "/dev/$LVM_VG/${USB_LVS[0]}"
+  else
+    local next=$(( (idx + 1) % ${#USB_LVS[@]} ))
+    echo "/dev/$LVM_VG/${USB_LVS[$next]}"
   fi
 }
 
@@ -51,6 +91,23 @@ fi
 
 old_lv=$(basename "$active")
 log "switching USB gadget from $old_lv"
+
+if persist_enabled; then
+  next_dev=$(next_lv "$active")
+  if [[ -d "$USB_PERSIST_BACKING" ]]; then
+    log "persist preseed: $USB_PERSIST_BACKING -> $USB_PERSIST_DIR on $(basename "$next_dev")"
+    safe_mkdir "$PERSIST_MNT"
+    if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "$next_dev" "$PERSIST_MNT"; then
+      safe_mkdir "$PERSIST_MNT/$USB_PERSIST_DIR"
+      persist_sync_dir "$USB_PERSIST_BACKING/" "$PERSIST_MNT/$USB_PERSIST_DIR/"
+      umount "$PERSIST_MNT" || true
+    else
+      log "persist preseed mount failed for $next_dev"
+    fi
+  else
+    log "persist backing missing: $USB_PERSIST_BACKING"
+  fi
+fi
 
 /bin/bash "$(dirname "${BASH_SOURCE[0]}")/usb-gadget.sh" switch
 

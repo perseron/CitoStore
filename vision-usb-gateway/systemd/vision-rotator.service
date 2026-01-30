@@ -8,7 +8,7 @@ EnvironmentFile=/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/vision-rotator.sh
 ProtectSystem=strict
 PrivateTmp=true
-ReadWritePaths=/run /sys/kernel/config
+ReadWritePaths=/run /sys/kernel/config /srv/vision_mirror /mnt
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
 

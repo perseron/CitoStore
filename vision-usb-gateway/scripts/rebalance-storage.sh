@@ -17,6 +17,8 @@ USB_LABEL="${USB_LABEL:-VISIONUSB}"
 USB_LV_SIZE="${USB_LV_SIZE:-4G}"
 USB_LVS=("${USB_LVS[@]:-usb_0 usb_1 usb_2}")
 UNALLOCATED="${UNALLOCATED_GB:-20G}"
+: "${USB_PERSIST_DIR:=aoi_settings}"
+: "${USB_PERSIST_BACKING:=$MIRROR_MOUNT/.state/$USB_PERSIST_DIR}"
 
 CONFIRM=false
 DRY_RUN=false
@@ -115,6 +117,10 @@ echo "  Mirror LV: /dev/$VG/$MIRROR_LV -> $MIRROR_MOUNT (size=$MIRROR_SIZE)"
 echo "  Thin pool: $POOL (size=$POOL_SIZE, meta=$POOL_META)"
 echo "  USB LVs: ${USB_LVS[*]} (size=$USB_LV_SIZE)"
 echo "  Unallocated: $UNALLOCATED"
+if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
+  echo "  USB persist dir: $USB_PERSIST_DIR"
+  echo "  USB persist backing: $USB_PERSIST_BACKING"
+fi
 
 if [[ "$DRY_RUN" == "true" ]]; then
   echo "DRY-RUN: no changes will be made"
@@ -153,11 +159,23 @@ mkfs.ext4 -F "/dev/$VG/$MIRROR_LV"
 mount "/dev/$VG/$MIRROR_LV" "$MIRROR_MOUNT"
 mkdir -p "$MIRROR_MOUNT/.state" "$MIRROR_MOUNT/raw" "$MIRROR_MOUNT/bydate"
 
+if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
+  mkdir -p "$USB_PERSIST_BACKING"
+fi
+
 lvcreate -L "$POOL_SIZE" --poolmetadatasize "$POOL_META" --type thin-pool -n "$POOL" "$VG"
 
 for lv in "${USB_LVS[@]}"; do
   lvcreate -V "$USB_LV_SIZE" -T "$VG/$POOL" -n "$lv"
   mkfs.vfat -F 32 -n "$USB_LABEL" "/dev/$VG/$lv"
+  if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
+    persist_mnt="/mnt/vision_rebalance_${lv}"
+    safe_mkdir "$persist_mnt"
+    if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "/dev/$VG/$lv" "$persist_mnt"; then
+      safe_mkdir "$persist_mnt/$USB_PERSIST_DIR"
+      umount "$persist_mnt" || true
+    fi
+  fi
 done
 
 if [[ "$UPDATE_CONFIG" == "true" ]]; then
