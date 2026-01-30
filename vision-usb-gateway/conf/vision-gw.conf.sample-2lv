@@ -34,6 +34,11 @@ STABLE_SCAN_REQUIRED=2
 MAX_FILE_SIZE_BYTES=4294967296
 COPY_CHUNK_BYTES=8388608
 
+# USB LV persist (folder preserved across rotations)
+USB_PERSIST_DIR=aoi_settings
+USB_PERSIST_BACKING=/srv/vision_mirror/.state/aoi_settings
+USB_PERSIST_DURATION_FILE=/srv/vision_mirror/aoi_settings_duration.txt
+
 # Rotation thresholds (percent)
 THRESH_HI=80
 THRESH_CRIT=92

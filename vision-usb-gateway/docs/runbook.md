@@ -35,6 +35,10 @@ Validation checklist
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
 - Offline processing logs: `journalctl -u offline-maint@usb_0`
+- USB persist (AOI settings):
+  - Folder on USB LV: `USB_PERSIST_DIR` (default `aoi_settings`)
+  - Backing store: `USB_PERSIST_BACKING` (default `/srv/vision_mirror/.state/aoi_settings`)
+  - Last copy duration: `USB_PERSIST_DURATION_FILE` (default `/srv/vision_mirror/aoi_settings_duration.txt`)
 - Maintenance (overlay off):
   - `sudo install/21_disable_readonly_overlay.sh`
   - Reboot, perform changes
@@ -53,3 +57,4 @@ Maintenance utilities
   - `sudo /opt/vision-usb-gateway/scripts/wipe-all-data.sh --i-know-what-im-doing --force-umount`
 - Rebalance storage from config (destructive):
   - `sudo /opt/vision-usb-gateway/scripts/rebalance-storage.sh --i-know-what-im-doing --update-config`
+  - Add `--force-umount` if the mirror is busy.
