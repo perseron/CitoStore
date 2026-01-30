@@ -91,6 +91,7 @@ fi
 mkfs.ext4 -F "/dev/$VG/$MIRROR_LV"
 mount "/dev/$VG/$MIRROR_LV" "$MIRROR_MOUNT"
 rm -rf "$MIRROR_MOUNT/.state" || true
+mkdir -p "$MIRROR_MOUNT/.state" "$MIRROR_MOUNT/raw" "$MIRROR_MOUNT/bydate"
 
 for lv in "${USB_LVS[@]}"; do
   mkfs.vfat -F 32 -n "$USB_LABEL" "/dev/$VG/$lv"
@@ -98,5 +99,6 @@ done
 
 systemctl start usb-gadget.service || true
 systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
+systemctl start vision-sync.timer vision-monitor.timer vision-rotator.timer || true
 
 echo "Done."
