@@ -51,3 +51,5 @@ Maintenance utilities
   - `sudo /opt/vision-usb-gateway/scripts/resize-usb-lvs.sh --size 4G --force --update-config`
 - Wipe all data (mirror + USB LVs + sync state DB):
   - `sudo /opt/vision-usb-gateway/scripts/wipe-all-data.sh --i-know-what-im-doing --force-umount`
+- Rebalance storage from config (destructive):
+  - `sudo /opt/vision-usb-gateway/scripts/rebalance-storage.sh --i-know-what-im-doing --update-config`
