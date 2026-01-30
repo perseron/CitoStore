@@ -125,7 +125,7 @@ export RETENTION_LO=0
 export DRY_RUN=false
 export CONF_FILE=""
 
-"/opt/vision-usb-gateway/scripts/mirror-retention.sh"
+"$SCRIPT_DIR/../../../scripts/mirror-retention.sh"
 
 python3 - <<PY
 import sqlite3
