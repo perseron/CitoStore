@@ -125,7 +125,7 @@ export DRY_RUN=false
 TMP_CONF="$TMP_DIR/retention.conf"
 cat >"$TMP_CONF" <<'CONF'
 RETENTION_HI=0
-RETENTION_LO=0
+RETENTION_LO=99
 CONF
 export CONF_FILE="$TMP_CONF"
 
