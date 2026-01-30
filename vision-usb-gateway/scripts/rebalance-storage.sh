@@ -21,11 +21,12 @@ UNALLOCATED="${UNALLOCATED_GB:-20G}"
 CONFIRM=false
 DRY_RUN=false
 UPDATE_CONFIG=false
+FORCE_UMOUNT=false
 
 usage() {
   cat <<'EOF'
 Usage:
-  rebalance-storage.sh --i-know-what-im-doing [--dry-run] [--update-config]
+  rebalance-storage.sh --i-know-what-im-doing [--dry-run] [--update-config] [--force-umount]
 
 Rebuilds mirror + thinpool + USB LVs based on /etc/vision-gw.conf.
 All data is destroyed.
@@ -46,6 +47,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --update-config)
       UPDATE_CONFIG=true
+      shift
+      ;;
+    --force-umount)
+      FORCE_UMOUNT=true
       shift
       ;;
     -h|--help)
@@ -120,7 +125,19 @@ systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer || tr
 systemctl stop vision-sync.service vision-monitor.service vision-rotator.service || true
 systemctl stop usb-gadget.service || true
 
-umount "$MIRROR_MOUNT" || true
+if mountpoint -q "$MIRROR_MOUNT"; then
+  if ! umount "$MIRROR_MOUNT"; then
+    if [[ "$FORCE_UMOUNT" == "true" ]]; then
+      if command -v fuser >/dev/null 2>&1; then
+        fuser -km "$MIRROR_MOUNT" || true
+      fi
+      umount "$MIRROR_MOUNT" || umount -l "$MIRROR_MOUNT" || true
+    else
+      echo "Mirror mount busy: $MIRROR_MOUNT (use --force-umount)" >&2
+      exit 1
+    fi
+  fi
+fi
 
 for lv in "${USB_LVS[@]}"; do
   lvremove -y "/dev/$VG/$lv" || true
