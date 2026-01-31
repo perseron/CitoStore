@@ -32,11 +32,13 @@ Validation checklist
 - `/srv/vision_mirror` mounted from `vg0/mirror`
 - `systemctl status usb-gadget.service vision-sync.service`
 - SMB share reachable read-only
- - Active USB LV persisted at `/srv/vision_mirror/.state/vision-usb-active`
+- Active USB LV persisted at `/srv/vision_mirror/.state/vision-usb-active`
 
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
 - Offline processing logs: `journalctl -u offline-maint@usb_0`
+- Sync timer tuning (in `/etc/vision-gw.conf`):
+  - `SYNC_ONBOOT_SEC`, `SYNC_ONACTIVE_SEC`, `SYNC_INTERVAL_SEC`
 - USB persist (AOI settings):
   - Folder on USB LV: `USB_PERSIST_DIR` (default `aoi_settings`)
   - Backing store: `USB_PERSIST_BACKING` (default `/srv/vision_mirror/.state/aoi_settings`)

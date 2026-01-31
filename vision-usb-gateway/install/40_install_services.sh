@@ -19,6 +19,11 @@ fi
 
 load_config
 
+# Timer tuning (defaults match unit file)
+: "${SYNC_ONBOOT_SEC:=2min}"
+: "${SYNC_ONACTIVE_SEC:=2min}"
+: "${SYNC_INTERVAL_SEC:=2min}"
+
 # Write systemd-safe env file (no arrays)
 cat > /etc/vision-gw.env <<EOF
 GATEWAY_HOME=$GATEWAY_HOME
@@ -41,6 +46,17 @@ install -m 0644 "$SCRIPT_DIR/../systemd/"*.service /etc/systemd/system/
 install -m 0644 "$SCRIPT_DIR/../systemd/"*.timer /etc/systemd/system/
 install -m 0644 "$SCRIPT_DIR/../systemd/"*.mount /etc/systemd/system/
 install -m 0644 "$SCRIPT_DIR/../systemd/"*.automount /etc/systemd/system/
+
+log "configuring vision-sync.timer override"
+SYNC_TIMER_DIR=/etc/systemd/system/vision-sync.timer.d
+SYNC_TIMER_OVERRIDE=$SYNC_TIMER_DIR/override.conf
+mkdir -p "$SYNC_TIMER_DIR"
+cat > "$SYNC_TIMER_OVERRIDE" <<EOF
+[Timer]
+OnBootSec=$SYNC_ONBOOT_SEC
+OnActiveSec=$SYNC_ONACTIVE_SEC
+OnUnitActiveSec=$SYNC_INTERVAL_SEC
+EOF
 
 safe_mkdir /srv/vision_mirror/.state
 chmod 0755 /srv/vision_mirror
