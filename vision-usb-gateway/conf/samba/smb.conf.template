@@ -6,8 +6,10 @@
   load printers = no
   printing = bsd
   printcap name = /dev/null
-  disable netbios = yes
-  smb ports = 445
+  disable netbios = no
+  netbios name = {{NETBIOS_NAME}}
+  workgroup = {{SMB_WORKGROUP}}
+  smb ports = 445 139
   bind interfaces only = yes
   interfaces = lo {{SMB_BIND_INTERFACE}}
   log file = /var/log/samba/log.%m

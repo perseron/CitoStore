@@ -65,5 +65,8 @@ NAS_RETRY_BACKOFF=10
 SMB_BIND_INTERFACE=eth0
 SMB_GUEST_OK=no
 SMB_USER=smbuser
+# NetBIOS + WSDD
+NETBIOS_NAME=CITOSTORE
+SMB_WORKGROUP=WORKGROUP
 # SMB_PASS is required to create the Samba user non-interactively.
 # SMB_PASS=change-me

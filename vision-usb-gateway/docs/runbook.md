@@ -21,6 +21,7 @@ Install
    - `sudo install/40_install_services.sh`
 7) Configure Samba
    - `sudo install/50_configure_samba.sh`
+   - NetBIOS name + WSDD use `NETBIOS_NAME` and `SMB_WORKGROUP` in `/etc/vision-gw.conf`
 8) Optional NAS
    - `sudo install/60_configure_nas_optional.sh`
 9) Reboot
@@ -38,7 +39,11 @@ Rotation + maintenance
 - USB persist (AOI settings):
   - Folder on USB LV: `USB_PERSIST_DIR` (default `aoi_settings`)
   - Backing store: `USB_PERSIST_BACKING` (default `/srv/vision_mirror/.state/aoi_settings`)
-  - Last copy duration: `USB_PERSIST_DURATION_FILE` (default `/srv/vision_mirror/aoi_settings_duration.txt`)
+  - Manifest: `/srv/vision_mirror/.state/usb_persist.manifest`
+  - Sync behavior:
+    - Snapshot sync updates backing + pre-seeds the next LV when contents change.
+    - Rotation verifies the next LV and auto-repairs if it drifts.
+  - Optional duration file: `USB_PERSIST_DURATION_FILE` (default `/srv/vision_mirror/aoi_settings_duration.txt`)
 - Maintenance (overlay off):
   - `sudo install/21_disable_readonly_overlay.sh`
   - Reboot, perform changes
