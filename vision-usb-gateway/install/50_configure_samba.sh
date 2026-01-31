@@ -38,6 +38,8 @@ fi
 
 chown -R "$SMB_USER":nogroup /srv/vision_mirror
 chmod -R 2775 /srv/vision_mirror
+chown root:root /srv/vision_mirror/.state
+chmod 0755 /srv/vision_mirror/.state
 
 mkdir -p "$SMBD_OVERRIDE_DIR"
 cat > "$SMBD_OVERRIDE_FILE" <<'EOF'

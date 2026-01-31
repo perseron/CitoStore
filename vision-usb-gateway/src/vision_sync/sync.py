@@ -136,7 +136,10 @@ def sync_dir(src: Path, dst: Path) -> None:
     dst.mkdir(parents=True, exist_ok=True)
     rsync = shutil.which("rsync")
     if rsync:
-        subprocess.run([rsync, "-a", "--delete", f"{src}/", f"{dst}/"], check=True)
+        subprocess.run(
+            [rsync, "-rlt", "--delete", "--no-owner", "--no-group", "--no-perms", f"{src}/", f"{dst}/"],
+            check=True,
+        )
         return
     if dst.exists():
         shutil.rmtree(dst)
