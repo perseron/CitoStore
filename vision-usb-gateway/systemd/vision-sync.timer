@@ -2,6 +2,7 @@
 Description=Vision Snapshot Sync Timer
 
 [Timer]
+OnBootSec=2min
 OnUnitActiveSec=2min
 Persistent=true
 
