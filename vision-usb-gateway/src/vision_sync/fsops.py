@@ -5,8 +5,12 @@ from pathlib import Path
 from typing import Iterator, Tuple
 
 
+SKIP_DIRS = {"System Volume Information", "$RECYCLE.BIN"}
+
+
 def iter_files(root: Path) -> Iterator[Tuple[Path, os.stat_result]]:
-    for dirpath, _, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for name in filenames:
             p = Path(dirpath) / name
             try:
