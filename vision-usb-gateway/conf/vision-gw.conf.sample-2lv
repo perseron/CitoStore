@@ -14,6 +14,7 @@ THINPOOL_SIZE=650G
 THINPOOL_META_SIZE=8G
 USB_LVS=(usb_0 usb_1)
 USB_LV_SIZE=150G
+USB_ACTIVE_PERSIST=/srv/vision_mirror/.state/vision-usb-active
 USB_LABEL=VISIONUSB
 
 # USB gadget

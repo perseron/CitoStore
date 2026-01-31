@@ -32,6 +32,7 @@ Validation checklist
 - `/srv/vision_mirror` mounted from `vg0/mirror`
 - `systemctl status usb-gadget.service vision-sync.service`
 - SMB share reachable read-only
+ - Active USB LV persisted at `/srv/vision_mirror/.state/vision-usb-active`
 
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`

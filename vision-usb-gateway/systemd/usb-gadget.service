@@ -10,7 +10,7 @@ ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/usb-gadget.sh start
 ExecStop=/bin/bash ${GATEWAY_HOME}/scripts/usb-gadget.sh stop
 ProtectSystem=strict
 PrivateTmp=true
-ReadWritePaths=/run /sys/kernel/config
+ReadWritePaths=/run /sys/kernel/config /srv/vision_mirror
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
 

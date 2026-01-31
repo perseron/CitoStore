@@ -23,6 +23,7 @@ fi
 
 GADGET_DIR=/sys/kernel/config/usb_gadget/$USB_GADGET_NAME
 ACTIVE_FILE=/run/vision-usb-active
+ACTIVE_PERSIST="${USB_ACTIVE_PERSIST:-/srv/vision_mirror/.state/vision-usb-active}"
 
 get_udc() {
   ls /sys/class/udc | head -n1
@@ -35,6 +36,8 @@ ensure_configfs() {
 current_active() {
   if [[ -f "$ACTIVE_FILE" ]]; then
     cat "$ACTIVE_FILE"
+  elif [[ -f "$ACTIVE_PERSIST" ]]; then
+    cat "$ACTIVE_PERSIST"
   else
     echo "/dev/$LVM_VG/${USB_LVS[0]}"
   fi
@@ -77,6 +80,7 @@ bind_gadget() {
   udc=$(get_udc)
   echo "$udc" > "$GADGET_DIR/UDC"
   echo "$dev" > "$ACTIVE_FILE"
+  echo "$dev" > "$ACTIVE_PERSIST" 2>/dev/null || true
 }
 
 unbind_gadget() {
@@ -127,6 +131,7 @@ force_switch() {
 
   echo "$udc" > "$GADGET_DIR/UDC"
   echo "$dev" > "$ACTIVE_FILE"
+  echo "$dev" > "$ACTIVE_PERSIST" 2>/dev/null || true
 }
 
 remove_gadget() {
