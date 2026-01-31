@@ -36,12 +36,12 @@ else
   log "SMB_PASS not set; skipping smbpasswd setup for $SMB_USER"
 fi
 
-chown -R "$SMB_USER":nogroup /srv/vision_mirror
-chmod -R 2775 /srv/vision_mirror
-chown -R root:root /srv/vision_mirror/.state
-chmod 0755 /srv/vision_mirror/.state
-find /srv/vision_mirror/.state -type d -exec chmod 0755 {} \;
-find /srv/vision_mirror/.state -type f -exec chmod 0644 {} \;
+chown root:root /srv/vision_mirror
+chmod 0755 /srv/vision_mirror
+chown -R root:root /srv/vision_mirror/.state /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
+chmod 0755 /srv/vision_mirror/.state /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
+find /srv/vision_mirror/.state -type d -exec chmod 0755 {} \; 2>/dev/null || true
+find /srv/vision_mirror/.state -type f -exec chmod 0644 {} \; 2>/dev/null || true
 
 mkdir -p "$SMBD_OVERRIDE_DIR"
 cat > "$SMBD_OVERRIDE_FILE" <<'EOF'
