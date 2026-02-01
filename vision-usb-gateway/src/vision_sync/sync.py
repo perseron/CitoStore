@@ -152,7 +152,7 @@ def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
 
     manifest_path = cfg.state_dir / "usb_persist.manifest"
     new_digest = compute_manifest(persist_src)
-    old_digest = read_manifest(manifest_path)
+    old_digest, _ = read_manifest_state(manifest_path)
     if new_digest == old_digest:
         return
 
