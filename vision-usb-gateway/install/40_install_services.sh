@@ -46,6 +46,14 @@ install -m 0644 "$SCRIPT_DIR/../systemd/"*.service /etc/systemd/system/
 install -m 0644 "$SCRIPT_DIR/../systemd/"*.timer /etc/systemd/system/
 install -m 0644 "$SCRIPT_DIR/../systemd/"*.mount /etc/systemd/system/
 install -m 0644 "$SCRIPT_DIR/../systemd/"*.automount /etc/systemd/system/
+if [[ -d "$SCRIPT_DIR/../systemd/smbd.service.d" ]]; then
+  mkdir -p /etc/systemd/system/smbd.service.d
+  install -m 0644 "$SCRIPT_DIR/../systemd/smbd.service.d/"*.conf /etc/systemd/system/smbd.service.d/
+fi
+if [[ -d "$SCRIPT_DIR/../systemd/nmbd.service.d" ]]; then
+  mkdir -p /etc/systemd/system/nmbd.service.d
+  install -m 0644 "$SCRIPT_DIR/../systemd/nmbd.service.d/"*.conf /etc/systemd/system/nmbd.service.d/
+fi
 
 log "configuring vision-sync.timer override"
 SYNC_TIMER_DIR=/etc/systemd/system/vision-sync.timer.d
@@ -64,6 +72,7 @@ chmod 0755 /srv/vision_mirror/.state
 
 systemctl daemon-reload
 systemctl enable usb-gadget.service
+systemctl enable vision-gw-config.service
 systemctl enable vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer
 
 if [[ "${NAS_ENABLED:-false}" == "true" ]]; then

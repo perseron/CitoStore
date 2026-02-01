@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply vision-gw.conf to systemd overrides
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/update-config.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

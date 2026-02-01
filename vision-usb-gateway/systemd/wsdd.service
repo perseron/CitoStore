@@ -1,6 +1,7 @@
 [Unit]
 Description=WSDD for SMB Discovery
-After=network-online.target
+After=network-online.target vision-gw-config.service
+Requires=vision-gw-config.service
 Wants=network-online.target
 
 [Service]

@@ -19,6 +19,7 @@ Install
    - Add `--wipe` only if you want partition/LVM creation
 6) Install and enable services
    - `sudo install/40_install_services.sh`
+   - `vision-gw-config.service` applies `/etc/vision-gw.conf` to systemd on boot
 7) Configure Samba
    - `sudo install/50_configure_samba.sh`
    - NetBIOS name + WSDD use `NETBIOS_NAME` and `SMB_WORKGROUP` in `/etc/vision-gw.conf`

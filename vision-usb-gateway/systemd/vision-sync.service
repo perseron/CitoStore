@@ -1,6 +1,7 @@
 [Unit]
 Description=Vision Snapshot Sync
-After=local-fs.target usb-gadget.service
+After=local-fs.target usb-gadget.service vision-gw-config.service
+Requires=vision-gw-config.service
 
 [Service]
 Type=oneshot
