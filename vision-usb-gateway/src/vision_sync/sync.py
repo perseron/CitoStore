@@ -2,14 +2,13 @@ import argparse
 import os
 import subprocess
 import time
-import hashlib
 import shutil
 from datetime import datetime
 from pathlib import Path
 
 from .config import get_config
 from .db import init_db, update_state, is_already_synced, mark_synced
-from .fsops import iter_files, atomic_copy, safe_join
+from .fsops import iter_files, atomic_copy, safe_join, compute_manifest
 
 
 ACTIVE_FILE = "/run/vision-usb-active"
@@ -98,38 +97,30 @@ def next_lv(active_dev: str, lvm_vg: str, usb_lvs: list[str]) -> str | None:
     return f"/dev/{lvm_vg}/{usb_lvs[nxt]}"
 
 
-def compute_manifest(root: Path) -> str:
-    if not root.exists():
-        return ""
-    entries: list[str] = []
-    for dirpath, _, filenames in os.walk(root):
-        for name in filenames:
-            p = Path(dirpath) / name
-            try:
-                st = p.stat()
-            except FileNotFoundError:
-                continue
-            if not p.is_file():
-                continue
-            rel = p.relative_to(root).as_posix()
-            entries.append(f"{rel}\t{int(st.st_size)}\t{int(st.st_mtime)}")
-    entries.sort()
-    h = hashlib.sha256()
-    for line in entries:
-        h.update(line.encode("utf-8"))
-        h.update(b"\n")
-    return h.hexdigest()
-
-
-def read_manifest(path: Path) -> str:
+def read_manifest_state(path: Path) -> tuple[str, int]:
     if not path.exists():
-        return ""
-    return path.read_text().strip()
+        return "", 0
+    content = path.read_text().strip().splitlines()
+    if not content:
+        return "", 0
+    if len(content) == 1 and "=" not in content[0]:
+        return content[0].strip(), 0
+    digest = ""
+    count = 0
+    for line in content:
+        if line.startswith("digest="):
+            digest = line.split("=", 1)[1].strip()
+        elif line.startswith("count="):
+            try:
+                count = int(line.split("=", 1)[1].strip())
+            except ValueError:
+                count = 0
+    return digest, count
 
 
-def write_manifest(path: Path, digest: str) -> None:
+def write_manifest_state(path: Path, digest: str, count: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(digest + "\n")
+    path.write_text(f"digest={digest}\ncount={count}\n")
 
 
 def sync_dir(src: Path, dst: Path) -> None:
@@ -182,6 +173,17 @@ def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
             umount(persist_mnt)
 
     write_manifest(manifest_path, new_digest)
+
+
+def maybe_compute_sync_manifest(cfg, mount_root: Path) -> tuple[str, int, bool] | None:
+    if not getattr(cfg, "sync_change_detect", False):
+        return None
+    manifest_path = cfg.sync_manifest_path
+    new_digest = compute_manifest(mount_root)
+    old_digest, old_count = read_manifest_state(manifest_path)
+    if new_digest == old_digest:
+        return new_digest, old_count + 1, True
+    return new_digest, 1, False
 
 def stable_and_copy(cfg, mount_root: Path, conn) -> None:
     raw_dir = cfg.mirror_mount / "raw"
@@ -251,9 +253,28 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
     snap = lv_snapshot(active, cfg.lvm_vg, cfg.snapshot_name)
     try:
         mount_ro(snap, cfg.snapshot_mount)
+        sync_manifest = None
         if not offline:
             maybe_sync_persist(cfg, cfg.snapshot_mount, active)
+            sync_manifest = maybe_compute_sync_manifest(cfg, cfg.snapshot_mount)
+            if sync_manifest:
+                digest, count, unchanged = sync_manifest
+                if digest and unchanged and count >= cfg.stable_scans:
+                    log("sync: no changes since last run; skipping copy")
+                    if count > cfg.stable_scans:
+                        count = cfg.stable_scans
+                    prev_digest, prev_count = read_manifest_state(cfg.sync_manifest_path)
+                    if prev_digest != digest or prev_count != count:
+                        write_manifest_state(cfg.sync_manifest_path, digest, count)
+                    return
         stable_and_copy(cfg, cfg.snapshot_mount, conn)
+        if not offline and sync_manifest:
+            digest, count, _ = sync_manifest
+            if count > cfg.stable_scans:
+                count = cfg.stable_scans
+            prev_digest, prev_count = read_manifest_state(cfg.sync_manifest_path)
+            if prev_digest != digest or prev_count != count:
+                write_manifest_state(cfg.sync_manifest_path, digest, count)
     finally:
         umount(cfg.snapshot_mount)
         lv_remove(cfg.snapshot_name, cfg.lvm_vg)

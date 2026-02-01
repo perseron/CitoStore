@@ -13,6 +13,8 @@ class Config:
     usb_lvs: list[str]
     usb_persist_dir: str
     usb_persist_backing: Path
+    sync_change_detect: bool
+    sync_manifest_path: Path
     stable_scans: int
     max_file_size: int
     copy_chunk: int
@@ -63,6 +65,10 @@ def get_config(path: str) -> Config:
     usb_persist_backing = Path(
         data.get("USB_PERSIST_BACKING", str(mirror_mount / ".state" / usb_persist_dir))
     )
+    sync_change_detect = str(data.get("SYNC_CHANGE_DETECT", "false")).lower() in ("1", "true", "yes", "on")
+    sync_manifest_path = Path(
+        data.get("SYNC_MANIFEST_FILE", str(mirror_mount / ".state" / "usb_sync.manifest"))
+    )
     stable_scans = int(data.get("STABLE_SCAN_REQUIRED", "2"))
     max_file_size = int(data.get("MAX_FILE_SIZE_BYTES", str(4 * 1024 ** 3)))
     copy_chunk = int(data.get("COPY_CHUNK_BYTES", str(8 * 1024 ** 2)))
@@ -75,6 +81,8 @@ def get_config(path: str) -> Config:
         usb_lvs=usb_lvs,
         usb_persist_dir=usb_persist_dir,
         usb_persist_backing=usb_persist_backing,
+        sync_change_detect=sync_change_detect,
+        sync_manifest_path=sync_manifest_path,
         stable_scans=stable_scans,
         max_file_size=max_file_size,
         copy_chunk=copy_chunk,

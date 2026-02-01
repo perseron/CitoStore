@@ -53,6 +53,120 @@ Rotation + maintenance
   - `sudo install/20_enable_readonly_overlay.sh`
   - Reboot
 
+Operational flow (precise)
+1) USB gadget exposes the active FAT32 LV to the host; the CM5 never mounts the active LV.
+2) `vision-sync.timer` triggers `vision-sync.service` on boot and on schedule.
+3) `vision-sync` creates a thin snapshot of the active LV, mounts it read-only, and scans files.
+4) A file is considered stable after `STABLE_SCAN_REQUIRED` consecutive scans with identical size+mtime.
+5) Stable files are copied into `raw/` preserving the original folder structure, then hardlinked into `bydate/YYYY/MM/DD/`.
+6) `vision-monitor` checks LV usage + thinpool metadata; if thresholds are exceeded it writes `/run/vision-rotate.state`.
+7) `vision-rotator` switches the USB gadget to the next LV (within the configured window unless critical).
+8) After switching, `offline-maint@<old_lv>` runs: filesystem check, offline sync, discard, reformat, and persist-folder handling.
+9) USB persist folder changes are mirrored to `USB_PERSIST_BACKING`; the next LV is pre-seeded and verified.
+10) Mirror retention removes the oldest entries when disk usage exceeds thresholds.
+
+Operational flow (detailed, step-by-step)
+1) Boot + mounts
+   - NVMe mirror LV mounts at `/srv/vision_mirror` (ext4, RW).
+   - Persistent state (SQLite, active LV pointer, persist manifest) lives under `/srv/vision_mirror/.state`.
+2) USB gadget exposure
+   - `usb-gadget.service` binds exactly one FAT32 LV to the USB gadget LUN.
+   - The host sees only the active LV; the CM5 never mounts the active LV.
+   - The previously active LV is restored from `/srv/vision_mirror/.state/vision-usb-active` on boot.
+3) Sync scheduling
+   - `vision-sync.timer` drives the sync cadence:
+     - `SYNC_ONBOOT_SEC`: first run after boot.
+     - `SYNC_ONACTIVE_SEC`: run after timer activation.
+     - `SYNC_INTERVAL_SEC`: subsequent runs after a successful run.
+4) Snapshot + scan
+   - `vision-sync` creates a thin snapshot (`SYNC_SNAPSHOT_NAME`) of the active LV.
+   - Mounts the snapshot read-only at `SYNC_MOUNT`.
+   - Enumerates files and skips system folders like `System Volume Information` and `$RECYCLE.BIN`.
+5) Stability gating
+   - A file must be stable across `STABLE_SCAN_REQUIRED` consecutive scans (size+mtime unchanged).
+   - With `STABLE_SCAN_REQUIRED=2`, a new file typically syncs on the second run.
+6) Copy + indexing
+   - Stable files are copied into `raw/` preserving original folder structure.
+   - Copies are atomic (temp file + rename); content hash is used to de-duplicate.
+   - A hardlink is created in `bydate/YYYY/MM/DD/` pointing to the `raw/` file.
+7) Persist folder handling
+   - If `USB_PERSIST_DIR` exists, a manifest is computed and compared to the last stored hash.
+   - When changed, it is synced to `USB_PERSIST_BACKING`.
+   - The next LV is pre-seeded; rotation verifies and auto-repairs if it drifts.
+8) Rotation decision
+   - `vision-monitor` checks active LV usage (`THRESH_HI`/`THRESH_CRIT`) and thinpool metadata (`META_HI`/`META_CRIT`).
+   - Writes `/run/vision-rotate.state` with `state=ok|rotate_pending|panic`.
+9) Rotation execution
+   - `vision-rotator` switches LVs inside the configured window unless in `panic`.
+   - Updates the persisted active LV pointer.
+10) Offline maintenance
+    - `offline-maint@<old_lv>` performs fsck, offline sync, discard, reformat, and persist-folder restore.
+11) Retention
+    - `mirror-retention` deletes the oldest entry (raw + bydate link) when usage exceeds `RETENTION_HI` until `RETENTION_LO`.
+
+Config parameter reference (key meanings)
+Storage + LVM
+- `NVME_DEVICE`: Block device used for LVM (e.g., `/dev/nvme0n1`).
+- `LVM_VG`: Volume group name hosting mirror + thinpool (default `vg0`).
+- `MIRROR_LV`: LV name for the mirror filesystem (default `mirror`).
+- `MIRROR_MOUNT`: Mount path for the mirror (default `/srv/vision_mirror`).
+- `MIRROR_SIZE`: Size of the mirror LV (e.g., `300G`).
+- `THINPOOL_LV`: Thinpool LV name (default `usbpool`).
+- `THINPOOL_SIZE`: Thinpool size (e.g., `650G`).
+- `THINPOOL_META_SIZE`: Thinpool metadata LV size (e.g., `8G`).
+- `USB_LVS`: Array of thin LVs exported to the host (rotation ring).
+- `USB_LABEL`: FAT32 volume label for the USB LVs.
+- `USB_LV_SIZE`: Size of each USB LV.
+- `USB_ACTIVE_PERSIST`: Persistent file storing active LV device path across reboots.
+
+USB gadget
+- `USB_GADGET_NAME`: ConfigFS gadget name (directory under `/sys/kernel/config/usb_gadget`).
+- `USB_VENDOR_ID`, `USB_PRODUCT_ID`: USB VID/PID.
+- `USB_MANUFACTURER`, `USB_PRODUCT`: USB descriptor strings.
+- `USB_SERIAL`: USB serial string.
+- `USB_CONFIG`: USB configuration string.
+- `USB_MAX_POWER`: Max power (mA) reported to host.
+
+Snapshot sync
+- `SYNC_SNAPSHOT_NAME`: LV snapshot name used for sync (default `usb_sync_snap`).
+- `SYNC_MOUNT`: Mount point for the snapshot (read-only).
+- `SYNC_ONBOOT_SEC`: Delay after boot before first sync run (systemd time format).
+- `SYNC_ONACTIVE_SEC`: Delay after timer activation before next run (systemd time format).
+- `SYNC_INTERVAL_SEC`: Interval between runs after a successful run (systemd time format).
+- `SYNC_CHANGE_DETECT`: If `true`, uses a two-phase manifest gate. When the manifest is unchanged for `STABLE_SCAN_REQUIRED` consecutive runs, the copy phase is skipped; when it changes, normal scanning/copy resumes.
+- `SYNC_MANIFEST_FILE`: Path to the stored manifest hash used for change detection.
+- `STABLE_SCAN_REQUIRED`: Number of consecutive scans required before a file is copied. If set to `2`, a new file typically appears on the second run after creation.
+- `MAX_FILE_SIZE_BYTES`: Files equal/above this size are skipped (FAT32 4GiB limit default).
+- `COPY_CHUNK_BYTES`: Copy chunk size for atomic copy.
+
+USB persist (AOI settings)
+- `USB_PERSIST_DIR`: Folder name on the USB LV to preserve (e.g., `aoi_settings`).
+- `USB_PERSIST_BACKING`: Backing store on NVMe used to preserve the folder across rotation.
+- `USB_PERSIST_DURATION_FILE`: Optional file to write persist copy durations.
+
+Rotation thresholds
+- `THRESH_HI`/`THRESH_CRIT`: Percent usage of the active USB LV that triggers rotate-pending / panic.
+- `META_HI`/`META_CRIT`: Percent metadata usage of the thinpool that triggers rotate-pending / panic.
+- `SWITCH_WINDOW_START`/`SWITCH_WINDOW_END`: Allowed window for non-critical rotation.
+
+Mirror retention
+- `RETENTION_HI`: Percent usage threshold to start deleting oldest mirror entries.
+- `RETENTION_LO`: Percent usage target to stop deleting.
+
+NAS optional
+- `NAS_ENABLED`: Enable NAS sync service.
+- `NAS_MOUNT`: Local mount for NAS.
+- `NAS_REMOTE`: Remote NAS path.
+- `NAS_CREDENTIALS`: Credentials file for NAS mount.
+- `NAS_RSYNC_OPTS`: rsync options for NAS sync.
+- `NAS_RETRY_MAX`/`NAS_RETRY_BACKOFF`: Retry behavior for NAS sync.
+
+Samba + discovery
+- `SMB_BIND_INTERFACE`: Network interface Samba/WSDD bind to.
+- `SMB_USER`: Samba user for read-only access.
+- `NETBIOS_NAME`: NetBIOS name advertised by Samba/WSDD.
+- `SMB_WORKGROUP`: Windows workgroup name.
+
 Windows host setup
 - See `docs/windows-install.md` for a Windows-first, empty system install path.
 

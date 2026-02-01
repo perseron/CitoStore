@@ -4,6 +4,8 @@ import time
 from pathlib import Path
 from typing import Iterator, Tuple
 
+import hashlib
+
 
 SKIP_DIRS = {"System Volume Information", "$RECYCLE.BIN"}
 
@@ -29,6 +31,21 @@ def safe_join(base: Path, rel: Path) -> Path:
     if not str(norm).startswith(str(base.resolve())):
         raise ValueError("path traversal")
     return norm
+
+
+def compute_manifest(root: Path) -> str:
+    if not root.exists():
+        return ""
+    entries: list[str] = []
+    for path, st in iter_files(root):
+        rel = path.relative_to(root).as_posix()
+        entries.append(f"{rel}\t{int(st.st_size)}\t{int(st.st_mtime)}")
+    entries.sort()
+    h = hashlib.sha256()
+    for line in entries:
+        h.update(line.encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
 
 
 def atomic_copy(src: Path, dest_dir: Path, final_name: str, chunk_size: int) -> Tuple[Path, str]:
