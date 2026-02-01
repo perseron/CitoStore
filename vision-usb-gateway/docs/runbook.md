@@ -134,8 +134,9 @@ Snapshot sync
 - `SYNC_ONBOOT_SEC`: Delay after boot before first sync run (systemd time format).
 - `SYNC_ONACTIVE_SEC`: Delay after timer activation before next run (systemd time format).
 - `SYNC_INTERVAL_SEC`: Interval between runs after a successful run (systemd time format).
-- `SYNC_CHANGE_DETECT`: If `true`, uses a two-phase manifest gate. When the manifest is unchanged for `STABLE_SCAN_REQUIRED` consecutive runs, the copy phase is skipped; when it changes, normal scanning/copy resumes.
+- `SYNC_CHANGE_DETECT`: If `true`, uses a two-phase manifest gate. When changes are detected, copy runs every cycle. When unchanged for `SYNC_CHANGE_RESUME_SCANS` consecutive runs, the copy phase is skipped; when changes resume, copy runs again.
 - `SYNC_MANIFEST_FILE`: Path to the stored manifest hash used for change detection.
+- `SYNC_CHANGE_RESUME_SCANS`: Number of consecutive unchanged runs required before skipping copy again.
 - `STABLE_SCAN_REQUIRED`: Number of consecutive scans required before a file is copied. If set to `2`, a new file typically appears on the second run after creation.
 - `MAX_FILE_SIZE_BYTES`: Files equal/above this size are skipped (FAT32 4GiB limit default).
 - `COPY_CHUNK_BYTES`: Copy chunk size for atomic copy.

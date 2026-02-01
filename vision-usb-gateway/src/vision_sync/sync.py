@@ -97,16 +97,17 @@ def next_lv(active_dev: str, lvm_vg: str, usb_lvs: list[str]) -> str | None:
     return f"/dev/{lvm_vg}/{usb_lvs[nxt]}"
 
 
-def read_manifest_state(path: Path) -> tuple[str, int]:
+def read_manifest_state(path: Path) -> tuple[str, int, str]:
     if not path.exists():
-        return "", 0
+        return "", 0, "active"
     content = path.read_text().strip().splitlines()
     if not content:
-        return "", 0
+        return "", 0, "active"
     if len(content) == 1 and "=" not in content[0]:
-        return content[0].strip(), 0
+        return content[0].strip(), 0, "active"
     digest = ""
     count = 0
+    mode = "active"
     for line in content:
         if line.startswith("digest="):
             digest = line.split("=", 1)[1].strip()
@@ -115,12 +116,18 @@ def read_manifest_state(path: Path) -> tuple[str, int]:
                 count = int(line.split("=", 1)[1].strip())
             except ValueError:
                 count = 0
-    return digest, count
+        elif line.startswith("mode="):
+            mode = line.split("=", 1)[1].strip() or "active"
+    if mode not in ("active", "suspend"):
+        mode = "active"
+    return digest, count, mode
 
 
-def write_manifest_state(path: Path, digest: str, count: int) -> None:
+def write_manifest_state(path: Path, digest: str, count: int, mode: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"digest={digest}\ncount={count}\n")
+    if mode not in ("active", "suspend"):
+        mode = "active"
+    path.write_text(f"digest={digest}\ncount={count}\nmode={mode}\n")
 
 
 def sync_dir(src: Path, dst: Path) -> None:
@@ -152,7 +159,7 @@ def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
 
     manifest_path = cfg.state_dir / "usb_persist.manifest"
     new_digest = compute_manifest(persist_src)
-    old_digest, _ = read_manifest_state(manifest_path)
+    old_digest, _, _ = read_manifest_state(manifest_path)
     if new_digest == old_digest:
         return
 
@@ -175,15 +182,15 @@ def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
     write_manifest(manifest_path, new_digest)
 
 
-def maybe_compute_sync_manifest(cfg, mount_root: Path) -> tuple[str, int, bool] | None:
+def maybe_compute_sync_manifest(cfg, mount_root: Path) -> tuple[str, int, bool, str] | None:
     if not getattr(cfg, "sync_change_detect", False):
         return None
     manifest_path = cfg.sync_manifest_path
     new_digest = compute_manifest(mount_root)
-    old_digest, old_count = read_manifest_state(manifest_path)
+    old_digest, old_count, old_mode = read_manifest_state(manifest_path)
     if new_digest == old_digest:
-        return new_digest, old_count + 1, True
-    return new_digest, 1, False
+        return new_digest, old_count + 1, True, old_mode
+    return new_digest, 0, False, "suspend"
 
 def stable_and_copy(cfg, mount_root: Path, conn) -> None:
     raw_dir = cfg.mirror_mount / "raw"
@@ -258,23 +265,31 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
             maybe_sync_persist(cfg, cfg.snapshot_mount, active)
             sync_manifest = maybe_compute_sync_manifest(cfg, cfg.snapshot_mount)
             if sync_manifest:
-                digest, count, unchanged = sync_manifest
-                if digest and unchanged and count >= cfg.stable_scans:
+                digest, count, unchanged, mode = sync_manifest
+                resume_scans = max(1, int(cfg.sync_change_resume_scans))
+                if unchanged:
+                    if count > resume_scans:
+                        count = resume_scans
+                    if mode == "suspend" and count >= resume_scans:
+                        mode = "active"
+                else:
+                    mode = "suspend"
+                    count = 0
+                if digest and mode == "active" and unchanged and count >= resume_scans:
                     log("sync: no changes since last run; skipping copy")
-                    if count > cfg.stable_scans:
-                        count = cfg.stable_scans
-                    prev_digest, prev_count = read_manifest_state(cfg.sync_manifest_path)
-                    if prev_digest != digest or prev_count != count:
-                        write_manifest_state(cfg.sync_manifest_path, digest, count)
+                    prev_digest, prev_count, prev_mode = read_manifest_state(cfg.sync_manifest_path)
+                    if prev_digest != digest or prev_count != count or prev_mode != mode:
+                        write_manifest_state(cfg.sync_manifest_path, digest, count, mode)
                     return
         stable_and_copy(cfg, cfg.snapshot_mount, conn)
         if not offline and sync_manifest:
-            digest, count, _ = sync_manifest
-            if count > cfg.stable_scans:
-                count = cfg.stable_scans
-            prev_digest, prev_count = read_manifest_state(cfg.sync_manifest_path)
-            if prev_digest != digest or prev_count != count:
-                write_manifest_state(cfg.sync_manifest_path, digest, count)
+            digest, count, _, mode = sync_manifest
+            resume_scans = max(1, int(cfg.sync_change_resume_scans))
+            if count > resume_scans:
+                count = resume_scans
+            prev_digest, prev_count, prev_mode = read_manifest_state(cfg.sync_manifest_path)
+            if prev_digest != digest or prev_count != count or prev_mode != mode:
+                write_manifest_state(cfg.sync_manifest_path, digest, count, mode)
     finally:
         umount(cfg.snapshot_mount)
         lv_remove(cfg.snapshot_name, cfg.lvm_vg)
