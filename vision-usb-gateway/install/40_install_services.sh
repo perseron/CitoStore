@@ -33,6 +33,8 @@ NAS_CREDENTIALS=${NAS_CREDENTIALS:-/etc/vision-nas.creds}
 SMB_BIND_INTERFACE=${SMB_BIND_INTERFACE:-eth0}
 SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
 NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
+WEBUI_BIND=${WEBUI_BIND:-0.0.0.0}
+WEBUI_PORT=${WEBUI_PORT:-80}
 EOF
 
 log "installing python package"
@@ -74,6 +76,7 @@ systemctl daemon-reload
 systemctl enable usb-gadget.service
 systemctl enable vision-gw-config.service
 systemctl enable vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer
+systemctl enable vision-webui.service
 
 if [[ "${NAS_ENABLED:-false}" == "true" ]]; then
   systemctl enable mnt-nas.automount nas-sync.timer

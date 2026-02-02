@@ -1,0 +1,107 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Vision Web UI</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <h1>Vision Web UI</h1>
+    <div class="status" id="status-line">Loading...</div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Status</h2>
+      <pre id="status-services"></pre>
+      <pre id="status-network"></pre>
+      <pre id="status-usb"></pre>
+    </section>
+
+    <section>
+      <h2>Configuration</h2>
+      <div class="grid">
+        <label>NETBIOS_NAME <input id="NETBIOS_NAME"></label>
+        <label>SMB_WORKGROUP <input id="SMB_WORKGROUP"></label>
+        <label>SMB_BIND_INTERFACE <input id="SMB_BIND_INTERFACE"></label>
+        <label>SYNC_INTERVAL_SEC <input id="SYNC_INTERVAL_SEC"></label>
+        <label>SYNC_ONBOOT_SEC <input id="SYNC_ONBOOT_SEC"></label>
+        <label>SYNC_ONACTIVE_SEC <input id="SYNC_ONACTIVE_SEC"></label>
+        <label>NAS_ENABLED
+          <select id="NAS_ENABLED">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+        </label>
+        <label>NAS_REMOTE <input id="NAS_REMOTE"></label>
+        <label>NAS_MOUNT <input id="NAS_MOUNT"></label>
+        <label>NAS_CREDENTIALS <input id="NAS_CREDENTIALS"></label>
+        <label>WEBUI_BIND <input id="WEBUI_BIND"></label>
+        <label>WEBUI_PORT <input id="WEBUI_PORT"></label>
+      </div>
+      <div class="actions">
+        <button id="save-config">Save to Shadow</button>
+        <button id="apply-config">Save + Apply</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Network (NetworkManager)</h2>
+      <div class="grid">
+        <label>Interface <input id="NET_IFACE" value="eth0"></label>
+        <label>Method
+          <select id="NET_METHOD">
+            <option value="auto">DHCP</option>
+            <option value="manual">Static</option>
+          </select>
+        </label>
+        <label>Address <input id="NET_ADDR" placeholder="192.168.1.50"></label>
+        <label>Prefix <input id="NET_PREFIX" placeholder="24"></label>
+        <label>Gateway <input id="NET_GW" placeholder="192.168.1.1"></label>
+        <label>DNS <input id="NET_DNS" placeholder="1.1.1.1,8.8.8.8"></label>
+      </div>
+      <div class="actions">
+        <button id="apply-network">Apply Network</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Security</h2>
+      <div class="grid">
+        <label>New Web UI Password <input id="WEBUI_PASS" type="password"></label>
+        <label>Confirm Web UI Password <input id="WEBUI_PASS2" type="password"></label>
+      </div>
+      <div class="actions">
+        <button id="save-webui-pass">Change Web UI Password</button>
+      </div>
+      <div class="grid">
+        <label>New SMB Password <input id="SMB_PASS" type="password"></label>
+        <label>Confirm SMB Password <input id="SMB_PASS2" type="password"></label>
+      </div>
+      <div class="actions">
+        <button id="save-smb-pass">Change SMB Password</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Maintenance</h2>
+      <div class="grid">
+        <label>Resize USB LV Size <input id="RESIZE_SIZE" placeholder="100G"></label>
+      </div>
+      <div class="actions">
+        <button class="danger" id="resize-usb">Resize USB LVs</button>
+        <button class="danger" id="rebalance">Rebalance Storage</button>
+        <button class="danger" id="wipe">Wipe All Data</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Logs</h2>
+      <pre id="log-output">Logs are written to /srv/vision_mirror/.state/vision-webui.log</pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -6,6 +6,11 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$SCRIPT_DIR/common.sh"
 
 require_root
+SHADOW_CONF=/srv/vision_mirror/.state/vision-gw.conf
+if [[ -f "$SHADOW_CONF" ]]; then
+  cp "$SHADOW_CONF" /etc/vision-gw.conf
+fi
+
 load_config
 
 GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
@@ -23,6 +28,8 @@ NAS_CREDENTIALS=${NAS_CREDENTIALS:-/etc/vision-nas.creds}
 SMB_BIND_INTERFACE=${SMB_BIND_INTERFACE:-eth0}
 SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
 NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
+WEBUI_BIND=${WEBUI_BIND:-0.0.0.0}
+WEBUI_PORT=${WEBUI_PORT:-80}
 EOF
 
 # Update timer override from config.

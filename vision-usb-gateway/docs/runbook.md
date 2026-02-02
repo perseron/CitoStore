@@ -35,6 +35,22 @@ Validation checklist
 - SMB share reachable read-only
 - Active USB LV persisted at `/srv/vision_mirror/.state/vision-usb-active`
 
+Web UI (minimal config + maintenance)
+- Service: `vision-webui.service`
+- Default bind/port: `WEBUI_BIND=0.0.0.0`, `WEBUI_PORT=80`
+- Access from Windows browser: `http://<device-ip>/`
+- First login prompts for a Web UI password (stored hashed in `/srv/vision_mirror/.state/webui.passwd`).
+- The UI edits a shadow config at `/srv/vision_mirror/.state/vision-gw.conf`.
+- Apply config triggers `apply-shadow-config.sh`, which:
+  - Copies the shadow config to `/etc/vision-gw.conf`
+  - Updates systemd overrides (`vision-sync.timer`)
+  - Reconfigures Samba + WSDD
+  - Enables/disables NAS units based on `NAS_ENABLED`
+- Destructive actions require typed confirmation in the UI.
+- Smoke check:
+  - `systemctl status vision-webui.service`
+  - `curl -I http://127.0.0.1/` (expect 200/303)
+
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
 - Offline processing logs: `journalctl -u offline-maint@usb_0`
@@ -168,6 +184,10 @@ Samba + discovery
 - `SMB_USER`: Samba user for read-only access.
 - `NETBIOS_NAME`: NetBIOS name advertised by Samba/WSDD.
 - `SMB_WORKGROUP`: Windows workgroup name.
+
+Web UI
+- `WEBUI_BIND`: IP to bind the Web UI (default `0.0.0.0`).
+- `WEBUI_PORT`: Port for the Web UI (default `80`).
 
 Windows host setup
 - See `docs/windows-install.md` for a Windows-first, empty system install path.
