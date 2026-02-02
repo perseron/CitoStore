@@ -139,4 +139,13 @@ document.getElementById("wipe").addEventListener("click", () => maintenance("wip
 document.getElementById("rebalance").addEventListener("click", () => maintenance("rebalance"));
 document.getElementById("resize-usb").addEventListener("click", () => maintenance("resize"));
 
-loadStatus().then(loadConfig).catch(err => setStatus("Error: " + err.message));
+async function refreshStatus() {
+  try {
+    await loadStatus();
+  } catch (err) {
+    setStatus("Error: " + err.message);
+  }
+}
+
+refreshStatus().then(loadConfig).catch(err => setStatus("Error: " + err.message));
+setInterval(refreshStatus, 10000);
