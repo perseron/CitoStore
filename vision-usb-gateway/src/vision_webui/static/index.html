@@ -21,27 +21,20 @@
 
     <section>
       <h2>Configuration</h2>
+      <h3>Sync</h3>
       <div class="grid">
         <label>SYNC_INTERVAL_SEC <input id="SYNC_INTERVAL_SEC"></label>
         <label>SYNC_ONBOOT_SEC <input id="SYNC_ONBOOT_SEC"></label>
         <label>SYNC_ONACTIVE_SEC <input id="SYNC_ONACTIVE_SEC"></label>
       </div>
-      <div class="actions">
-        <button id="save-config">Save to Shadow</button>
-        <button id="apply-config">Save + Apply</button>
-      </div>
-    </section>
 
-    <section>
-      <h2>Samba</h2>
+      <h3>Samba</h3>
       <div class="grid">
         <label>NETBIOS_NAME <input id="NETBIOS_NAME"></label>
         <label>SMB_WORKGROUP <input id="SMB_WORKGROUP"></label>
       </div>
-    </section>
 
-    <section>
-      <h2>NAS</h2>
+      <h3>NAS</h3>
       <div class="grid">
         <label>NAS_ENABLED
           <select id="NAS_ENABLED">
@@ -52,6 +45,11 @@
         <label>NAS_REMOTE <input id="NAS_REMOTE"></label>
         <label>NAS_MOUNT <input id="NAS_MOUNT"></label>
         <label>NAS_CREDENTIALS <input id="NAS_CREDENTIALS"></label>
+      </div>
+
+      <div class="actions">
+        <button id="save-config">Save to Shadow</button>
+        <button id="apply-config">Save + Apply</button>
       </div>
     </section>
 
