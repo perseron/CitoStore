@@ -10,10 +10,33 @@ header {
   color: #fff;
   padding: 16px 24px;
 }
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.logo {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+.brand-accent {
+  color: #dc2626;
+}
+.meta {
+  font-size: 12px;
+  opacity: 0.8;
+}
 main {
   padding: 16px 24px;
   max-width: 1100px;
   margin: 0 auto;
+}
+footer {
+  text-align: center;
+  color: #6b7280;
+  font-size: 12px;
+  padding: 12px 0 24px;
 }
 section {
   background: #fff;
