@@ -239,6 +239,8 @@ def get_sync_timer_status() -> dict:
             "NextElapseUSecRealtime",
             "-p",
             "LastTriggerUSecRealtime",
+            "-p",
+            "NextElapseUSecMonotonic",
             "vision-sync.timer",
         ]
     )
@@ -252,6 +254,7 @@ def get_sync_timer_status() -> dict:
     return {
         "next_trigger": data.get("NextElapseUSecRealtime", "n/a"),
         "last_trigger": data.get("LastTriggerUSecRealtime", "n/a"),
+        "next_remaining": data.get("NextElapseUSecMonotonic", "n/a"),
     }
 
 
