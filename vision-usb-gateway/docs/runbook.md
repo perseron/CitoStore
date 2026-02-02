@@ -65,6 +65,8 @@ Boot-time auto-recovery
   - Removes stale sync snapshot LVs.
   - Validates active USB LV pointer; selects a valid LV if missing.
   - Validates `vision.db` and moves it aside if corrupted.
+  - Runs `fsck -p` on the mirror LV if it is not mounted.
+  - Runs `fsck.fat -a` on inactive USB LVs to repair FAT32 inconsistencies.
 
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`

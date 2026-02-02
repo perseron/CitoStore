@@ -16,8 +16,12 @@ STATE_DIR="$MIRROR_MOUNT/.state"
 DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
 ACTIVE_FILE=${USB_ACTIVE_PERSIST:-$STATE_DIR/vision-usb-active}
 VG="${LVM_VG:-vg0}"
+MIRROR_LV="${MIRROR_LV:-mirror}"
 USB_LVS=("${USB_LVS[@]:-usb_0 usb_1 usb_2}")
 SNAP_NAME=${SYNC_SNAPSHOT_NAME:-usb_sync_snap}
+HEALTHCHECK_FSCK_MIRROR=${HEALTHCHECK_FSCK_MIRROR:-true}
+HEALTHCHECK_FSCK_USB=${HEALTHCHECK_FSCK_USB:-true}
+USB_LABEL=${USB_LABEL:-VISIONUSB}
 
 if ! mountpoint -q "$MIRROR_MOUNT"; then
   log "mirror not mounted: $MIRROR_MOUNT"
@@ -45,6 +49,40 @@ if command -v lvs >/dev/null 2>&1; then
   if lvs "$VG/$SNAP_NAME" >/dev/null 2>&1; then
     log "stale snapshot detected: $VG/$SNAP_NAME (removing)"
     lvremove -f "$VG/$SNAP_NAME" || true
+  fi
+fi
+
+# Run fsck on mirror LV if not mounted.
+if [[ "$HEALTHCHECK_FSCK_MIRROR" == "true" ]]; then
+  if ! mountpoint -q "$MIRROR_MOUNT"; then
+    if command -v fsck >/dev/null 2>&1; then
+      log "fsck on /dev/$VG/$MIRROR_LV"
+      fsck -p "/dev/$VG/$MIRROR_LV" || true
+    fi
+  else
+    log "mirror mounted; skipping fsck"
+  fi
+fi
+
+# Run fsck on inactive USB LVs (FAT32) if possible.
+if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
+  if command -v fsck.fat >/dev/null 2>&1; then
+    active=""
+    if [[ -f "$ACTIVE_FILE" ]]; then
+      active=$(cat "$ACTIVE_FILE" | tr -d '[:space:]')
+    fi
+    for lv in "${USB_LVS[@]}"; do
+      dev="/dev/$VG/$lv"
+      if [[ "$dev" == "$active" ]]; then
+        continue
+      fi
+      if [[ -e "$dev" ]]; then
+        log "fsck.fat on $dev"
+        fsck.fat -a "$dev" || true
+      fi
+    done
+  else
+    log "fsck.fat not available; skipping USB fsck"
   fi
 fi
 
