@@ -257,12 +257,11 @@ def get_sync_timer_status() -> dict:
     next_remaining = "n/a"
     try:
         if next_mono_raw not in ("n/a", "infinity", ""):
-            next_mono = int(next_mono_raw)
+            total_sec = parse_duration_seconds(next_mono_raw)
             with open("/proc/uptime", "r", encoding="utf-8") as f:
                 uptime_sec = float(f.read().split()[0])
-            now_mono = int(uptime_sec * 1_000_000)
-            delta = max(0, next_mono - now_mono)
-            secs = delta // 1_000_000
+            delta = max(0, total_sec - uptime_sec)
+            secs = int(delta)
             mins, secs = divmod(secs, 60)
             hours, mins = divmod(mins, 60)
             if hours:
@@ -278,6 +277,53 @@ def get_sync_timer_status() -> dict:
         "last_trigger": last_trigger,
         "next_remaining": next_remaining,
     }
+
+
+def parse_duration_seconds(text: str) -> float:
+    units = {
+        "ms": 0.001,
+        "us": 0.000001,
+        "µs": 0.000001,
+        "ns": 0.000000001,
+        "s": 1.0,
+        "sec": 1.0,
+        "secs": 1.0,
+        "second": 1.0,
+        "seconds": 1.0,
+        "m": 60.0,
+        "min": 60.0,
+        "mins": 60.0,
+        "minute": 60.0,
+        "minutes": 60.0,
+        "h": 3600.0,
+        "hr": 3600.0,
+        "hrs": 3600.0,
+        "hour": 3600.0,
+        "hours": 3600.0,
+        "d": 86400.0,
+        "day": 86400.0,
+        "days": 86400.0,
+    }
+    total = 0.0
+    for token in text.split():
+        num = ""
+        unit = ""
+        for ch in token:
+            if ch.isdigit() or ch == ".":
+                num += ch
+            else:
+                unit += ch
+        if not num:
+            continue
+        unit = unit.strip()
+        if unit == "":
+            # Default to seconds if unit missing.
+            total += float(num)
+        elif unit in units:
+            total += float(num) * units[unit]
+        else:
+            raise ValueError(f"unknown unit: {unit}")
+    return total
 
 
 def get_active_usb_lv() -> str:
