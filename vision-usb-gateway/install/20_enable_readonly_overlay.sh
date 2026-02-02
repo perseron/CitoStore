@@ -14,6 +14,17 @@ for arg in "$@"; do
   esac
 done
 
+BOOT_MOUNT=/boot/firmware
+BOOT_WAS_RO=false
+if mountpoint -q "$BOOT_MOUNT"; then
+  opts=$(findmnt -no OPTIONS "$BOOT_MOUNT" 2>/dev/null || true)
+  if echo ",$opts," | grep -q ",ro,"; then
+    BOOT_WAS_RO=true
+    log "remounting $BOOT_MOUNT read-write"
+    mount -o remount,rw "$BOOT_MOUNT"
+  fi
+fi
+
 cmdline_add "overlayroot=tmpfs:recurse=0"
 
 if command -v raspi-config >/dev/null 2>&1; then
@@ -42,6 +53,13 @@ if $BOOT_RO; then
     echo '/dev/mmcblk0p1 /boot/firmware vfat ro,defaults 0 2' >> /etc/fstab
   else
     sed -i 's#/boot/firmware vfat #/boot/firmware vfat ro,#' /etc/fstab
+  fi
+fi
+
+if $BOOT_RO || $BOOT_WAS_RO; then
+  if mountpoint -q "$BOOT_MOUNT"; then
+    log "remounting $BOOT_MOUNT read-only"
+    mount -o remount,ro "$BOOT_MOUNT"
   fi
 fi
 

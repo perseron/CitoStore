@@ -7,11 +7,14 @@ source "$SCRIPT_DIR/../scripts/common.sh"
 
 require_root
 
-if mountpoint -q /boot/firmware; then
-  opts=$(findmnt -no OPTIONS /boot/firmware 2>/dev/null || true)
+BOOT_MOUNT=/boot/firmware
+BOOT_WAS_RO=false
+if mountpoint -q "$BOOT_MOUNT"; then
+  opts=$(findmnt -no OPTIONS "$BOOT_MOUNT" 2>/dev/null || true)
   if echo ",$opts," | grep -q ",ro,"; then
-    log "remounting /boot/firmware read-write"
-    mount -o remount,rw /boot/firmware
+    BOOT_WAS_RO=true
+    log "remounting $BOOT_MOUNT read-write"
+    mount -o remount,rw "$BOOT_MOUNT"
   fi
 fi
 
@@ -43,6 +46,13 @@ if $BOOT_RW; then
   log "setting boot partition read-write in fstab"
   if grep -q '^/dev/mmcblk0p1' /etc/fstab; then
     sed -i 's#/boot/firmware vfat ro,#/boot/firmware vfat #' /etc/fstab
+  fi
+fi
+
+if $BOOT_WAS_RO && ! $BOOT_RW; then
+  if mountpoint -q "$BOOT_MOUNT"; then
+    log "remounting $BOOT_MOUNT read-only"
+    mount -o remount,ro "$BOOT_MOUNT"
   fi
 fi
 

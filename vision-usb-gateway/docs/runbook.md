@@ -73,8 +73,12 @@ Rotation + maintenance
   - Optional duration file: `USB_PERSIST_DURATION_FILE` (default `/srv/vision_mirror/aoi_settings_duration.txt`)
 - Maintenance (overlay off):
   - `sudo install/21_disable_readonly_overlay.sh`
+  - The script auto-remounts `/boot/firmware` read-write if needed, then returns it to read-only.
+  - Use `--boot-rw` to make `/boot/firmware` writable in `fstab`.
   - Reboot, perform changes
   - `sudo install/20_enable_readonly_overlay.sh`
+  - The script auto-remounts `/boot/firmware` read-write if needed, then returns it to read-only.
+  - Use `--boot-ro` to force `/boot/firmware` read-only in `fstab`.
   - Reboot
 
 Operational flow (precise)
