@@ -73,6 +73,7 @@ chmod 0755 /srv/vision_mirror
 chmod 0755 /srv/vision_mirror/.state
 
 systemctl daemon-reload
+systemctl enable vision-gw-health.service
 systemctl enable usb-gadget.service
 systemctl enable vision-gw-network.service
 systemctl enable vision-gw-config.service

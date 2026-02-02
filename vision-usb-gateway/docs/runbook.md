@@ -58,6 +58,14 @@ Web UI (minimal config + maintenance)
   - `systemctl status vision-webui.service`
   - `curl -I http://127.0.0.1/` (expect 200/303)
 
+Boot-time auto-recovery
+- `vision-gw-health.service` runs before core services and auto-recovers common issues:
+  - Restores missing shadow config from defaults.
+  - Fixes missing `GATEWAY_HOME` in shadow config.
+  - Removes stale sync snapshot LVs.
+  - Validates active USB LV pointer; selects a valid LV if missing.
+  - Validates `vision.db` and moves it aside if corrupted.
+
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
 - Offline processing logs: `journalctl -u offline-maint@usb_0`
