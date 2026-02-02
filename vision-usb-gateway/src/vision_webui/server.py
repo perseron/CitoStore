@@ -232,46 +232,22 @@ def get_service_status() -> dict:
 
 def get_sync_timer_status() -> dict:
     code, out, err = run_cmd(
-        [
-            "systemctl",
-            "show",
-            "-p",
-            "NextElapseUSecRealtime",
-            "-p",
-            "LastTriggerUSecRealtime",
-            "-p",
-            "NextElapseUSecMonotonic",
-            "vision-sync.timer",
-        ]
+        ["systemctl", "list-timers", "--all", "--no-legend", "vision-sync.timer"]
     )
     if code != 0:
         return {"error": err or "failed to read timer"}
-    data = {}
-    for line in out.splitlines():
-        if "=" in line:
-            key, value = line.split("=", 1)
-            data[key] = value
-    next_trigger = data.get("NextElapseUSecRealtime", "n/a")
-    next_remaining = data.get("NextElapseUSecMonotonic", "n/a")
-    if next_remaining in ("", "n/a") and next_trigger not in ("", "n/a"):
-        code_now, out_now, _ = run_cmd(["date", "+%s"])
-        code_next, out_next, _ = run_cmd(["date", "-d", next_trigger, "+%s"])
-        if code_now == 0 and code_next == 0:
-            try:
-                delta = max(0, int(out_next) - int(out_now))
-                mins, secs = divmod(delta, 60)
-                hours, mins = divmod(mins, 60)
-                if hours:
-                    next_remaining = f"{hours}h {mins}m {secs}s"
-                elif mins:
-                    next_remaining = f"{mins}m {secs}s"
-                else:
-                    next_remaining = f"{secs}s"
-            except ValueError:
-                next_remaining = "n/a"
+    line = out.strip()
+    if not line:
+        return {"next_trigger": "n/a", "last_trigger": "n/a", "next_remaining": "n/a"}
+    parts = line.split()
+    if len(parts) < 6:
+        return {"next_trigger": "n/a", "last_trigger": "n/a", "next_remaining": "n/a"}
+    next_trigger = " ".join(parts[0:5])
+    next_remaining = parts[5]
+    last_trigger = " ".join(parts[6:11]) if len(parts) >= 11 else "n/a"
     return {
         "next_trigger": next_trigger,
-        "last_trigger": data.get("LastTriggerUSecRealtime", "n/a"),
+        "last_trigger": last_trigger,
         "next_remaining": next_remaining,
     }
 
