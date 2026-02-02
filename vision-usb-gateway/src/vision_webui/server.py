@@ -24,6 +24,7 @@ LOCK_FILE = Path("/run/vision-webui.lock")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 DEFAULT_CONF = Path("/etc/vision-gw.conf")
+NAS_CREDS = Path("/etc/vision-nas.creds")
 
 SESSION_TTL_SEC = 8 * 60 * 60
 
@@ -37,7 +38,6 @@ ALLOWED_CONFIG_KEYS = {
     "NAS_ENABLED",
     "NAS_REMOTE",
     "NAS_MOUNT",
-    "NAS_CREDENTIALS",
     "WEBUI_BIND",
     "WEBUI_PORT",
 }
@@ -99,6 +99,35 @@ def parse_config(text: str) -> dict:
         value = value.strip().strip('"')
         cfg[key] = value
     return cfg
+
+
+def parse_nas_creds(text: str) -> dict:
+    creds = {"username": "", "password": "", "domain": ""}
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#") or "=" not in s:
+            continue
+        key, value = s.split("=", 1)
+        key = key.strip().lower()
+        value = value.strip()
+        if key == "username":
+            creds["username"] = value
+        elif key == "password":
+            creds["password"] = value
+        elif key == "domain":
+            creds["domain"] = value
+    return creds
+
+
+def render_nas_creds(creds: dict) -> str:
+    lines = [
+        f"username={creds.get('username', '').strip()}",
+        f"password={creds.get('password', '').strip()}",
+    ]
+    domain = creds.get("domain", "").strip()
+    if domain:
+        lines.append(f"domain={domain}")
+    return "\n".join(lines) + "\n"
 
 
 def format_value(value: str) -> str:
@@ -533,6 +562,12 @@ class WebHandler(BaseHTTPRequestHandler):
             cfg = parse_config(load_config_text())
             payload = {k: cfg.get(k, "") for k in ALLOWED_CONFIG_KEYS}
             return self.send_json(payload)
+        if self.path.startswith("/api/nas-creds"):
+            if NAS_CREDS.exists():
+                creds = parse_nas_creds(NAS_CREDS.read_text(encoding="utf-8"))
+            else:
+                creds = {"username": "", "password": "", "domain": ""}
+            return self.send_json(creds)
         if self.path.startswith("/api/network"):
             cfg = parse_config(load_config_text())
             iface = cfg.get("SMB_BIND_INTERFACE", "eth0")
@@ -554,6 +589,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_error(HTTPStatus.FORBIDDEN, "CSRF validation failed")
         if self.path == "/api/config":
             return self.handle_config_update()
+        if self.path == "/api/nas-creds":
+            return self.handle_nas_creds()
         if self.path == "/api/apply":
             return self.handle_apply()
         if self.path == "/api/password/webui":
@@ -678,6 +715,22 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_json({"ok": True})
         finally:
             lock.close()
+
+    def handle_nas_creds(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        data = json.loads(body or "{}")
+        creds = {
+            "username": str(data.get("username", "")).strip(),
+            "password": str(data.get("password", "")).strip(),
+            "domain": str(data.get("domain", "")).strip(),
+        }
+        if creds["username"] == "" and creds["password"] == "" and creds["domain"] == "":
+            return self.send_json({"ok": True})
+        NAS_CREDS.write_text(render_nas_creds(creds), encoding="utf-8")
+        os.chmod(NAS_CREDS, 0o600)
+        log("nas creds updated")
+        return self.send_json({"ok": True})
 
     def handle_maintenance(self, action):
         length = int(self.headers.get("Content-Length", 0))

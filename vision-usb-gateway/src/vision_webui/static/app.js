@@ -54,6 +54,10 @@ async function loadStatus() {
 async function loadConfig() {
   const cfg = await api("/api/config", { method: "GET" });
   fillConfig(cfg);
+  const creds = await api("/api/nas-creds", { method: "GET" });
+  if (creds.username !== undefined) document.getElementById("NAS_USERNAME").value = creds.username || "";
+  if (creds.password !== undefined) document.getElementById("NAS_PASSWORD").value = creds.password || "";
+  if (creds.domain !== undefined) document.getElementById("NAS_DOMAIN").value = creds.domain || "";
   const net = await api("/api/network", { method: "GET" });
   if (net.interface) document.getElementById("NET_IFACE").value = net.interface;
   if (net.method) document.getElementById("NET_METHOD").value = net.method === "manual" ? "manual" : "auto";
@@ -77,9 +81,16 @@ async function saveConfig(apply = false) {
     NAS_ENABLED: document.getElementById("NAS_ENABLED").value,
     NAS_REMOTE: document.getElementById("NAS_REMOTE").value,
     NAS_MOUNT: document.getElementById("NAS_MOUNT").value,
-    NAS_CREDENTIALS: document.getElementById("NAS_CREDENTIALS").value,
   };
   await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
+  await api("/api/nas-creds", {
+    method: "POST",
+    body: JSON.stringify({
+      username: document.getElementById("NAS_USERNAME").value,
+      password: document.getElementById("NAS_PASSWORD").value,
+      domain: document.getElementById("NAS_DOMAIN").value,
+    }),
+  });
   if (apply) await api("/api/apply", { method: "POST", body: "{}" });
   setStatus("Config saved" + (apply ? " and applied" : ""));
 }
