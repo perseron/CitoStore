@@ -23,48 +23,48 @@
       <h2>Configuration</h2>
       <h3>Sync</h3>
       <div class="grid">
-        <label>SYNC_INTERVAL_SEC <input id="SYNC_INTERVAL_SEC" data-validate="time">
+        <label>Sync interval <input id="SYNC_INTERVAL_SEC" data-validate="time">
           <span class="hint">e.g. 30s, 2min</span>
         </label>
-        <label>SYNC_ONBOOT_SEC <input id="SYNC_ONBOOT_SEC" data-validate="time">
+        <label>First sync after boot <input id="SYNC_ONBOOT_SEC" data-validate="time">
           <span class="hint">e.g. 2min</span>
         </label>
-        <label>SYNC_ONACTIVE_SEC <input id="SYNC_ONACTIVE_SEC" data-validate="time">
+        <label>First sync after timer start <input id="SYNC_ONACTIVE_SEC" data-validate="time">
           <span class="hint">e.g. 2min</span>
         </label>
       </div>
 
       <h3>Samba</h3>
       <div class="grid">
-        <label>NETBIOS_NAME <input id="NETBIOS_NAME" data-validate="netbios">
+        <label>NetBIOS name <input id="NETBIOS_NAME" data-validate="netbios">
           <span class="hint">1-15 chars, letters/numbers/_/-</span>
         </label>
-        <label>SMB_WORKGROUP <input id="SMB_WORKGROUP" data-validate="netbios">
+        <label>Workgroup <input id="SMB_WORKGROUP" data-validate="netbios">
           <span class="hint">1-15 chars, letters/numbers/_/-</span>
         </label>
       </div>
 
       <h3>NAS</h3>
       <div class="grid">
-        <label>NAS_ENABLED
+        <label>Enable NAS sync
           <select id="NAS_ENABLED">
             <option value="false">false</option>
             <option value="true">true</option>
           </select>
         </label>
-        <label>NAS_REMOTE <input id="NAS_REMOTE" data-validate="nas-remote">
+        <label>NAS share path <input id="NAS_REMOTE" data-validate="nas-remote">
           <span class="hint">e.g. //nas/vision</span>
         </label>
-        <label>NAS_MOUNT <input id="NAS_MOUNT" data-validate="path">
+        <label>Local mount path <input id="NAS_MOUNT" data-validate="path">
           <span class="hint">absolute path, e.g. /mnt/nas</span>
         </label>
-        <label>NAS_USERNAME <input id="NAS_USERNAME" data-validate="user">
+        <label>NAS username <input id="NAS_USERNAME" data-validate="user">
           <span class="hint">optional</span>
         </label>
-        <label>NAS_PASSWORD <input id="NAS_PASSWORD" type="password" data-validate="password">
+        <label>NAS password <input id="NAS_PASSWORD" type="password" data-validate="password">
           <span class="hint">optional</span>
         </label>
-        <label>NAS_DOMAIN <input id="NAS_DOMAIN" data-validate="domain">
+        <label>NAS domain <input id="NAS_DOMAIN" data-validate="domain">
           <span class="hint">optional</span>
         </label>
       </div>

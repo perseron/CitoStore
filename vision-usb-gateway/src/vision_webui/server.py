@@ -400,6 +400,28 @@ def get_network_config(iface: str) -> dict:
     }
 
 
+def get_disk_usage(path: str) -> dict:
+    code, out, err = run_cmd(
+        ["df", "-h", "--output=source,size,used,avail,pcent,target", path]
+    )
+    if code != 0:
+        return {"error": err or "failed to read disk usage"}
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return {"error": "no disk usage data"}
+    parts = lines[1].split()
+    if len(parts) < 6:
+        return {"error": "unexpected disk usage format"}
+    return {
+        "source": parts[0],
+        "size": parts[1],
+        "used": parts[2],
+        "avail": parts[3],
+        "percent": parts[4],
+        "target": parts[5],
+    }
+
+
 def apply_network_config(iface: str, method: str, address: str, prefix: str, gateway: str, dns: str):
     conn = get_nm_active_connection(iface)
     if not conn:
@@ -556,6 +578,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 "active_usb_lv": get_active_usb_lv(),
                 "network": get_network_config(iface),
                 "sync_timer": get_sync_timer_status(),
+                "mirror_usage": get_disk_usage("/srv/vision_mirror"),
             }
             return self.send_json(data)
         if self.path.startswith("/api/config"):

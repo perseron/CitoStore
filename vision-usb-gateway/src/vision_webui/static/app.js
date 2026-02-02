@@ -94,11 +94,15 @@ async function loadStatus() {
   document.getElementById("status-usb").textContent = `Active USB LV: ${data.active_usb_lv}`;
   const net = data.network || {};
   const timer = data.sync_timer || {};
+  const usage = data.mirror_usage || {};
   const timerLine = timer.next_remaining
     ? `Next sync in: ${timer.next_remaining}`
     : "Next sync in: n/a";
+  const usageLine = usage.percent
+    ? `Mirror usage: ${usage.percent} (${usage.used} / ${usage.size})`
+    : "Mirror usage: n/a";
   document.getElementById("status-network").textContent =
-    `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}\n${timerLine}`;
+    `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}\n${timerLine}\n${usageLine}`;
   setStatus("OK");
 }
 
