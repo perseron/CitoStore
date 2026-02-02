@@ -36,6 +36,16 @@ label {
   font-size: 12px;
   gap: 4px;
 }
+.hint {
+  color: #6b7280;
+  font-size: 11px;
+}
+.invalid input, .invalid select {
+  border-color: #b91c1c;
+}
+.invalid .hint {
+  color: #b91c1c;
+}
 input, select {
   padding: 8px;
   border: 1px solid #cbd5e1;

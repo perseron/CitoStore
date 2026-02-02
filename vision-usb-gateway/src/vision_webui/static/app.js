@@ -26,6 +26,57 @@ function setStatus(text) {
   document.getElementById("status-line").textContent = text;
 }
 
+function setFieldValidity(el, ok, message = "") {
+  const label = el.closest("label");
+  if (!label) return;
+  if (ok) {
+    label.classList.remove("invalid");
+    if (message) label.querySelector(".hint").textContent = message;
+  } else {
+    label.classList.add("invalid");
+    if (message) label.querySelector(".hint").textContent = message;
+  }
+}
+
+function validateField(el) {
+  const rule = el.dataset.validate || "";
+  const value = (el.value || "").trim();
+  if (!rule) return true;
+  if (rule === "time") {
+    const ok = /^[0-9]+(ms|s|sec|secs|min|mins|h|hr|hrs|d|day|days)?$/.test(value);
+    setFieldValidity(el, ok, ok ? "e.g. 30s, 2min" : "invalid time");
+    return ok;
+  }
+  if (rule === "netbios") {
+    const ok = value.length >= 1 && value.length <= 15 && /^[A-Za-z0-9_-]+$/.test(value);
+    setFieldValidity(el, ok, ok ? "1-15 chars, letters/numbers/_/-" : "invalid");
+    return ok;
+  }
+  if (rule === "nas-remote") {
+    const ok = value === "" || /^\/\/[^/]+\/.+/.test(value);
+    setFieldValidity(el, ok, ok ? "e.g. //nas/vision" : "invalid //host/share");
+    return ok;
+  }
+  if (rule === "path") {
+    const ok = value === "" || value.startsWith("/");
+    setFieldValidity(el, ok, ok ? "absolute path" : "must start with /");
+    return ok;
+  }
+  if (rule === "user" || rule === "domain" || rule === "password") {
+    setFieldValidity(el, true, "optional");
+    return true;
+  }
+  return true;
+}
+
+function validateAll() {
+  let ok = true;
+  document.querySelectorAll("[data-validate]").forEach(el => {
+    if (!validateField(el)) ok = false;
+  });
+  return ok;
+}
+
 function fillConfig(cfg) {
   for (const key of Object.keys(cfg)) {
     const el = document.getElementById(key);
@@ -72,6 +123,10 @@ async function loadConfig() {
 }
 
 async function saveConfig(apply = false) {
+  if (!validateAll()) {
+    setStatus("Fix invalid fields before saving");
+    return;
+  }
   const payload = {
     NETBIOS_NAME: document.getElementById("NETBIOS_NAME").value,
     SMB_WORKGROUP: document.getElementById("SMB_WORKGROUP").value,
@@ -160,3 +215,7 @@ async function refreshStatus() {
 
 refreshStatus().then(loadConfig).catch(err => setStatus("Error: " + err.message));
 setInterval(refreshStatus, 10000);
+
+document.querySelectorAll("[data-validate]").forEach(el => {
+  el.addEventListener("input", () => validateField(el));
+});
