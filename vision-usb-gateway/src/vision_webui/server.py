@@ -232,19 +232,47 @@ def get_service_status() -> dict:
 
 def get_sync_timer_status() -> dict:
     code, out, err = run_cmd(
-        ["systemctl", "list-timers", "--all", "--no-legend", "vision-sync.timer"]
+        [
+            "systemctl",
+            "show",
+            "-p",
+            "NextElapseUSecRealtime",
+            "-p",
+            "LastTriggerUSecRealtime",
+            "-p",
+            "NextElapseUSecMonotonic",
+            "vision-sync.timer",
+        ]
     )
     if code != 0:
         return {"error": err or "failed to read timer"}
-    line = out.strip()
-    if not line:
-        return {"next_trigger": "n/a", "last_trigger": "n/a", "next_remaining": "n/a"}
-    parts = line.split()
-    if len(parts) < 6:
-        return {"next_trigger": "n/a", "last_trigger": "n/a", "next_remaining": "n/a"}
-    next_trigger = " ".join(parts[0:5])
-    next_remaining = parts[5]
-    last_trigger = " ".join(parts[6:11]) if len(parts) >= 11 else "n/a"
+    data = {}
+    for line in out.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            data[key] = value
+    next_trigger = data.get("NextElapseUSecRealtime", "n/a")
+    last_trigger = data.get("LastTriggerUSecRealtime", "n/a")
+    next_mono_raw = data.get("NextElapseUSecMonotonic", "n/a")
+    next_remaining = "n/a"
+    try:
+        if next_mono_raw not in ("n/a", "infinity", ""):
+            next_mono = int(next_mono_raw)
+            with open("/proc/uptime", "r", encoding="utf-8") as f:
+                uptime_sec = float(f.read().split()[0])
+            now_mono = int(uptime_sec * 1_000_000)
+            delta = max(0, next_mono - now_mono)
+            secs = delta // 1_000_000
+            mins, secs = divmod(secs, 60)
+            hours, mins = divmod(mins, 60)
+            if hours:
+                next_remaining = f"{hours}h {mins}m {secs}s"
+            elif mins:
+                next_remaining = f"{mins}m {secs}s"
+            else:
+                next_remaining = f"{secs}s"
+    except (ValueError, OSError):
+        next_remaining = "n/a"
     return {
         "next_trigger": next_trigger,
         "last_trigger": last_trigger,
