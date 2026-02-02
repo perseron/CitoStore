@@ -5,7 +5,8 @@ Requires=vision-gw-config.service
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/vision-gw.env
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/usr/bin/python3 -m vision_sync.sync --config /etc/vision-gw.conf
 ProtectSystem=strict
 PrivateTmp=true

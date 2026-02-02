@@ -25,6 +25,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 DEFAULT_CONF = Path("/etc/vision-gw.conf")
 NAS_CREDS = Path("/etc/vision-nas.creds")
+NETWORK_STATE = STATE_DIR / "network.json"
 
 SESSION_TTL_SEC = 8 * 60 * 60
 
@@ -735,6 +736,20 @@ class WebHandler(BaseHTTPRequestHandler):
             log(f"network update iface={iface} rc={code} out={out} err={err}")
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
+            NETWORK_STATE.write_text(
+                json.dumps(
+                    {
+                        "interface": iface,
+                        "method": method,
+                        "address": address,
+                        "prefix": prefix,
+                        "gateway": gateway,
+                        "dns": dns,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            os.chmod(NETWORK_STATE, 0o600)
             return self.send_json({"ok": True})
         finally:
             lock.close()

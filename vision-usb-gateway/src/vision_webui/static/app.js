@@ -42,6 +42,13 @@ function validateField(el) {
   const rule = el.dataset.validate || "";
   const value = (el.value || "").trim();
   if (!rule) return true;
+  if (rule.startsWith("match:")) {
+    const targetId = rule.split(":", 2)[1];
+    const target = document.getElementById(targetId);
+    const ok = target ? value === target.value : false;
+    setFieldValidity(el, ok, ok ? "must match" : "does not match");
+    return ok;
+  }
   if (rule === "time") {
     const ok = /^[0-9]+(ms|s|sec|secs|min|mins|h|hr|hrs|d|day|days)?$/.test(value);
     setFieldValidity(el, ok, ok ? "e.g. 30s, 2min" : "invalid time");
@@ -62,8 +69,57 @@ function validateField(el) {
     setFieldValidity(el, ok, ok ? "absolute path" : "must start with /");
     return ok;
   }
+  if (rule === "iface") {
+    const ok = value.length > 0 && /^[A-Za-z0-9_.:-]+$/.test(value);
+    setFieldValidity(el, ok, ok ? "e.g. eth0" : "invalid interface");
+    return ok;
+  }
+  if (rule === "ip") {
+    const method = document.getElementById("NET_METHOD")?.value || "auto";
+    if (method === "auto" && value === "") {
+      setFieldValidity(el, true, "required for static");
+      return true;
+    }
+    const ok = /^(\d{1,3}\.){3}\d{1,3}$/.test(value);
+    setFieldValidity(el, ok, ok ? "IPv4" : "invalid IPv4");
+    return ok;
+  }
+  if (rule === "ip-optional") {
+    const ok = value === "" || /^(\d{1,3}\.){3}\d{1,3}$/.test(value);
+    setFieldValidity(el, ok, ok ? "optional" : "invalid IPv4");
+    return ok;
+  }
+  if (rule === "prefix") {
+    const method = document.getElementById("NET_METHOD")?.value || "auto";
+    if (method === "auto" && value === "") {
+      setFieldValidity(el, true, "required for static");
+      return true;
+    }
+    const num = Number(value);
+    const ok = Number.isInteger(num) && num >= 1 && num <= 32;
+    setFieldValidity(el, ok, ok ? "1-32" : "invalid prefix");
+    return ok;
+  }
+  if (rule === "dns") {
+    if (value === "") {
+      setFieldValidity(el, true, "optional");
+      return true;
+    }
+    const ok = value.split(",").every(v => /^(\d{1,3}\.){3}\d{1,3}$/.test(v.trim()));
+    setFieldValidity(el, ok, ok ? "comma-separated IPv4" : "invalid DNS list");
+    return ok;
+  }
+  if (rule === "size") {
+    const ok = /^[0-9]+(K|M|G|T)?$/.test(value);
+    setFieldValidity(el, ok, ok ? "e.g. 100G, 512M" : "invalid size");
+    return ok;
+  }
   if (rule === "user" || rule === "domain" || rule === "password") {
-    setFieldValidity(el, true, "optional");
+    if (rule === "password" && value !== "" && value.length < 6) {
+      setFieldValidity(el, false, "min 6 chars");
+      return false;
+    }
+    setFieldValidity(el, true, value === "" ? "optional" : "ok");
     return true;
   }
   return true;
@@ -155,6 +211,10 @@ async function saveConfig(apply = false) {
 }
 
 async function applyNetwork() {
+  if (!validateAll()) {
+    setStatus("Fix invalid fields before applying network");
+    return;
+  }
   const payload = {
     interface: document.getElementById("NET_IFACE").value,
     method: document.getElementById("NET_METHOD").value,
@@ -168,6 +228,10 @@ async function applyNetwork() {
 }
 
 async function changeWebuiPassword() {
+  if (!validateAll()) {
+    setStatus("Fix invalid fields before changing password");
+    return;
+  }
   const password = document.getElementById("WEBUI_PASS").value;
   const confirm = document.getElementById("WEBUI_PASS2").value;
   await api("/api/password/webui", { method: "POST", body: JSON.stringify({ password, confirm }) });
@@ -175,6 +239,10 @@ async function changeWebuiPassword() {
 }
 
 async function changeSmbPassword() {
+  if (!validateAll()) {
+    setStatus("Fix invalid fields before changing password");
+    return;
+  }
   const password = document.getElementById("SMB_PASS").value;
   const confirm = document.getElementById("SMB_PASS2").value;
   await api("/api/password/smb", { method: "POST", body: JSON.stringify({ password, confirm }) });
@@ -194,6 +262,11 @@ async function maintenance(action) {
   if (action === "resize") {
     const ok = prompt('Type "RESIZE" to confirm.');
     if (ok !== "RESIZE") return;
+    const sizeField = document.getElementById("RESIZE_SIZE");
+    if (!validateField(sizeField)) {
+      setStatus("Invalid resize size");
+      return;
+    }
     payload.size = document.getElementById("RESIZE_SIZE").value;
   }
   await api(`/api/maintenance/${action}`, { method: "POST", body: JSON.stringify(payload) });
@@ -223,3 +296,13 @@ setInterval(refreshStatus, 10000);
 document.querySelectorAll("[data-validate]").forEach(el => {
   el.addEventListener("input", () => validateField(el));
 });
+
+const methodEl = document.getElementById("NET_METHOD");
+if (methodEl) {
+  methodEl.addEventListener("change", () => {
+    ["NET_ADDR", "NET_PREFIX", "NET_GW", "NET_DNS"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) validateField(el);
+    });
+  });
+}

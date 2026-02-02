@@ -6,7 +6,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/vision-gw.env
+Environment=SMB_BIND_INTERFACE=eth0
+Environment=NETBIOS_NAME=CITOSTORE
+Environment=SMB_WORKGROUP=WORKGROUP
+EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/usr/sbin/wsdd -i ${SMB_BIND_INTERFACE} -n ${NETBIOS_NAME} -w ${SMB_WORKGROUP}
 Restart=on-failure
 RestartSec=5

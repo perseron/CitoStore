@@ -74,6 +74,7 @@ chmod 0755 /srv/vision_mirror/.state
 
 systemctl daemon-reload
 systemctl enable usb-gadget.service
+systemctl enable vision-gw-network.service
 systemctl enable vision-gw-config.service
 systemctl enable vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer
 systemctl enable vision-webui.service

@@ -52,6 +52,7 @@ Web UI (minimal config + maintenance)
   - Updates systemd overrides (`vision-sync.timer`)
   - Reconfigures Samba + WSDD
   - Enables/disables NAS units based on `NAS_ENABLED`
+- Network settings are persisted in `/srv/vision_mirror/.state/network.json` and applied on boot by `vision-gw-network.service`.
 - Destructive actions require typed confirmation in the UI.
 - Smoke check:
   - `systemctl status vision-webui.service`

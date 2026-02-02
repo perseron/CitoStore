@@ -1,0 +1,15 @@
+[Unit]
+Description=Apply Network Settings from Shadow
+After=NetworkManager.service
+Wants=NetworkManager.service
+Before=network-online.target
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/apply-network.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

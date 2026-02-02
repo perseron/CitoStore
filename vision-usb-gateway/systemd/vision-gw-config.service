@@ -4,7 +4,8 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
-EnvironmentFile=/etc/vision-gw.env
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/update-config.sh
 RemainAfterExit=yes
 

@@ -6,7 +6,7 @@ Requires=vision-gw-config.service
 
 [Service]
 Type=simple
-EnvironmentFile=/etc/vision-gw.env
+EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/usr/bin/python3 -m vision_webui.server
 Restart=on-failure
 RestartSec=5

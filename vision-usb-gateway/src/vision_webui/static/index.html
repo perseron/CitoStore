@@ -81,17 +81,27 @@
     <section>
       <h2>Network (NetworkManager)</h2>
       <div class="grid">
-        <label>Interface <input id="NET_IFACE" value="eth0"></label>
+        <label>Interface <input id="NET_IFACE" value="eth0" data-validate="iface">
+          <span class="hint">e.g. eth0</span>
+        </label>
         <label>Method
           <select id="NET_METHOD">
             <option value="auto">DHCP</option>
             <option value="manual">Static</option>
           </select>
         </label>
-        <label>Address <input id="NET_ADDR" placeholder="192.168.1.50"></label>
-        <label>Prefix <input id="NET_PREFIX" placeholder="24"></label>
-        <label>Gateway <input id="NET_GW" placeholder="192.168.1.1"></label>
-        <label>DNS <input id="NET_DNS" placeholder="1.1.1.1,8.8.8.8"></label>
+        <label>Address <input id="NET_ADDR" placeholder="192.168.1.50" data-validate="ip">
+          <span class="hint">IPv4, required for static</span>
+        </label>
+        <label>Prefix <input id="NET_PREFIX" placeholder="24" data-validate="prefix">
+          <span class="hint">1-32, required for static</span>
+        </label>
+        <label>Gateway <input id="NET_GW" placeholder="192.168.1.1" data-validate="ip-optional">
+          <span class="hint">optional</span>
+        </label>
+        <label>DNS <input id="NET_DNS" placeholder="1.1.1.1,8.8.8.8" data-validate="dns">
+          <span class="hint">comma-separated IPv4</span>
+        </label>
       </div>
       <div class="actions">
         <button id="apply-network">Apply Network</button>
@@ -101,15 +111,23 @@
     <section>
       <h2>Security</h2>
       <div class="grid">
-        <label>New Web UI Password <input id="WEBUI_PASS" type="password"></label>
-        <label>Confirm Web UI Password <input id="WEBUI_PASS2" type="password"></label>
+        <label>New Web UI Password <input id="WEBUI_PASS" type="password" data-validate="password">
+          <span class="hint">min 6 chars</span>
+        </label>
+        <label>Confirm Web UI Password <input id="WEBUI_PASS2" type="password" data-validate="match:WEBUI_PASS">
+          <span class="hint">must match</span>
+        </label>
       </div>
       <div class="actions">
         <button id="save-webui-pass">Change Web UI Password</button>
       </div>
       <div class="grid">
-        <label>New SMB Password <input id="SMB_PASS" type="password"></label>
-        <label>Confirm SMB Password <input id="SMB_PASS2" type="password"></label>
+        <label>New SMB Password <input id="SMB_PASS" type="password" data-validate="password">
+          <span class="hint">min 6 chars</span>
+        </label>
+        <label>Confirm SMB Password <input id="SMB_PASS2" type="password" data-validate="match:SMB_PASS">
+          <span class="hint">must match</span>
+        </label>
       </div>
       <div class="actions">
         <button id="save-smb-pass">Change SMB Password</button>
@@ -119,7 +137,9 @@
     <section>
       <h2>Maintenance</h2>
       <div class="grid">
-        <label>Resize USB LV Size <input id="RESIZE_SIZE" placeholder="100G"></label>
+        <label>Resize USB LV Size <input id="RESIZE_SIZE" placeholder="100G" data-validate="size">
+          <span class="hint">e.g. 100G, 512M</span>
+        </label>
       </div>
       <div class="actions">
         <button class="danger" id="resize-usb">Resize USB LVs</button>

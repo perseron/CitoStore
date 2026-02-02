@@ -5,7 +5,8 @@ After=local-fs.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-EnvironmentFile=/etc/vision-gw.env
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/usb-gadget.sh start
 ExecStop=/bin/bash ${GATEWAY_HOME}/scripts/usb-gadget.sh stop
 ProtectSystem=strict
