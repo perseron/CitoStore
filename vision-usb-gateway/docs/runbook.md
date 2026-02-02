@@ -25,6 +25,11 @@ Install
    - NetBIOS name + WSDD use `NETBIOS_NAME` and `SMB_WORKGROUP` in `/etc/vision-gw.conf`
 8) Optional NAS
    - `sudo install/60_configure_nas_optional.sh`
+   - Creates `/etc/vision-nas.creds` if missing (mode `0600`).
+   - Contents format:
+     - `username=<nas_user>`
+     - `password=<nas_password>`
+     - `domain=<nas_domain>` (optional)
 9) Reboot
    - `sudo reboot`
 
@@ -39,6 +44,7 @@ Web UI (minimal config + maintenance)
 - Service: `vision-webui.service`
 - Default bind/port: `WEBUI_BIND=0.0.0.0`, `WEBUI_PORT=80`
 - Access from Windows browser: `http://<device-ip>/`
+- Minimal required config for Web UI: `WEBUI_BIND`, `WEBUI_PORT`, `SMB_BIND_INTERFACE`.
 - First login prompts for a Web UI password (stored hashed in `/srv/vision_mirror/.state/webui.passwd`).
 - The UI edits a shadow config at `/srv/vision_mirror/.state/vision-gw.conf`.
 - Apply config triggers `apply-shadow-config.sh`, which:

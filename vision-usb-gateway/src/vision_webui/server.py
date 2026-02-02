@@ -230,6 +230,31 @@ def get_service_status() -> dict:
     return status
 
 
+def get_sync_timer_status() -> dict:
+    code, out, err = run_cmd(
+        [
+            "systemctl",
+            "show",
+            "-p",
+            "NextElapseUSecRealtime",
+            "-p",
+            "LastTriggerUSecRealtime",
+            "vision-sync.timer",
+        ]
+    )
+    if code != 0:
+        return {"error": err or "failed to read timer"}
+    data = {}
+    for line in out.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            data[key] = value
+    return {
+        "next_trigger": data.get("NextElapseUSecRealtime", "n/a"),
+        "last_trigger": data.get("LastTriggerUSecRealtime", "n/a"),
+    }
+
+
 def get_active_usb_lv() -> str:
     path = STATE_DIR / "vision-usb-active"
     if path.exists():
@@ -430,6 +455,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 "services": get_service_status(),
                 "active_usb_lv": get_active_usb_lv(),
                 "network": get_network_config(iface),
+                "sync_timer": get_sync_timer_status(),
             }
             return self.send_json(data)
         if self.path.startswith("/api/config"):

@@ -42,7 +42,10 @@ async function loadStatus() {
   document.getElementById("status-services").textContent = svcLines.join("\n");
   document.getElementById("status-usb").textContent = `Active USB LV: ${data.active_usb_lv}`;
   const net = data.network || {};
-  document.getElementById("status-network").textContent = `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}`;
+  const timer = data.sync_timer || {};
+  const timerLine = timer.next_trigger ? `Next sync: ${timer.next_trigger}` : "Next sync: n/a";
+  document.getElementById("status-network").textContent =
+    `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}\n${timerLine}`;
   setStatus("OK");
 }
 
@@ -67,9 +70,6 @@ async function saveConfig(apply = false) {
     NETBIOS_NAME: document.getElementById("NETBIOS_NAME").value,
     SMB_WORKGROUP: document.getElementById("SMB_WORKGROUP").value,
     SMB_BIND_INTERFACE: document.getElementById("SMB_BIND_INTERFACE").value,
-    SYNC_INTERVAL_SEC: document.getElementById("SYNC_INTERVAL_SEC").value,
-    SYNC_ONBOOT_SEC: document.getElementById("SYNC_ONBOOT_SEC").value,
-    SYNC_ONACTIVE_SEC: document.getElementById("SYNC_ONACTIVE_SEC").value,
     NAS_ENABLED: document.getElementById("NAS_ENABLED").value,
     NAS_REMOTE: document.getElementById("NAS_REMOTE").value,
     NAS_MOUNT: document.getElementById("NAS_MOUNT").value,

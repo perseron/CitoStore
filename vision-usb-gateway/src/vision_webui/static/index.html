@@ -20,14 +20,29 @@
     </section>
 
     <section>
-      <h2>Configuration</h2>
+      <h2>Web UI</h2>
       <div class="grid">
+        <label>WEBUI_BIND <input id="WEBUI_BIND"></label>
+        <label>WEBUI_PORT <input id="WEBUI_PORT"></label>
+      </div>
+      <div class="actions">
+        <button id="save-config">Save to Shadow</button>
+        <button id="apply-config">Save + Apply</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Samba</h2>
+      <div class="grid">
+        <label>SMB_BIND_INTERFACE <input id="SMB_BIND_INTERFACE"></label>
         <label>NETBIOS_NAME <input id="NETBIOS_NAME"></label>
         <label>SMB_WORKGROUP <input id="SMB_WORKGROUP"></label>
-        <label>SMB_BIND_INTERFACE <input id="SMB_BIND_INTERFACE"></label>
-        <label>SYNC_INTERVAL_SEC <input id="SYNC_INTERVAL_SEC"></label>
-        <label>SYNC_ONBOOT_SEC <input id="SYNC_ONBOOT_SEC"></label>
-        <label>SYNC_ONACTIVE_SEC <input id="SYNC_ONACTIVE_SEC"></label>
+      </div>
+    </section>
+
+    <section>
+      <h2>NAS</h2>
+      <div class="grid">
         <label>NAS_ENABLED
           <select id="NAS_ENABLED">
             <option value="false">false</option>
@@ -37,12 +52,6 @@
         <label>NAS_REMOTE <input id="NAS_REMOTE"></label>
         <label>NAS_MOUNT <input id="NAS_MOUNT"></label>
         <label>NAS_CREDENTIALS <input id="NAS_CREDENTIALS"></label>
-        <label>WEBUI_BIND <input id="WEBUI_BIND"></label>
-        <label>WEBUI_PORT <input id="WEBUI_PORT"></label>
-      </div>
-      <div class="actions">
-        <button id="save-config">Save to Shadow</button>
-        <button id="apply-config">Save + Apply</button>
       </div>
     </section>
 
