@@ -585,8 +585,11 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_json(data)
         if self.path.startswith("/api/health"):
             health = STATE_DIR / "health.json"
+            fallback = Path("/run/vision-health.json")
             if health.exists():
                 return self.send_json(json.loads(health.read_text(encoding="utf-8")))
+            if fallback.exists():
+                return self.send_json(json.loads(fallback.read_text(encoding="utf-8")))
             return self.send_json({"status": "unknown", "issues": [], "ts": ""})
         if self.path.startswith("/api/config"):
             cfg = parse_config(load_config_text())

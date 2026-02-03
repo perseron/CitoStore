@@ -11,6 +11,7 @@ load_config
 log "health-check start"
 
 HEALTH_STATE="$STATE_DIR/health.json"
+HEALTH_STATE_FALLBACK="/run/vision-health.json"
 HEALTH_STATUS="ok"
 HEALTH_ISSUES=()
 
@@ -182,8 +183,8 @@ PY
   fi
 fi
 
-if mountpoint -q "$MIRROR_MOUNT"; then
-  mkdir -p "$STATE_DIR"
+write_health() {
+  local out="$1"
   {
     echo '{'
     echo "  \"status\": \"${HEALTH_STATUS}\","
@@ -196,7 +197,14 @@ if mountpoint -q "$MIRROR_MOUNT"; then
     echo "  ],"
     echo "  \"ts\": \"$(date -Is)\""
     echo '}'
-  } > "$HEALTH_STATE"
+  } > "$out"
+}
+
+write_health "$HEALTH_STATE_FALLBACK"
+
+if mountpoint -q "$MIRROR_MOUNT"; then
+  mkdir -p "$STATE_DIR"
+  write_health "$HEALTH_STATE"
 fi
 
 log "health-check complete"
