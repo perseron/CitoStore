@@ -119,6 +119,16 @@ function validateField(el) {
     setFieldValidity(el, ok, ok ? "YYYY-MM-DD HH:MM:SS" : "invalid datetime");
     return ok;
   }
+  if (rule === "date") {
+    const ok = /^\d{4}-\d{2}-\d{2}$/.test(value);
+    setFieldValidity(el, ok, ok ? "YYYY-MM-DD" : "invalid date");
+    return ok;
+  }
+  if (rule === "clock") {
+    const ok = /^\d{2}:\d{2}:\d{2}$/.test(value);
+    setFieldValidity(el, ok, ok ? "HH:MM:SS" : "invalid time");
+    return ok;
+  }
   if (rule === "user" || rule === "domain" || rule === "password") {
     if (rule === "password" && value !== "" && value.length < 6) {
       setFieldValidity(el, false, "min 6 chars");
@@ -259,12 +269,15 @@ async function changeSmbPassword() {
 }
 
 async function setManualTime() {
-  const field = document.getElementById("MANUAL_TIME");
-  if (!validateField(field)) {
-    setStatus("Invalid time format");
+  const dateEl = document.getElementById("MANUAL_DATE");
+  const timeEl = document.getElementById("MANUAL_CLOCK");
+  const ok = validateField(dateEl) && validateField(timeEl);
+  if (!ok) {
+    setStatus("Invalid date/time format");
     return;
   }
-  await api("/api/time", { method: "POST", body: JSON.stringify({ time: field.value }) });
+  const value = `${dateEl.value} ${timeEl.value}`;
+  await api("/api/time", { method: "POST", body: JSON.stringify({ time: value }) });
   setStatus("Time updated");
 }
 
@@ -305,6 +318,10 @@ document.getElementById("set-time").addEventListener("click", setManualTime);
 async function refreshStatus() {
   try {
     await loadStatus();
+    const time = await api("/api/time", { method: "GET" });
+    if (time && time.status) {
+      document.getElementById("time-status").textContent = time.status;
+    }
   } catch (err) {
     setStatus("Error: " + err.message);
   }

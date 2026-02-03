@@ -94,10 +94,16 @@
         </label>
       </div>
 
+      <h3>Time status</h3>
+      <pre id="time-status">Loading...</pre>
+
       <h3>Manual time set (fallback)</h3>
       <div class="grid">
-        <label>Date/time (local) <input id="MANUAL_TIME" data-validate="datetime">
-          <span class="hint">YYYY-MM-DD HH:MM:SS</span>
+        <label>Date <input id="MANUAL_DATE" data-validate="date">
+          <span class="hint">YYYY-MM-DD</span>
+        </label>
+        <label>Time <input id="MANUAL_CLOCK" data-validate="clock">
+          <span class="hint">HH:MM:SS</span>
         </label>
       </div>
       <div class="actions">

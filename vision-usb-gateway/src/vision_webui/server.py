@@ -602,6 +602,11 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_json(get_network_config(iface))
         if self.path.startswith("/api/me"):
             return self.send_json({"ok": True})
+        if self.path.startswith("/api/time"):
+            code, out, err = run_cmd(["/usr/bin/timedatectl", "status"])
+            if code != 0:
+                return self.send_json({"status": err or "failed to read time"}, status=500)
+            return self.send_json({"status": out})
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self):
