@@ -9,9 +9,6 @@ require_root
 load_config
 
 log "health-check start"
-
-HEALTH_STATE="$STATE_DIR/health.json"
-HEALTH_STATE_FALLBACK="/run/vision-health.json"
 HEALTH_STATUS="ok"
 HEALTH_ISSUES=()
 
@@ -24,6 +21,8 @@ health_warn() {
 GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
 MIRROR_MOUNT=${MIRROR_MOUNT:-/srv/vision_mirror}
 STATE_DIR="$MIRROR_MOUNT/.state"
+HEALTH_STATE="$STATE_DIR/health.json"
+HEALTH_STATE_FALLBACK="/run/vision-health.json"
 DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
 DEFAULT_CREDS="$GATEWAY_HOME/conf/nas/vision-nas.creds.example"
 LAST_GOOD_CONF="$STATE_DIR/vision-gw.conf.last-good"
