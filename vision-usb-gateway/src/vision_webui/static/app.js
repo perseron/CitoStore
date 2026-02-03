@@ -323,6 +323,17 @@ async function refreshStatus() {
     if (time && time.status) {
       document.getElementById("time-status").textContent = time.status;
     }
+    const health = await api("/api/health", { method: "GET" });
+    const banner = document.getElementById("health-banner");
+    if (health.status && health.status !== "ok") {
+      const issues = (health.issues || []).join("; ");
+      banner.textContent = `Health: ${health.status}. ${issues}`;
+      banner.classList.remove("hidden");
+      banner.classList.toggle("error", health.status === "error");
+    } else {
+      banner.textContent = "";
+      banner.classList.add("hidden");
+    }
   } catch (err) {
     setStatus("Error: " + err.message);
   }

@@ -10,11 +10,22 @@ load_config
 
 log "health-check start"
 
+HEALTH_STATE="$STATE_DIR/health.json"
+HEALTH_STATUS="ok"
+HEALTH_ISSUES=()
+
+health_warn() {
+  HEALTH_STATUS="warn"
+  HEALTH_ISSUES+=("$1")
+  log "health: $1"
+}
+
 GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
 MIRROR_MOUNT=${MIRROR_MOUNT:-/srv/vision_mirror}
 STATE_DIR="$MIRROR_MOUNT/.state"
 DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
 DEFAULT_CREDS="$GATEWAY_HOME/conf/nas/vision-nas.creds.example"
+LAST_GOOD_CONF="$STATE_DIR/vision-gw.conf.last-good"
 ACTIVE_FILE=${USB_ACTIVE_PERSIST:-$STATE_DIR/vision-usb-active}
 VG="${LVM_VG:-vg0}"
 MIRROR_LV="${MIRROR_LV:-mirror}"
@@ -25,7 +36,7 @@ HEALTHCHECK_FSCK_USB=${HEALTHCHECK_FSCK_USB:-true}
 USB_LABEL=${USB_LABEL:-VISIONUSB}
 
 if ! mountpoint -q "$MIRROR_MOUNT"; then
-  log "mirror not mounted: $MIRROR_MOUNT"
+  health_warn "mirror not mounted: $MIRROR_MOUNT"
 else
   mkdir -p "$STATE_DIR"
 fi
@@ -34,6 +45,22 @@ fi
 if [[ ! -f "$STATE_DIR/vision-gw.conf" && -f "$DEFAULT_CONF" ]]; then
   log "shadow config missing; restoring default"
   cp "$DEFAULT_CONF" "$STATE_DIR/vision-gw.conf"
+  health_warn "shadow config missing; default restored"
+fi
+
+# If shadow config looks invalid, rollback to last-good or default.
+if [[ -f "$STATE_DIR/vision-gw.conf" ]]; then
+  if ! grep -q '^GATEWAY_HOME=' "$STATE_DIR/vision-gw.conf"; then
+    if [[ -f "$LAST_GOOD_CONF" ]]; then
+      log "shadow config invalid; restoring last-good"
+      cp "$LAST_GOOD_CONF" "$STATE_DIR/vision-gw.conf"
+      health_warn "shadow config invalid; restored last-good"
+    elif [[ -f "$DEFAULT_CONF" ]]; then
+      log "shadow config invalid; restoring default"
+      cp "$DEFAULT_CONF" "$STATE_DIR/vision-gw.conf"
+      health_warn "shadow config invalid; restored default"
+    fi
+  fi
 fi
 
 # Ensure shadow NAS creds exists if system creds exist (overlay-safe).
@@ -47,6 +74,18 @@ if [[ ! -f "$STATE_DIR/vision-nas.creds" ]]; then
     cp "$DEFAULT_CREDS" "$STATE_DIR/vision-nas.creds"
     chmod 0600 "$STATE_DIR/vision-nas.creds"
   fi
+fi
+
+# Validate shadow NAS creds format (username/password lines).
+if [[ -f "$STATE_DIR/vision-nas.creds" ]]; then
+  if ! grep -q '^username=' "$STATE_DIR/vision-nas.creds" || ! grep -q '^password=' "$STATE_DIR/vision-nas.creds"; then
+    log "shadow NAS creds missing username/password; resetting to example"
+    if [[ -f "$DEFAULT_CREDS" ]]; then
+      cp "$DEFAULT_CREDS" "$STATE_DIR/vision-nas.creds"
+      chmod 0600 "$STATE_DIR/vision-nas.creds"
+    fi
+  fi
+  chmod 0600 "$STATE_DIR/vision-nas.creds" || true
 fi
 
 # Ensure GATEWAY_HOME is present in shadow config.
@@ -63,6 +102,7 @@ if command -v lvs >/dev/null 2>&1; then
   if lvs "$VG/$SNAP_NAME" >/dev/null 2>&1; then
     log "stale snapshot detected: $VG/$SNAP_NAME (removing)"
     lvremove -f "$VG/$SNAP_NAME" || true
+    health_warn "stale snapshot removed: $VG/$SNAP_NAME"
   fi
 fi
 
@@ -97,6 +137,7 @@ if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
     done
   else
     log "fsck.fat not available; skipping USB fsck"
+    health_warn "fsck.fat not available; USB fsck skipped"
   fi
 fi
 
@@ -114,6 +155,7 @@ if [[ -n "${ACTIVE_FILE:-}" ]]; then
         echo "/dev/$VG/$lv" > "$ACTIVE_FILE"
         active="/dev/$VG/$lv"
         log "active LV set to $active"
+        health_warn "active LV missing; auto-selected $active"
         break
       fi
     done
@@ -136,7 +178,25 @@ PY
   then
     log "vision.db failed quick_check; moving aside"
     mv "$DB_FILE" "$DB_FILE.corrupt.$(date +%s)" || true
+    health_warn "vision.db corrupt; moved aside"
   fi
+fi
+
+if mountpoint -q "$MIRROR_MOUNT"; then
+  mkdir -p "$STATE_DIR"
+  {
+    echo '{'
+    echo "  \"status\": \"${HEALTH_STATUS}\","
+    echo "  \"issues\": ["
+    for i in "${!HEALTH_ISSUES[@]}"; do
+      sep=","
+      [[ $i -eq $((${#HEALTH_ISSUES[@]}-1)) ]] && sep=""
+      printf '    "%s"%s\n' "${HEALTH_ISSUES[$i]}" "$sep"
+    done
+    echo "  ],"
+    echo "  \"ts\": \"$(date -Is)\""
+    echo '}'
+  } > "$HEALTH_STATE"
 fi
 
 log "health-check complete"

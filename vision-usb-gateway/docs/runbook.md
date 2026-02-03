@@ -63,12 +63,14 @@ Web UI (minimal config + maintenance)
 Boot-time auto-recovery
 - `vision-gw-health.service` runs before core services and auto-recovers common issues:
   - Restores missing shadow config from defaults.
+  - Restores invalid shadow config from `vision-gw.conf.last-good` when available.
   - Fixes missing `GATEWAY_HOME` in shadow config.
   - Removes stale sync snapshot LVs.
   - Validates active USB LV pointer; selects a valid LV if missing.
   - Validates `vision.db` and moves it aside if corrupted.
   - Runs `fsck -p` on the mirror LV if it is not mounted.
   - Runs `fsck.fat -a` on inactive USB LVs to repair FAT32 inconsistencies.
+  - Writes health status to `/srv/vision_mirror/.state/health.json` for the Web UI.
 
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`

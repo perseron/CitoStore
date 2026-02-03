@@ -10,6 +10,20 @@ header {
   color: #fff;
   padding: 16px 24px;
 }
+.banner {
+  padding: 10px 24px;
+  background: #fef3c7;
+  color: #92400e;
+  border-bottom: 1px solid #f59e0b;
+}
+.banner.error {
+  background: #fee2e2;
+  color: #991b1b;
+  border-bottom-color: #ef4444;
+}
+.hidden {
+  display: none;
+}
 .brand {
   display: flex;
   align-items: baseline;

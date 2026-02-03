@@ -583,6 +583,11 @@ class WebHandler(BaseHTTPRequestHandler):
                 "mirror_usage": get_disk_usage("/srv/vision_mirror"),
             }
             return self.send_json(data)
+        if self.path.startswith("/api/health"):
+            health = STATE_DIR / "health.json"
+            if health.exists():
+                return self.send_json(json.loads(health.read_text(encoding="utf-8")))
+            return self.send_json({"status": "unknown", "issues": [], "ts": ""})
         if self.path.startswith("/api/config"):
             cfg = parse_config(load_config_text())
             payload = {k: cfg.get(k, "") for k in ALLOWED_CONFIG_KEYS}
@@ -687,6 +692,8 @@ class WebHandler(BaseHTTPRequestHandler):
         new_text = update_config_file(base_text, updates)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         SHADOW_CONF.write_text(new_text, encoding="utf-8")
+        last_good = STATE_DIR / "vision-gw.conf.last-good"
+        last_good.write_text(new_text, encoding="utf-8")
         log(f"config updated: {', '.join(sorted(updates.keys()))}")
         return self.send_json({"ok": True})
 

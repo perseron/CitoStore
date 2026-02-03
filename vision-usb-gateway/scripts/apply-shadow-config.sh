@@ -17,6 +17,11 @@ elif [[ -f "$DEFAULT_CONF" ]]; then
   cp "$DEFAULT_CONF" /etc/vision-gw.conf
 fi
 
+LAST_GOOD=/srv/vision_mirror/.state/vision-gw.conf.last-good
+if [[ -f "$SHADOW_CONF" ]]; then
+  cp "$SHADOW_CONF" "$LAST_GOOD"
+fi
+
 SHADOW_CREDS=/srv/vision_mirror/.state/vision-nas.creds
 if [[ -f "$SHADOW_CREDS" ]]; then
   cp "$SHADOW_CREDS" /etc/vision-nas.creds
