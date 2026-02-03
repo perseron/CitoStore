@@ -632,6 +632,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_maintenance(["rebalance"])
         if self.path == "/api/maintenance/resize":
             return self.handle_maintenance(["resize"])
+        if self.path == "/api/maintenance/shutdown":
+            return self.handle_maintenance(["shutdown"])
         if self.path == "/api/network":
             return self.handle_network()
         if self.path == "/api/time":
@@ -820,6 +822,8 @@ class WebHandler(BaseHTTPRequestHandler):
                     "--force",
                     "--update-config",
                 ]
+            elif action == ["shutdown"]:
+                args = ["/usr/sbin/shutdown", "-h", "now"]
             else:
                 return self.send_json({"ok": False, "error": "unknown action"}, status=400)
             code, out, err = run_cmd(args, timeout=3600)

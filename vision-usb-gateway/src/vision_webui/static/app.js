@@ -297,6 +297,10 @@ async function maintenance(action) {
     }
     payload.size = document.getElementById("RESIZE_SIZE").value;
   }
+  if (action === "shutdown") {
+    const ok = prompt('Type "SHUTDOWN" to confirm.');
+    if (ok !== "SHUTDOWN") return;
+  }
   await api(`/api/maintenance/${action}`, { method: "POST", body: JSON.stringify(payload) });
   setStatus(`${action} started`);
 }
@@ -309,6 +313,7 @@ document.getElementById("save-smb-pass").addEventListener("click", changeSmbPass
 document.getElementById("wipe").addEventListener("click", () => maintenance("wipe"));
 document.getElementById("rebalance").addEventListener("click", () => maintenance("rebalance"));
 document.getElementById("resize-usb").addEventListener("click", () => maintenance("resize"));
+document.getElementById("shutdown").addEventListener("click", () => maintenance("shutdown"));
 document.getElementById("set-time").addEventListener("click", setManualTime);
 
 async function refreshStatus() {
