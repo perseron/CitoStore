@@ -96,6 +96,7 @@ systemctl enable vision-sync.timer vision-monitor.timer vision-rotator.timer mir
 systemctl enable vision-webui.service
 systemctl enable vision-rtc-boot.service
 systemctl enable vision-rtc-sync.timer
+systemctl enable vision-snapshot-cleanup.timer
 
 if [[ "${NAS_ENABLED:-false}" == "true" ]]; then
   systemctl enable mnt-nas.automount nas-sync.timer

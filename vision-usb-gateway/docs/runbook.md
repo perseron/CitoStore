@@ -72,6 +72,9 @@ Boot-time auto-recovery
   - Runs `fsck.fat -a` on inactive USB LVs to repair FAT32 inconsistencies.
   - Writes health status to `/srv/vision_mirror/.state/health.json` for the Web UI.
 
+Snapshot cleanup
+- `vision-snapshot-cleanup.timer` removes stale `usb_sync_snap` snapshots periodically.
+
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
 - Offline processing logs: `journalctl -u offline-maint@usb_0`
