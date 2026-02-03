@@ -2,7 +2,7 @@
 
 ## P0 - Critical (unattended reliability)
 - RTC time setup (in progress)
-- Examine how the NAS credentials file (`/etc/vision-nas.creds`) behaves in overlay mode; ensure credentials persist and are applied correctly on boot.
+- Examine how the NAS credentials file (`/etc/vision-nas.creds`) behaves in overlay mode; ensure credentials persist and are applied correctly on boot. (in progress)
 - Add “last good config” rollback for shadow config if apply fails
 - Add health-check status endpoint + WebUI banner (safe/degraded)
 - Add snapshot cleanup job if `usb_sync_snap` exists after failed sync

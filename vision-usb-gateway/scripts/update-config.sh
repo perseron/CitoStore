@@ -11,6 +11,15 @@ if [[ -f "$SHADOW_CONF" ]]; then
   cp "$SHADOW_CONF" /etc/vision-gw.conf
 fi
 
+SHADOW_CREDS=/srv/vision_mirror/.state/vision-nas.creds
+if [[ -f "$SHADOW_CREDS" ]]; then
+  cp "$SHADOW_CREDS" /etc/vision-nas.creds
+  chmod 0600 /etc/vision-nas.creds
+elif [[ -f /etc/vision-nas.creds ]]; then
+  cp /etc/vision-nas.creds "$SHADOW_CREDS"
+  chmod 0600 "$SHADOW_CREDS"
+fi
+
 load_config
 
 GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}

@@ -14,6 +14,7 @@ GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
 MIRROR_MOUNT=${MIRROR_MOUNT:-/srv/vision_mirror}
 STATE_DIR="$MIRROR_MOUNT/.state"
 DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
+DEFAULT_CREDS="$GATEWAY_HOME/conf/nas/vision-nas.creds.example"
 ACTIVE_FILE=${USB_ACTIVE_PERSIST:-$STATE_DIR/vision-usb-active}
 VG="${LVM_VG:-vg0}"
 MIRROR_LV="${MIRROR_LV:-mirror}"
@@ -33,6 +34,19 @@ fi
 if [[ ! -f "$STATE_DIR/vision-gw.conf" && -f "$DEFAULT_CONF" ]]; then
   log "shadow config missing; restoring default"
   cp "$DEFAULT_CONF" "$STATE_DIR/vision-gw.conf"
+fi
+
+# Ensure shadow NAS creds exists if system creds exist (overlay-safe).
+if [[ ! -f "$STATE_DIR/vision-nas.creds" ]]; then
+  if [[ -f /etc/vision-nas.creds ]]; then
+    log "shadow NAS creds missing; copying from /etc"
+    cp /etc/vision-nas.creds "$STATE_DIR/vision-nas.creds"
+    chmod 0600 "$STATE_DIR/vision-nas.creds"
+  elif [[ -f "$DEFAULT_CREDS" ]]; then
+    log "shadow NAS creds missing; installing default example"
+    cp "$DEFAULT_CREDS" "$STATE_DIR/vision-nas.creds"
+    chmod 0600 "$STATE_DIR/vision-nas.creds"
+  fi
 fi
 
 # Ensure GATEWAY_HOME is present in shadow config.

@@ -25,6 +25,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 DEFAULT_CONF = Path("/etc/vision-gw.conf")
 NAS_CREDS = Path("/etc/vision-nas.creds")
+NAS_CREDS_SHADOW = STATE_DIR / "vision-nas.creds"
 NETWORK_STATE = STATE_DIR / "network.json"
 
 SESSION_TTL_SEC = 8 * 60 * 60
@@ -587,7 +588,9 @@ class WebHandler(BaseHTTPRequestHandler):
             payload = {k: cfg.get(k, "") for k in ALLOWED_CONFIG_KEYS}
             return self.send_json(payload)
         if self.path.startswith("/api/nas-creds"):
-            if NAS_CREDS.exists():
+            if NAS_CREDS_SHADOW.exists():
+                creds = parse_nas_creds(NAS_CREDS_SHADOW.read_text(encoding="utf-8"))
+            elif NAS_CREDS.exists():
                 creds = parse_nas_creds(NAS_CREDS.read_text(encoding="utf-8"))
             else:
                 creds = {"username": "", "password": "", "domain": ""}
@@ -774,9 +777,9 @@ class WebHandler(BaseHTTPRequestHandler):
         }
         if creds["username"] == "" and creds["password"] == "" and creds["domain"] == "":
             return self.send_json({"ok": True})
-        NAS_CREDS.write_text(render_nas_creds(creds), encoding="utf-8")
-        os.chmod(NAS_CREDS, 0o600)
-        log("nas creds updated")
+        NAS_CREDS_SHADOW.write_text(render_nas_creds(creds), encoding="utf-8")
+        os.chmod(NAS_CREDS_SHADOW, 0o600)
+        log("nas creds updated (shadow)")
         return self.send_json({"ok": True})
 
     def handle_time(self):

@@ -17,6 +17,12 @@ elif [[ -f "$DEFAULT_CONF" ]]; then
   cp "$DEFAULT_CONF" /etc/vision-gw.conf
 fi
 
+SHADOW_CREDS=/srv/vision_mirror/.state/vision-nas.creds
+if [[ -f "$SHADOW_CREDS" ]]; then
+  cp "$SHADOW_CREDS" /etc/vision-nas.creds
+  chmod 0600 /etc/vision-nas.creds
+fi
+
 if [[ -f /etc/vision-gw.conf ]]; then
   if grep -q '^GATEWAY_HOME=' /etc/vision-gw.conf; then
     sed -i "s#^GATEWAY_HOME=.*#GATEWAY_HOME=$GATEWAY_HOME#" /etc/vision-gw.conf

@@ -30,6 +30,8 @@ Install
      - `username=<nas_user>`
      - `password=<nas_password>`
      - `domain=<nas_domain>` (optional)
+   - Under overlay, shadow creds are stored at `/srv/vision_mirror/.state/vision-nas.creds`.
+   - Boot/apply copies shadow creds to `/etc/vision-nas.creds` for mounts.
 9) Reboot
    - `sudo reboot`
 
