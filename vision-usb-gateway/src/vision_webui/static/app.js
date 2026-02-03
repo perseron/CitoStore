@@ -211,10 +211,6 @@ async function saveConfig(apply = false) {
     NAS_ENABLED: document.getElementById("NAS_ENABLED").value,
     NAS_REMOTE: document.getElementById("NAS_REMOTE").value,
     NAS_MOUNT: document.getElementById("NAS_MOUNT").value,
-    RTC_ENABLED: document.getElementById("RTC_ENABLED").value,
-    RTC_DEVICE: document.getElementById("RTC_DEVICE").value,
-    RTC_UTC: document.getElementById("RTC_UTC").value,
-    RTC_SYNC_INTERVAL: document.getElementById("RTC_SYNC_INTERVAL").value,
   };
   await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
   await api("/api/nas-creds", {

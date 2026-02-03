@@ -41,10 +41,6 @@ ALLOWED_CONFIG_KEYS = {
     "NAS_MOUNT",
     "WEBUI_BIND",
     "WEBUI_PORT",
-    "RTC_ENABLED",
-    "RTC_DEVICE",
-    "RTC_UTC",
-    "RTC_SYNC_INTERVAL",
 }
 
 SERVICES = [

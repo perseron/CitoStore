@@ -72,28 +72,6 @@
         </label>
       </div>
 
-      <h3>RTC</h3>
-      <div class="grid">
-        <label>Enable RTC sync
-          <select id="RTC_ENABLED">
-            <option value="false">false</option>
-            <option value="true">true</option>
-          </select>
-        </label>
-        <label>RTC device <input id="RTC_DEVICE" data-validate="path">
-          <span class="hint">default /dev/rtc0</span>
-        </label>
-        <label>RTC uses UTC
-          <select id="RTC_UTC">
-            <option value="true">true</option>
-            <option value="false">false</option>
-          </select>
-        </label>
-        <label>RTC sync interval <input id="RTC_SYNC_INTERVAL" data-validate="time">
-          <span class="hint">e.g. 1h, 30min</span>
-        </label>
-      </div>
-
       <h3>Time status</h3>
       <pre id="time-status">Loading...</pre>
 
