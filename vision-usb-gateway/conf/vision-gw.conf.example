@@ -67,6 +67,12 @@ NAS_RSYNC_OPTS="-aH --partial --inplace --timeout=30"
 NAS_RETRY_MAX=5
 NAS_RETRY_BACKOFF=10
 
+# RTC
+RTC_ENABLED=false
+RTC_DEVICE=/dev/rtc0
+RTC_UTC=true
+RTC_SYNC_INTERVAL=1h
+
 # Samba
 SMB_BIND_INTERFACE=eth0
 SMB_USER=smbuser

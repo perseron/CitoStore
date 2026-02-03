@@ -41,6 +41,10 @@ ALLOWED_CONFIG_KEYS = {
     "NAS_MOUNT",
     "WEBUI_BIND",
     "WEBUI_PORT",
+    "RTC_ENABLED",
+    "RTC_DEVICE",
+    "RTC_UTC",
+    "RTC_SYNC_INTERVAL",
 }
 
 SERVICES = [
@@ -629,6 +633,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_maintenance(["resize"])
         if self.path == "/api/network":
             return self.handle_network()
+        if self.path == "/api/time":
+            return self.handle_time()
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def handle_login(self):
@@ -769,6 +775,25 @@ class WebHandler(BaseHTTPRequestHandler):
         os.chmod(NAS_CREDS, 0o600)
         log("nas creds updated")
         return self.send_json({"ok": True})
+
+    def handle_time(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        data = json.loads(body or "{}")
+        value = str(data.get("time", "")).strip()
+        if not value:
+            return self.send_json({"ok": False, "error": "time is required"}, status=400)
+        lock = require_lock()
+        try:
+            code, out, err = run_cmd(["/usr/bin/timedatectl", "set-time", value])
+            if code != 0:
+                return self.send_json({"ok": False, "error": err or out}, status=500)
+            gh = get_gateway_home()
+            run_cmd([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
+            log(f"system time set: {value}")
+            return self.send_json({"ok": True})
+        finally:
+            lock.close()
 
     def handle_maintenance(self, action):
         length = int(self.headers.get("Content-Length", 0))

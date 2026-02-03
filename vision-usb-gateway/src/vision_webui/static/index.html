@@ -72,6 +72,38 @@
         </label>
       </div>
 
+      <h3>RTC</h3>
+      <div class="grid">
+        <label>Enable RTC sync
+          <select id="RTC_ENABLED">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+        </label>
+        <label>RTC device <input id="RTC_DEVICE" data-validate="path">
+          <span class="hint">default /dev/rtc0</span>
+        </label>
+        <label>RTC uses UTC
+          <select id="RTC_UTC">
+            <option value="true">true</option>
+            <option value="false">false</option>
+          </select>
+        </label>
+        <label>RTC sync interval <input id="RTC_SYNC_INTERVAL" data-validate="time">
+          <span class="hint">e.g. 1h, 30min</span>
+        </label>
+      </div>
+
+      <h3>Manual time set (fallback)</h3>
+      <div class="grid">
+        <label>Date/time (local) <input id="MANUAL_TIME" data-validate="datetime">
+          <span class="hint">YYYY-MM-DD HH:MM:SS</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button id="set-time">Set Time Now</button>
+      </div>
+
       <div class="actions">
         <button id="save-config">Save to Shadow</button>
         <button id="apply-config">Save + Apply</button>

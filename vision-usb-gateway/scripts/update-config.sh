@@ -18,6 +18,7 @@ GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
 : "${SYNC_ONBOOT_SEC:=2min}"
 : "${SYNC_ONACTIVE_SEC:=2min}"
 : "${SYNC_INTERVAL_SEC:=2min}"
+: "${RTC_SYNC_INTERVAL:=1h}"
 
 # Write systemd-safe env file (no arrays).
 cat > /etc/vision-gw.env <<EOF
@@ -30,6 +31,10 @@ SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
 NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
 WEBUI_BIND=${WEBUI_BIND:-0.0.0.0}
 WEBUI_PORT=${WEBUI_PORT:-80}
+RTC_ENABLED=${RTC_ENABLED:-false}
+RTC_DEVICE=${RTC_DEVICE:-/dev/rtc0}
+RTC_UTC=${RTC_UTC:-true}
+RTC_SYNC_INTERVAL=${RTC_SYNC_INTERVAL:-1h}
 EOF
 
 # Update timer override from config.
@@ -45,3 +50,4 @@ EOF
 
 systemctl daemon-reload
 systemctl restart vision-sync.timer
+systemctl restart vision-rtc-sync.timer || true

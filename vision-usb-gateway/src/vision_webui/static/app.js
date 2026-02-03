@@ -114,6 +114,11 @@ function validateField(el) {
     setFieldValidity(el, ok, ok ? "e.g. 100G, 512M" : "invalid size");
     return ok;
   }
+  if (rule === "datetime") {
+    const ok = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value);
+    setFieldValidity(el, ok, ok ? "YYYY-MM-DD HH:MM:SS" : "invalid datetime");
+    return ok;
+  }
   if (rule === "user" || rule === "domain" || rule === "password") {
     if (rule === "password" && value !== "" && value.length < 6) {
       setFieldValidity(el, false, "min 6 chars");
@@ -196,6 +201,10 @@ async function saveConfig(apply = false) {
     NAS_ENABLED: document.getElementById("NAS_ENABLED").value,
     NAS_REMOTE: document.getElementById("NAS_REMOTE").value,
     NAS_MOUNT: document.getElementById("NAS_MOUNT").value,
+    RTC_ENABLED: document.getElementById("RTC_ENABLED").value,
+    RTC_DEVICE: document.getElementById("RTC_DEVICE").value,
+    RTC_UTC: document.getElementById("RTC_UTC").value,
+    RTC_SYNC_INTERVAL: document.getElementById("RTC_SYNC_INTERVAL").value,
   };
   await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
   await api("/api/nas-creds", {
@@ -249,6 +258,16 @@ async function changeSmbPassword() {
   setStatus("SMB password updated");
 }
 
+async function setManualTime() {
+  const field = document.getElementById("MANUAL_TIME");
+  if (!validateField(field)) {
+    setStatus("Invalid time format");
+    return;
+  }
+  await api("/api/time", { method: "POST", body: JSON.stringify({ time: field.value }) });
+  setStatus("Time updated");
+}
+
 async function maintenance(action) {
   let payload = {};
   if (action === "wipe") {
@@ -281,6 +300,7 @@ document.getElementById("save-smb-pass").addEventListener("click", changeSmbPass
 document.getElementById("wipe").addEventListener("click", () => maintenance("wipe"));
 document.getElementById("rebalance").addEventListener("click", () => maintenance("rebalance"));
 document.getElementById("resize-usb").addEventListener("click", () => maintenance("resize"));
+document.getElementById("set-time").addEventListener("click", setManualTime);
 
 async function refreshStatus() {
   try {

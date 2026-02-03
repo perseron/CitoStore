@@ -23,6 +23,7 @@ load_config
 : "${SYNC_ONBOOT_SEC:=2min}"
 : "${SYNC_ONACTIVE_SEC:=2min}"
 : "${SYNC_INTERVAL_SEC:=2min}"
+: "${RTC_SYNC_INTERVAL:=1h}"
 
 # Write systemd-safe env file (no arrays)
 cat > /etc/vision-gw.env <<EOF
@@ -35,6 +36,10 @@ SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
 NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
 WEBUI_BIND=${WEBUI_BIND:-0.0.0.0}
 WEBUI_PORT=${WEBUI_PORT:-80}
+RTC_ENABLED=${RTC_ENABLED:-false}
+RTC_DEVICE=${RTC_DEVICE:-/dev/rtc0}
+RTC_UTC=${RTC_UTC:-true}
+RTC_SYNC_INTERVAL=${RTC_SYNC_INTERVAL:-1h}
 EOF
 
 log "installing python package"
@@ -68,6 +73,16 @@ OnActiveSec=$SYNC_ONACTIVE_SEC
 OnUnitActiveSec=$SYNC_INTERVAL_SEC
 EOF
 
+log "configuring vision-rtc-sync.timer override"
+RTC_TIMER_DIR=/etc/systemd/system/vision-rtc-sync.timer.d
+RTC_TIMER_OVERRIDE=$RTC_TIMER_DIR/override.conf
+mkdir -p "$RTC_TIMER_DIR"
+cat > "$RTC_TIMER_OVERRIDE" <<EOF
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=$RTC_SYNC_INTERVAL
+EOF
+
 safe_mkdir /srv/vision_mirror/.state
 chmod 0755 /srv/vision_mirror
 chmod 0755 /srv/vision_mirror/.state
@@ -79,6 +94,8 @@ systemctl enable vision-gw-network.service
 systemctl enable vision-gw-config.service
 systemctl enable vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer
 systemctl enable vision-webui.service
+systemctl enable vision-rtc-boot.service
+systemctl enable vision-rtc-sync.timer
 
 if [[ "${NAS_ENABLED:-false}" == "true" ]]; then
   systemctl enable mnt-nas.automount nas-sync.timer

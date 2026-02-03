@@ -200,6 +200,14 @@ NAS optional
 - `NAS_RSYNC_OPTS`: rsync options for NAS sync.
 - `NAS_RETRY_MAX`/`NAS_RETRY_BACKOFF`: Retry behavior for NAS sync.
 
+RTC
+- `RTC_ENABLED`: Enable RTC sync on boot and periodically.
+- `RTC_DEVICE`: RTC device (default `/dev/rtc0`).
+- `RTC_UTC`: `true` for UTC, `false` for localtime.
+- `RTC_SYNC_INTERVAL`: Periodic sync interval (systemd time format).
+- Boot sync runs only if NTP is not synchronized.
+- Web UI supports manual time set as a fallback (writes system time and updates RTC).
+
 Samba + discovery
 - `SMB_BIND_INTERFACE`: Network interface Samba/WSDD bind to.
 - `SMB_USER`: Samba user for read-only access.
