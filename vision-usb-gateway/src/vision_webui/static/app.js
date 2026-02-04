@@ -235,6 +235,11 @@ async function loadStatus() {
 async function loadConfig() {
   const cfg = await api("/api/config", { method: "GET" });
   fillConfig(cfg);
+  const resize = document.getElementById("RESIZE_SIZE");
+  if (resize && (!resize.value || resize.value.trim() === "") && cfg.USB_LV_SIZE) {
+    resize.value = cfg.USB_LV_SIZE;
+    validateField(resize);
+  }
   const creds = await api("/api/nas-creds", { method: "GET" });
   if (creds.username !== undefined) document.getElementById("NAS_USERNAME").value = creds.username || "";
   if (creds.password !== undefined) document.getElementById("NAS_PASSWORD").value = creds.password || "";
