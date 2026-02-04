@@ -13,6 +13,8 @@ require_root
 
 mkdir -p "$STATE_DIR"
 
+timestamp=$(date -Iseconds)
+
 list_out=$(/usr/sbin/nvme list -o json 2>/dev/null || true)
 if [[ -z "$list_out" ]]; then
   printf '{"status":"error","error":"nvme list returned no data","ts":"%s"}\n' "$timestamp" | tee "$RUN_OUT" "$STATE_OUT" >/dev/null
@@ -21,15 +23,18 @@ fi
 
 device=$(printf '%s' "$list_out" | python3 - <<'PY'
 import json,sys
-data=json.load(sys.stdin)
+try:
+    data=json.load(sys.stdin)
+except json.JSONDecodeError:
+    print("")
+    sys.exit(0)
 devices=data.get("Devices", [])
 print(devices[0].get("DevicePath", "") if devices else "")
 PY
 )
 
-timestamp=$(date -Iseconds)
 if [[ -z "$device" ]]; then
-  printf '{"status":"error","error":"no NVMe devices found","ts":"%s"}\n' "$timestamp" | tee "$RUN_OUT" "$STATE_OUT" >/dev/null
+  printf '{"status":"error","error":"no NVMe devices found or invalid nvme list JSON","ts":"%s"}\n' "$timestamp" | tee "$RUN_OUT" "$STATE_OUT" >/dev/null
   exit 0
 fi
 
