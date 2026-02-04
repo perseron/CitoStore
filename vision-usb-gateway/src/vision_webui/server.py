@@ -371,16 +371,19 @@ def get_usb_lv_usage(lv_path: str) -> dict:
     if not lv_path or lv_path == "unknown":
         return {"error": "unknown LV"}
     code, out, err = run_cmd(
-        ["lvs", "--noheadings", "--units", "g", "--nosuffix", "-o", "lv_size,data_percent", lv_path]
+        ["lvs", "-a", "--noheadings", "--units", "g", "--nosuffix", "-o", "lv_path,lv_size,data_percent"]
     )
     if code != 0:
         return {"error": err or "failed to read LV usage"}
-    parts = [p for p in out.strip().split() if p]
-    if not parts:
-        return {"error": "no LV usage data"}
-    size = parts[0]
-    data_percent = parts[1] if len(parts) > 1 else ""
-    return {"size_gb": size, "data_percent": data_percent}
+    for line in out.splitlines():
+        parts = [p for p in line.strip().split() if p]
+        if len(parts) < 2:
+            continue
+        if parts[0] == lv_path:
+            size = parts[1]
+            data_percent = parts[2] if len(parts) > 2 else ""
+            return {"size_gb": size, "data_percent": data_percent}
+    return {"error": "LV not found"}
 
 
 def get_nm_active_connection(iface: str) -> str | None:
