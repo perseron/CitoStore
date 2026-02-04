@@ -367,6 +367,22 @@ def get_active_usb_lv() -> str:
     return "unknown"
 
 
+def get_usb_lv_usage(lv_path: str) -> dict:
+    if not lv_path or lv_path == "unknown":
+        return {"error": "unknown LV"}
+    code, out, err = run_cmd(
+        ["lvs", "--noheadings", "--units", "g", "--nosuffix", "-o", "lv_size,data_percent", lv_path]
+    )
+    if code != 0:
+        return {"error": err or "failed to read LV usage"}
+    parts = [p for p in out.strip().split() if p]
+    if not parts:
+        return {"error": "no LV usage data"}
+    size = parts[0]
+    data_percent = parts[1] if len(parts) > 1 else ""
+    return {"size_gb": size, "data_percent": data_percent}
+
+
 def get_nm_active_connection(iface: str) -> str | None:
     code, out, _ = run_cmd(["nmcli", "-t", "-f", "NAME,DEVICE", "connection", "show", "--active"])
     if code != 0:
@@ -626,9 +642,11 @@ class WebHandler(BaseHTTPRequestHandler):
         if self.path.startswith("/api/status"):
             cfg = parse_config(load_config_text())
             iface = cfg.get("SMB_BIND_INTERFACE", "eth0")
+            active_lv = get_active_usb_lv()
             data = {
                 "services": get_service_status(),
-                "active_usb_lv": get_active_usb_lv(),
+                "active_usb_lv": active_lv,
+                "active_usb_usage": get_usb_lv_usage(active_lv),
                 "network": get_network_config(iface),
                 "sync_timer": get_sync_timer_status(),
                 "mirror_usage": get_disk_usage("/srv/vision_mirror"),

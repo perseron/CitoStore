@@ -171,7 +171,14 @@ async function loadStatus() {
     ([name, st]) => `${name}: ${st.active}/${st.sub}`
   );
   document.getElementById("status-services").textContent = svcLines.join("\n");
-  document.getElementById("status-usb").textContent = `Active USB LV: ${data.active_usb_lv}`;
+  const usbUsage = data.active_usb_usage || {};
+  let usbLine = `Active USB LV: ${data.active_usb_lv}`;
+  if (!usbUsage.error && (usbUsage.size_gb || usbUsage.data_percent)) {
+    const size = usbUsage.size_gb ? `${usbUsage.size_gb}G` : "n/a";
+    const used = usbUsage.data_percent ? `${usbUsage.data_percent}%` : "n/a";
+    usbLine += ` (size ${size}, used ${used})`;
+  }
+  document.getElementById("status-usb").textContent = usbLine;
   const net = data.network || {};
   const timer = data.sync_timer || {};
   const usage = data.mirror_usage || {};
