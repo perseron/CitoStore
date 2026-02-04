@@ -448,11 +448,23 @@ def get_nvme_smart() -> dict:
                 "percentage_used": smart.get("percentage_used"),
                 "data_units_read": smart.get("data_units_read"),
                 "data_units_written": smart.get("data_units_written"),
+                "data_units_written_tb": units_to_tb(smart.get("data_units_written")),
                 "power_on_hours": smart.get("power_on_hours"),
                 "unsafe_shutdowns": smart.get("unsafe_shutdowns"),
                 "media_errors": smart.get("media_errors"),
             }
     return {"error": "nvme smart cache not available"}
+
+
+def units_to_tb(units) -> float | None:
+    try:
+        if units is None:
+            return None
+        # NVMe data units are 512,000 bytes each (per spec).
+        bytes_total = int(units) * 512_000
+        return round(bytes_total / 1_000_000_000_000, 2)
+    except (ValueError, TypeError):
+        return None
 
 
 def apply_network_config(iface: str, method: str, address: str, prefix: str, gateway: str, dns: str):

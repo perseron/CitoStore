@@ -180,9 +180,12 @@ async function loadStatus() {
     const temp = nvme.temperature_c !== null && nvme.temperature_c !== undefined
       ? `${nvme.temperature_c}C`
       : "n/a";
-    const used = nvme.percentage_used !== undefined && nvme.percentage_used !== null
-      ? `${nvme.percentage_used}% used`
-      : "usage n/a";
+    let used = "usage n/a";
+    if (nvme.percentage_used !== undefined && nvme.percentage_used !== null) {
+      used = `${nvme.percentage_used}% used`;
+    } else if (nvme.data_units_written_tb !== undefined && nvme.data_units_written_tb !== null) {
+      used = `${nvme.data_units_written_tb} TB written`;
+    }
     const poh = nvme.power_on_hours !== undefined && nvme.power_on_hours !== null
       ? `${nvme.power_on_hours}h`
       : "n/a";
