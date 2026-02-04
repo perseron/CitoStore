@@ -18,6 +18,7 @@ USB_LVS=("${USB_LVS[@]:-usb_0 usb_1 usb_2}")
 CONFIRM=false
 DRY_RUN=false
 FORCE_UMOUNT=false
+BACKUP_DIR=/run/vision-wipe-backup
 
 usage() {
   cat <<'EOF'
@@ -86,6 +87,25 @@ systemctl stop srv-vision_mirror.mount srv-vision_mirror.automount || true
 
 vgchange -ay "$VG" || true
 
+# Backup configs from SSD to RAM before wiping
+rm -rf "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR"
+if [[ -f /etc/vision-gw.conf ]]; then
+  cp /etc/vision-gw.conf "$BACKUP_DIR/vision-gw.conf"
+fi
+if [[ -f /etc/vision-nas.creds ]]; then
+  cp /etc/vision-nas.creds "$BACKUP_DIR/vision-nas.creds"
+fi
+if [[ -f "$MIRROR_MOUNT/.state/vision-gw.conf" ]]; then
+  cp "$MIRROR_MOUNT/.state/vision-gw.conf" "$BACKUP_DIR/vision-gw.shadow.conf"
+fi
+if [[ -f "$MIRROR_MOUNT/.state/vision-nas.creds" ]]; then
+  cp "$MIRROR_MOUNT/.state/vision-nas.creds" "$BACKUP_DIR/vision-nas.shadow.creds"
+fi
+if [[ -f "$MIRROR_MOUNT/.state/network.json" ]]; then
+  cp "$MIRROR_MOUNT/.state/network.json" "$BACKUP_DIR/network.json"
+fi
+
 if mountpoint -q "$MIRROR_MOUNT"; then
   if ! umount "$MIRROR_MOUNT"; then
     if [[ "$FORCE_UMOUNT" == "true" ]]; then
@@ -115,6 +135,21 @@ mkdir -p "$MIRROR_MOUNT/.state" "$MIRROR_MOUNT/raw" "$MIRROR_MOUNT/bydate"
 
 if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
   mkdir -p "$USB_PERSIST_BACKING"
+fi
+
+# Restore shadow config after wipe (from RAM backup)
+if [[ -f "$BACKUP_DIR/vision-gw.shadow.conf" ]]; then
+  cp "$BACKUP_DIR/vision-gw.shadow.conf" "$MIRROR_MOUNT/.state/vision-gw.conf"
+elif [[ -f "$BACKUP_DIR/vision-gw.conf" ]]; then
+  cp "$BACKUP_DIR/vision-gw.conf" "$MIRROR_MOUNT/.state/vision-gw.conf"
+fi
+if [[ -f "$BACKUP_DIR/vision-nas.shadow.creds" ]]; then
+  cp "$BACKUP_DIR/vision-nas.shadow.creds" "$MIRROR_MOUNT/.state/vision-nas.creds"
+elif [[ -f "$BACKUP_DIR/vision-nas.creds" ]]; then
+  cp "$BACKUP_DIR/vision-nas.creds" "$MIRROR_MOUNT/.state/vision-nas.creds"
+fi
+if [[ -f "$BACKUP_DIR/network.json" ]]; then
+  cp "$BACKUP_DIR/network.json" "$MIRROR_MOUNT/.state/network.json"
 fi
 
 for lv in "${USB_LVS[@]}"; do
