@@ -23,8 +23,15 @@ fi
 
 device=$(printf '%s' "$list_out" | python3 - <<'PY'
 import json,sys
+raw=sys.stdin.read()
+start=raw.find("{")
+end=raw.rfind("}")
+if start == -1 or end == -1 or end <= start:
+    print("")
+    sys.exit(0)
+snippet=raw[start:end+1]
 try:
-    data=json.load(sys.stdin)
+    data=json.loads(snippet)
 except json.JSONDecodeError:
     print("")
     sys.exit(0)
