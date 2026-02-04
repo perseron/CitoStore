@@ -425,42 +425,34 @@ def get_disk_usage(path: str) -> dict:
 
 
 def get_nvme_smart() -> dict:
-    code, out, err = run_cmd(["nvme", "list", "-o", "json"])
-    if code != 0:
-        return {"error": err or "nvme-cli not available"}
-    try:
-        data = json.loads(out)
-        devices = data.get("Devices", [])
-        if not devices:
-            return {"error": "no NVMe devices found"}
-        device = devices[0].get("DevicePath", "")
-        if not device:
-            return {"error": "invalid NVMe device data"}
-    except json.JSONDecodeError:
-        return {"error": "failed to parse nvme list output"}
-    code, out, err = run_cmd(["nvme", "smart-log", "-o", "json", device])
-    if code != 0:
-        return {"device": device, "error": err or "failed to read smart log"}
-    try:
-        smart = json.loads(out)
-    except json.JSONDecodeError:
-        return {"device": device, "error": "failed to parse smart log"}
-    temp = smart.get("temperature")
-    temp_c = None
-    if isinstance(temp, (int, float)) and temp >= 200:
-        temp_c = round(temp - 273.15, 1)
-    elif isinstance(temp, (int, float)):
-        temp_c = temp
-    return {
-        "device": device,
-        "temperature_c": temp_c,
-        "percentage_used": smart.get("percentage_used"),
-        "data_units_read": smart.get("data_units_read"),
-        "data_units_written": smart.get("data_units_written"),
-        "power_on_hours": smart.get("power_on_hours"),
-        "unsafe_shutdowns": smart.get("unsafe_shutdowns"),
-        "media_errors": smart.get("media_errors"),
-    }
+    cache_paths = [Path("/run/vision-nvme.json"), STATE_DIR / "nvme.json"]
+    for path in cache_paths:
+        if path.exists():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                return {"error": "failed to parse nvme cache"}
+            if payload.get("status") != "ok":
+                return {"error": payload.get("error", "nvme smart unavailable")}
+            smart = payload.get("smart", {})
+            device = payload.get("device", "")
+            temp = smart.get("temperature")
+            temp_c = None
+            if isinstance(temp, (int, float)) and temp >= 200:
+                temp_c = round(temp - 273.15, 1)
+            elif isinstance(temp, (int, float)):
+                temp_c = temp
+            return {
+                "device": device,
+                "temperature_c": temp_c,
+                "percentage_used": smart.get("percentage_used"),
+                "data_units_read": smart.get("data_units_read"),
+                "data_units_written": smart.get("data_units_written"),
+                "power_on_hours": smart.get("power_on_hours"),
+                "unsafe_shutdowns": smart.get("unsafe_shutdowns"),
+                "media_errors": smart.get("media_errors"),
+            }
+    return {"error": "nvme smart cache not available"}
 
 
 def apply_network_config(iface: str, method: str, address: str, prefix: str, gateway: str, dns: str):
