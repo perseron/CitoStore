@@ -14,8 +14,6 @@ USB_LABEL="${USB_LABEL:-VISIONUSB}"
 USB_LVS=("${USB_LVS[@]:-usb_0 usb_1 usb_2}")
 : "${USB_PERSIST_DIR:=aoi_settings}"
 : "${USB_PERSIST_BACKING:=$MIRROR_MOUNT/.state/$USB_PERSIST_DIR}"
-GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
-DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
 
 CONFIRM=false
 DRY_RUN=false
@@ -30,6 +28,8 @@ This wipes ALL data:
  - mirror LV (/dev/<vg>/<mirror>) is reformatted (ext4)
  - all USB LVs are reformatted (FAT32)
  - services are stopped and restarted
+
+Configuration files are NOT modified. Use restore-defaults.sh to reset configs.
 EOF
 }
 
@@ -114,15 +114,6 @@ mkdir -p "$MIRROR_MOUNT/.state" "$MIRROR_MOUNT/raw" "$MIRROR_MOUNT/bydate"
 
 if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
   mkdir -p "$USB_PERSIST_BACKING"
-fi
-
-if [[ -f "$DEFAULT_CONF" ]]; then
-  cp "$DEFAULT_CONF" /etc/vision-gw.conf
-  if grep -q '^GATEWAY_HOME=' /etc/vision-gw.conf; then
-    sed -i "s#^GATEWAY_HOME=.*#GATEWAY_HOME=$GATEWAY_HOME#" /etc/vision-gw.conf
-  else
-    echo "GATEWAY_HOME=$GATEWAY_HOME" >> /etc/vision-gw.conf
-  fi
 fi
 
 for lv in "${USB_LVS[@]}"; do

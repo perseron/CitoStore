@@ -363,6 +363,10 @@ async function maintenance(action) {
     const ok = prompt('Type "SHUTDOWN" to confirm.');
     if (ok !== "SHUTDOWN") return;
   }
+  if (action === "restore-defaults") {
+    const ok = prompt('Type "RESTORE DEFAULTS" to confirm.');
+    if (ok !== "RESTORE DEFAULTS") return;
+  }
   await api(`/api/maintenance/${action}`, { method: "POST", body: JSON.stringify(payload) });
   setStatus(`${action} started`);
 }
@@ -375,6 +379,7 @@ document.getElementById("save-smb-pass").addEventListener("click", changeSmbPass
 document.getElementById("wipe").addEventListener("click", () => maintenance("wipe"));
 document.getElementById("rebalance").addEventListener("click", () => maintenance("rebalance"));
 document.getElementById("resize-usb").addEventListener("click", () => maintenance("resize"));
+document.getElementById("restore-defaults").addEventListener("click", () => maintenance("restore-defaults"));
 document.getElementById("shutdown").addEventListener("click", () => maintenance("shutdown"));
 document.getElementById("set-time").addEventListener("click", setManualTime);
 

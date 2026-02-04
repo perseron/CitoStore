@@ -695,6 +695,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_maintenance(["rebalance"])
         if self.path == "/api/maintenance/resize":
             return self.handle_maintenance(["resize"])
+        if self.path == "/api/maintenance/restore-defaults":
+            return self.handle_maintenance(["restore-defaults"])
         if self.path == "/api/maintenance/shutdown":
             return self.handle_maintenance(["shutdown"])
         if self.path == "/api/network":
@@ -872,8 +874,7 @@ class WebHandler(BaseHTTPRequestHandler):
             gh = get_gateway_home()
             if action == ["wipe"]:
                 args = [f"{gh}/scripts/wipe-all-data.sh", "--i-know-what-im-doing"]
-                if data.get("force_umount"):
-                    args.append("--force-umount")
+                args.append("--force-umount")
             elif action == ["rebalance"]:
                 args = [f"{gh}/scripts/rebalance-storage.sh", "--i-know-what-im-doing"]
             elif action == ["resize"]:
@@ -889,6 +890,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 ]
             elif action == ["shutdown"]:
                 args = ["/usr/sbin/shutdown", "-h", "now"]
+            elif action == ["restore-defaults"]:
+                args = [f"{gh}/scripts/restore-defaults.sh", "--i-know-what-im-doing"]
             else:
                 return self.send_json({"ok": False, "error": "unknown action"}, status=400)
             code, out, err = run_cmd(args, timeout=3600)
