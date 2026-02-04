@@ -104,7 +104,7 @@ Operational flow (precise)
 2) `vision-sync.timer` triggers `vision-sync.service` on boot and on schedule.
 3) `vision-sync` creates a thin snapshot of the active LV, mounts it read-only, and scans files.
 4) A file is considered stable after `STABLE_SCAN_REQUIRED` consecutive scans with identical size+mtime.
-5) Stable files are copied into `raw/` preserving the original folder structure, then hardlinked into `bydate/YYYY/MM/DD/`.
+5) Stable files are copied into `raw/` preserving the original folder structure, then hardlinked into `bydate/YYYY/MM/DD/` (date source configurable; default is current local time).
 6) `vision-monitor` checks LV usage + thinpool metadata; if thresholds are exceeded it writes `/run/vision-rotate.state`.
 7) `vision-rotator` switches the USB gadget to the next LV (within the configured window unless critical).
 8) After switching, `offline-maint@<old_lv>` runs: filesystem check, offline sync, discard, reformat, and persist-folder handling.
@@ -135,6 +135,7 @@ Operational flow (detailed, step-by-step)
    - Stable files are copied into `raw/` preserving original folder structure.
    - Copies are atomic (temp file + rename); content hash is used to de-duplicate.
    - A hardlink is created in `bydate/YYYY/MM/DD/` pointing to the `raw/` file.
+   - By default the date folder is based on the current local time; set `BYDATE_USE_FILE_TIME=true` to use file mtime instead.
 7) Persist folder handling
    - If `USB_PERSIST_DIR` exists, a manifest is computed and compared to the last stored hash.
    - When changed, it is synced to `USB_PERSIST_BACKING`.
@@ -185,6 +186,8 @@ Snapshot sync
 - `STABLE_SCAN_REQUIRED`: Number of consecutive scans required before a file is copied. If set to `2`, a new file typically appears on the second run after creation.
 - `MAX_FILE_SIZE_BYTES`: Files equal/above this size are skipped (FAT32 4GiB limit default).
 - `COPY_CHUNK_BYTES`: Copy chunk size for atomic copy.
+- `RAW_APPEND_ALWAYS`: If `true`, always append to raw filenames (legacy behavior). If `false`, append only on collisions.
+- `BYDATE_USE_FILE_TIME`: If `true`, use file mtime for `bydate/YYYY/MM/DD/`. If `false`, use current local time (default).
 
 USB persist (AOI settings)
 - `USB_PERSIST_DIR`: Folder name on the USB LV to preserve (e.g., `aoi_settings`).

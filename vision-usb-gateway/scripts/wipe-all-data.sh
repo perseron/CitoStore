@@ -83,6 +83,8 @@ systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer || tr
 systemctl stop vision-sync.service vision-monitor.service vision-rotator.service || true
 systemctl stop usb-gadget.service || true
 
+vgchange -ay "$VG" || true
+
 if mountpoint -q "$MIRROR_MOUNT"; then
   if ! umount "$MIRROR_MOUNT"; then
     if [[ "$FORCE_UMOUNT" == "true" ]]; then
@@ -97,7 +99,12 @@ if mountpoint -q "$MIRROR_MOUNT"; then
   fi
 fi
 mkfs.ext4 -F "/dev/$VG/$MIRROR_LV"
+mkdir -p "$MIRROR_MOUNT"
 mount "/dev/$VG/$MIRROR_LV" "$MIRROR_MOUNT"
+if ! mountpoint -q "$MIRROR_MOUNT"; then
+  echo "Failed to mount mirror LV at $MIRROR_MOUNT" >&2
+  exit 1
+fi
 rm -rf "$MIRROR_MOUNT/.state" || true
 mkdir -p "$MIRROR_MOUNT/.state" "$MIRROR_MOUNT/raw" "$MIRROR_MOUNT/bydate"
 
@@ -128,6 +135,6 @@ done
 
 systemctl start usb-gadget.service || true
 systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
-systemctl start vision-sync.timer vision-monitor.timer vision-rotator.timer || true
+systemctl enable --now vision-sync.timer vision-monitor.timer vision-rotator.timer || true
 
 echo "Done."
