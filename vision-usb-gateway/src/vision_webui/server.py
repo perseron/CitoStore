@@ -907,8 +907,7 @@ class WebHandler(BaseHTTPRequestHandler):
         try:
             gh = get_gateway_home()
             if action == ["wipe"]:
-                args = [f"{gh}/scripts/wipe-all-data.sh", "--i-know-what-im-doing"]
-                args.append("--force-umount")
+                args = ["/bin/systemctl", "start", "vision-wipe.service"]
             elif action == ["rebalance"]:
                 args = [f"{gh}/scripts/rebalance-storage.sh", "--i-know-what-im-doing"]
             elif action == ["resize"]:
