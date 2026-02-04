@@ -23,7 +23,16 @@ async function api(path, options = {}) {
 }
 
 function setStatus(text) {
-  document.getElementById("status-line").textContent = text;
+  const el = document.getElementById("status-line");
+  el.textContent = text;
+  el.classList.remove("status-ok", "status-warn", "status-error");
+  if (text.toLowerCase().startsWith("error")) {
+    el.classList.add("status-error");
+  } else if (text.toLowerCase().includes("warn")) {
+    el.classList.add("status-warn");
+  } else {
+    el.classList.add("status-ok");
+  }
 }
 
 function setFieldValidity(el, ok, message = "") {
@@ -197,12 +206,10 @@ async function loadStatus() {
       : "n/a";
     let nvmeStatus = "OK";
     const mediaNum = Number(nvme.media_errors);
-    const unsafeNum = Number(nvme.unsafe_shutdowns);
     const usedNum = Number(nvme.percentage_used);
     if (!Number.isNaN(mediaNum) && mediaNum > 0) {
       nvmeStatus = "ERROR";
     } else if (
-      (!Number.isNaN(unsafeNum) && unsafeNum > 0) ||
       (!Number.isNaN(usedNum) && usedNum >= 90) ||
       (nvme.temperature_c !== null && nvme.temperature_c !== undefined && nvme.temperature_c >= 70)
     ) {
@@ -212,7 +219,16 @@ async function loadStatus() {
   }
   document.getElementById("status-network").textContent =
     `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}\n${timerLine}\n${usageLine}`;
-  document.getElementById("status-nvme").textContent = nvmeLine;
+  const nvmeEl = document.getElementById("status-nvme");
+  nvmeEl.textContent = nvmeLine;
+  nvmeEl.classList.remove("status-ok", "status-warn", "status-error");
+  if (nvmeLine.startsWith("NVMe") && nvmeLine.includes("ERROR")) {
+    nvmeEl.classList.add("status-error");
+  } else if (nvmeLine.startsWith("NVMe") && nvmeLine.includes("WARN")) {
+    nvmeEl.classList.add("status-warn");
+  } else if (nvmeLine.startsWith("NVMe")) {
+    nvmeEl.classList.add("status-ok");
+  }
   setStatus("OK");
 }
 

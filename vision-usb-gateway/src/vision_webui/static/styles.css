@@ -115,3 +115,21 @@ pre {
   font-size: 12px;
   opacity: 0.8;
 }
+.status-ok {
+  color: #16a34a;
+}
+.status-warn {
+  color: #d97706;
+}
+.status-error {
+  color: #dc2626;
+}
+pre.status-ok {
+  color: #86efac;
+}
+pre.status-warn {
+  color: #fde68a;
+}
+pre.status-error {
+  color: #fca5a5;
+}
