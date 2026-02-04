@@ -215,25 +215,34 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
         dt = datetime.fromtimestamp(mtime)
         date_path = bydate_dir / dt.strftime("%Y/%m/%d")
 
+        raw_subdir = safe_join(raw_dir, rel.parent)
         name = rel.name
         stem = Path(name).stem
         suffix = Path(name).suffix
-        final_name = f"{stem}_{mtime}{suffix}"
+        collision = (raw_subdir / name).exists()
+        if cfg.append_always:
+            collision = True
+        if collision:
+            final_name = f"{stem}_{mtime}{suffix}"
+        else:
+            final_name = name
 
-        raw_subdir = safe_join(raw_dir, rel.parent)
         dest_path, digest = atomic_copy(path, raw_subdir, final_name, cfg.copy_chunk)
 
-        hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
-        hash_path = raw_subdir / hash_name
-        if hash_path.exists():
-            dest_path.unlink(missing_ok=True)
-            final_path = hash_path
+        if collision:
+            hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
+            hash_path = raw_subdir / hash_name
+            if hash_path.exists():
+                dest_path.unlink(missing_ok=True)
+                final_path = hash_path
+            else:
+                dest_path.rename(hash_path)
+                final_path = hash_path
         else:
-            dest_path.rename(hash_path)
-            final_path = hash_path
+            final_path = dest_path
 
         date_path.mkdir(parents=True, exist_ok=True)
-        link_path = date_path / hash_name
+        link_path = date_path / final_path.name
         if not link_path.exists():
             os.link(final_path, link_path)
 
