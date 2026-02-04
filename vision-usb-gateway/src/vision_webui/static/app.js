@@ -396,7 +396,23 @@ async function refreshStatus() {
   }
 }
 
-refreshStatus().then(loadConfig).catch(err => setStatus("Error: " + err.message));
+function setManualTimeDefaults() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  const clock = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const dateEl = document.getElementById("MANUAL_DATE");
+  const timeEl = document.getElementById("MANUAL_CLOCK");
+  if (dateEl && !dateEl.value) dateEl.value = date;
+  if (timeEl && !timeEl.value) timeEl.value = clock;
+  if (dateEl) validateField(dateEl);
+  if (timeEl) validateField(timeEl);
+}
+
+refreshStatus()
+  .then(loadConfig)
+  .then(setManualTimeDefaults)
+  .catch(err => setStatus("Error: " + err.message));
 setInterval(refreshStatus, 10000);
 
 document.querySelectorAll("[data-validate]").forEach(el => {
