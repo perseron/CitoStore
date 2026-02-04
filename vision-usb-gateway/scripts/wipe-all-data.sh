@@ -82,6 +82,7 @@ fi
 systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer nas-sync.timer || true
 systemctl stop vision-sync.service vision-monitor.service vision-rotator.service mirror-retention.service nas-sync.service || true
 systemctl stop usb-gadget.service vision-webui.service smbd.service nmbd.service wsdd.service || true
+systemctl stop srv-vision_mirror.mount srv-vision_mirror.automount || true
 
 vgchange -ay "$VG" || true
 
