@@ -5,6 +5,7 @@ import time
 import shutil
 from datetime import datetime
 from pathlib import Path
+import json
 
 from .config import get_config
 from .db import init_db, update_state, is_already_synced, mark_synced
@@ -12,6 +13,7 @@ from .fsops import iter_files, atomic_copy, safe_join, compute_manifest
 
 
 ACTIVE_FILE = "/run/vision-usb-active"
+USB_USAGE_FILE = "/run/vision-usb-usage.json"
 
 
 def log(msg: str) -> None:
@@ -44,6 +46,36 @@ def mount_ro(dev: str, mount_point: Path) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
     subprocess.run(["mount", "-t", "vfat", "-o", opts, dev, str(mount_point)], check=True)
+
+
+def record_snapshot_usage(mount_point: Path, active_dev: str) -> None:
+    try:
+        result = subprocess.run(
+            ["df", "-h", "--output=size,used,pcent", str(mount_point)],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if result.returncode != 0:
+            return
+        lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+        if len(lines) < 2:
+            return
+        parts = lines[1].split()
+        if len(parts) < 3:
+            return
+        payload = {
+            "lv": active_dev,
+            "size": parts[0],
+            "used": parts[1],
+            "percent": parts[2],
+            "ts": datetime.now().isoformat(timespec="seconds"),
+        }
+        Path(USB_USAGE_FILE).write_text(json.dumps(payload))
+    except Exception:
+        return
+
 
 
 def wait_for_dev(snap_path: str, vg: str, snap_name: str) -> str:
@@ -260,6 +292,7 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
             raise RuntimeError("refusing to mount active device")
         mount_ro(dev, cfg.snapshot_mount)
         try:
+            record_snapshot_usage(cfg.snapshot_mount, dev)
             stable_and_copy(cfg, cfg.snapshot_mount, conn)
         finally:
             umount(cfg.snapshot_mount)
@@ -269,6 +302,7 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
     snap = lv_snapshot(active, cfg.lvm_vg, cfg.snapshot_name)
     try:
         mount_ro(snap, cfg.snapshot_mount)
+        record_snapshot_usage(cfg.snapshot_mount, active)
         sync_manifest = None
         if not offline:
             maybe_sync_persist(cfg, cfg.snapshot_mount, active)

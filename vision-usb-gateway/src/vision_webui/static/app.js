@@ -173,9 +173,9 @@ async function loadStatus() {
   document.getElementById("status-services").textContent = svcLines.join("\n");
   const usbUsage = data.active_usb_usage || {};
   let usbLine = `Active USB LV: ${data.active_usb_lv}`;
-  if (!usbUsage.error && (usbUsage.size_gb || usbUsage.data_percent)) {
-    const size = usbUsage.size_gb ? `${usbUsage.size_gb}G` : "n/a";
-    const used = usbUsage.data_percent ? `${usbUsage.data_percent}%` : "n/a";
+  if (!usbUsage.error && (usbUsage.size || usbUsage.percent || usbUsage.size_gb || usbUsage.data_percent)) {
+    const size = usbUsage.size || (usbUsage.size_gb ? `${usbUsage.size_gb}G` : "n/a");
+    const used = usbUsage.percent || (usbUsage.data_percent ? `${usbUsage.data_percent}%` : "n/a");
     usbLine += ` (size ${size}, used ${used})`;
   }
   document.getElementById("status-usb").textContent = usbLine;

@@ -370,6 +370,19 @@ def get_active_usb_lv() -> str:
 def get_usb_lv_usage(lv_path: str) -> dict:
     if not lv_path or lv_path == "unknown":
         return {"error": "unknown LV"}
+    cache_path = Path("/run/vision-usb-usage.json")
+    if cache_path.exists():
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            if cached.get("lv") == lv_path:
+                return {
+                    "size": cached.get("size", ""),
+                    "used": cached.get("used", ""),
+                    "percent": cached.get("percent", ""),
+                    "ts": cached.get("ts", ""),
+                }
+        except json.JSONDecodeError:
+            pass
     code, out, err = run_cmd(
         ["lvs", "-a", "--noheadings", "--units", "g", "--nosuffix", "-o", "lv_path,lv_size,data_percent"]
     )
