@@ -79,9 +79,9 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
-systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer || true
-systemctl stop vision-sync.service vision-monitor.service vision-rotator.service || true
-systemctl stop usb-gadget.service || true
+systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer nas-sync.timer || true
+systemctl stop vision-sync.service vision-monitor.service vision-rotator.service mirror-retention.service nas-sync.service || true
+systemctl stop usb-gadget.service vision-webui.service smbd.service nmbd.service wsdd.service || true
 
 vgchange -ay "$VG" || true
 
@@ -97,6 +97,10 @@ if mountpoint -q "$MIRROR_MOUNT"; then
       exit 1
     fi
   fi
+fi
+if mountpoint -q "$MIRROR_MOUNT"; then
+  echo "Mirror mount still busy after unmount attempts: $MIRROR_MOUNT" >&2
+  exit 1
 fi
 mkfs.ext4 -F "/dev/$VG/$MIRROR_LV"
 mkdir -p "$MIRROR_MOUNT"
