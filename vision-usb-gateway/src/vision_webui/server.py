@@ -460,6 +460,8 @@ def units_to_tb(units) -> float | None:
     try:
         if units is None:
             return None
+        if isinstance(units, str):
+            units = units.replace(",", "").strip()
         # NVMe data units are 512,000 bytes each (per spec).
         bytes_total = int(units) * 512_000
         return round(bytes_total / 1_000_000_000_000, 2)
