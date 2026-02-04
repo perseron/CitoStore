@@ -195,7 +195,20 @@ async function loadStatus() {
     const unsafe = nvme.unsafe_shutdowns !== undefined && nvme.unsafe_shutdowns !== null
       ? `${nvme.unsafe_shutdowns}`
       : "n/a";
-    nvmeLine = `NVMe ${nvme.device}: temp ${temp}, ${used}, POH ${poh}, media ${media}, unsafe ${unsafe}`;
+    let nvmeStatus = "OK";
+    const mediaNum = Number(nvme.media_errors);
+    const unsafeNum = Number(nvme.unsafe_shutdowns);
+    const usedNum = Number(nvme.percentage_used);
+    if (!Number.isNaN(mediaNum) && mediaNum > 0) {
+      nvmeStatus = "ERROR";
+    } else if (
+      (!Number.isNaN(unsafeNum) && unsafeNum > 0) ||
+      (!Number.isNaN(usedNum) && usedNum >= 90) ||
+      (nvme.temperature_c !== null && nvme.temperature_c !== undefined && nvme.temperature_c >= 70)
+    ) {
+      nvmeStatus = "WARN";
+    }
+    nvmeLine = `NVMe ${nvme.device}: ${nvmeStatus} | temp ${temp}, ${used}, POH ${poh}, media ${media}, unsafe ${unsafe}`;
   }
   document.getElementById("status-network").textContent =
     `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}\n${timerLine}\n${usageLine}`;
