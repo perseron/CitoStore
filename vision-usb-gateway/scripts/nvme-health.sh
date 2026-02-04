@@ -41,8 +41,12 @@ PY
 )
 
 if [[ -z "$device" ]]; then
-  printf '{"status":"error","error":"no NVMe devices found or invalid nvme list JSON","ts":"%s"}\n' "$timestamp" | tee "$RUN_OUT" "$STATE_OUT" >/dev/null
-  exit 0
+  text_list=$(/usr/sbin/nvme list 2>/dev/null || true)
+  device=$(printf '%s\n' "$text_list" | awk '/^\/dev\/nvme/ {print $1; exit}')
+  if [[ -z "$device" ]]; then
+    printf '{"status":"error","error":"no NVMe devices found or invalid nvme list JSON","ts":"%s"}\n' "$timestamp" | tee "$RUN_OUT" "$STATE_OUT" >/dev/null
+    exit 0
+  fi
 fi
 
 if ! out=$(/usr/sbin/nvme smart-log -o json "$device" 2>/dev/null); then
