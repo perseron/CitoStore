@@ -18,3 +18,4 @@
 ## P2 - Medium (operations)
 - Add "maintenance mode" switch in WebUI (disable rotation/sync safely)
 - Add UPS/power-loss detection hooks (if hardware supports it)
+- Assess filename-append behavior: only append on name collisions vs always append; evaluate resource cost of collision checks.

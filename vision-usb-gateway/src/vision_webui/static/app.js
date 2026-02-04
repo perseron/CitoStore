@@ -166,14 +166,37 @@ async function loadStatus() {
   const net = data.network || {};
   const timer = data.sync_timer || {};
   const usage = data.mirror_usage || {};
+  const nvme = data.nvme || {};
   const timerLine = timer.next_remaining
     ? `Next sync in: ${timer.next_remaining}`
     : "Next sync in: n/a";
   const usageLine = usage.percent
     ? `Mirror usage: ${usage.percent} (${usage.used} / ${usage.size})`
     : "Mirror usage: n/a";
+  let nvmeLine = "NVMe SMART: n/a";
+  if (nvme.error) {
+    nvmeLine = `NVMe SMART: ${nvme.error}`;
+  } else if (nvme.device) {
+    const temp = nvme.temperature_c !== null && nvme.temperature_c !== undefined
+      ? `${nvme.temperature_c}C`
+      : "n/a";
+    const used = nvme.percentage_used !== undefined && nvme.percentage_used !== null
+      ? `${nvme.percentage_used}% used`
+      : "usage n/a";
+    const poh = nvme.power_on_hours !== undefined && nvme.power_on_hours !== null
+      ? `${nvme.power_on_hours}h`
+      : "n/a";
+    const media = nvme.media_errors !== undefined && nvme.media_errors !== null
+      ? `${nvme.media_errors}`
+      : "n/a";
+    const unsafe = nvme.unsafe_shutdowns !== undefined && nvme.unsafe_shutdowns !== null
+      ? `${nvme.unsafe_shutdowns}`
+      : "n/a";
+    nvmeLine = `NVMe ${nvme.device}: temp ${temp}, ${used}, POH ${poh}, media ${media}, unsafe ${unsafe}`;
+  }
   document.getElementById("status-network").textContent =
     `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}\n${timerLine}\n${usageLine}`;
+  document.getElementById("status-nvme").textContent = nvmeLine;
   setStatus("OK");
 }
 

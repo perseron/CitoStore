@@ -74,6 +74,7 @@ Boot-time auto-recovery
 
 Snapshot cleanup
 - `vision-snapshot-cleanup.timer` removes stale `usb_sync_snap` snapshots periodically.
+  - Enable: `systemctl enable --now vision-snapshot-cleanup.timer`
 
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
