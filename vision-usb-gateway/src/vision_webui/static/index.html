@@ -37,6 +37,20 @@
         <label>First sync after timer start <input id="SYNC_ONACTIVE_SEC" data-validate="time">
           <span class="hint">e.g. 2min</span>
         </label>
+        <label>Bydate uses file time
+          <select id="BYDATE_USE_FILE_TIME">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+          <span class="hint">false = use current time</span>
+        </label>
+        <label>Always append raw filenames
+          <select id="RAW_APPEND_ALWAYS">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+          <span class="hint">true = always add suffix</span>
+        </label>
       </div>
 
       <h3>Samba</h3>

@@ -42,6 +42,8 @@ ALLOWED_CONFIG_KEYS = {
     "NAS_MOUNT",
     "WEBUI_BIND",
     "WEBUI_PORT",
+    "BYDATE_USE_FILE_TIME",
+    "RAW_APPEND_ALWAYS",
 }
 
 SERVICES = [
@@ -556,6 +558,9 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
     if "NAS_ENABLED" in updates:
         if updates["NAS_ENABLED"] not in ("true", "false"):
             return False, "NAS_ENABLED must be true or false"
+    for key in ("BYDATE_USE_FILE_TIME", "RAW_APPEND_ALWAYS"):
+        if key in updates and updates[key] not in ("true", "false"):
+            return False, f"{key} must be true or false"
     return True, ""
 
 

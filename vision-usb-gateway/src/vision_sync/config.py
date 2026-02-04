@@ -20,6 +20,7 @@ class Config:
     max_file_size: int
     copy_chunk: int
     append_always: bool
+    bydate_use_file_time: bool
 
 
 def _parse_line(line: str):
@@ -76,6 +77,7 @@ def get_config(path: str) -> Config:
     max_file_size = int(data.get("MAX_FILE_SIZE_BYTES", str(4 * 1024 ** 3)))
     copy_chunk = int(data.get("COPY_CHUNK_BYTES", str(8 * 1024 ** 2)))
     append_always = str(data.get("RAW_APPEND_ALWAYS", "false")).lower() in ("1", "true", "yes", "on")
+    bydate_use_file_time = str(data.get("BYDATE_USE_FILE_TIME", "false")).lower() in ("1", "true", "yes", "on")
     return Config(
         mirror_mount=mirror_mount,
         state_dir=state_dir,
@@ -92,4 +94,5 @@ def get_config(path: str) -> Config:
         max_file_size=max_file_size,
         copy_chunk=copy_chunk,
         append_always=append_always,
+        bydate_use_file_time=bydate_use_file_time,
     )

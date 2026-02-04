@@ -212,7 +212,7 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
         if is_already_synced(conn, str(rel), size, mtime):
             continue
 
-        dt = datetime.fromtimestamp(mtime)
+        dt = datetime.fromtimestamp(mtime if cfg.bydate_use_file_time else now)
         date_path = bydate_dir / dt.strftime("%Y/%m/%d")
 
         raw_subdir = safe_join(raw_dir, rel.parent)

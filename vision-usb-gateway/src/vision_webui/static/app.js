@@ -263,6 +263,8 @@ async function saveConfig(apply = false) {
     SYNC_INTERVAL_SEC: document.getElementById("SYNC_INTERVAL_SEC").value,
     SYNC_ONBOOT_SEC: document.getElementById("SYNC_ONBOOT_SEC").value,
     SYNC_ONACTIVE_SEC: document.getElementById("SYNC_ONACTIVE_SEC").value,
+    BYDATE_USE_FILE_TIME: document.getElementById("BYDATE_USE_FILE_TIME").value,
+    RAW_APPEND_ALWAYS: document.getElementById("RAW_APPEND_ALWAYS").value,
     NAS_ENABLED: document.getElementById("NAS_ENABLED").value,
     NAS_REMOTE: document.getElementById("NAS_REMOTE").value,
     NAS_MOUNT: document.getElementById("NAS_MOUNT").value,
