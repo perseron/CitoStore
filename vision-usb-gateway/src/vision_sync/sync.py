@@ -179,7 +179,7 @@ def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
         finally:
             umount(persist_mnt)
 
-    write_manifest(manifest_path, new_digest)
+    write_manifest_state(manifest_path, new_digest, 0, "active")
 
 
 def maybe_compute_sync_manifest(cfg, mount_root: Path) -> tuple[str, int, bool, str] | None:
