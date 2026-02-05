@@ -28,6 +28,11 @@ def read_active() -> str:
 
 def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
     snap_path = f"/dev/{vg}/{snap_name}"
+    kpartx = "/sbin/kpartx"
+    if not os.path.exists(kpartx):
+        kpartx = "/usr/sbin/kpartx"
+    if os.path.exists(kpartx):
+        subprocess.run([kpartx, "-d", snap_path], check=False)
     subprocess.run(["lvremove", "-y", snap_path], check=False)
     subprocess.run(["lvcreate", "-s", "-n", snap_name, active_dev], check=True)
     # Ensure the snapshot is activatable and active so a device node appears.
@@ -47,7 +52,7 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
     opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
     if offset_override is not None:
-        offset_opts = f"{opts},offset={offset_override}"
+        offset_opts = f"{opts},loop,offset={offset_override}"
         result = subprocess.run(
             ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
             check=False,
@@ -60,20 +65,7 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
             except Exception:
                 alt = None
             if alt and alt != offset_override:
-                offset_opts = f"{opts},offset={alt}"
-                result = subprocess.run(
-                    ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
-                    check=False,
-                )
-                if result.returncode == 0:
-                    return
-        if os.path.exists(ACTIVE_FILE):
-            try:
-                alt = get_partition_offset(read_active())
-            except Exception:
-                alt = None
-            if alt and alt != offset_override:
-                offset_opts = f"{opts},offset={alt}"
+                offset_opts = f"{opts},loop,offset={alt}"
                 result = subprocess.run(
                     ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
                     check=False,
@@ -94,7 +86,7 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
             offset = None
     if offset is None:
         raise subprocess.CalledProcessError(result.returncode, result.args)
-    offset_opts = f"{opts},offset={offset}"
+    offset_opts = f"{opts},loop,offset={offset}"
     subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
 
 
@@ -231,7 +223,7 @@ def mount_rw(dev: str, mount_point: Path, offset_override: int | None = None) ->
     opts = "utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
     if offset_override is not None:
-        offset_opts = f"{opts},offset={offset_override}"
+        offset_opts = f"{opts},loop,offset={offset_override}"
         result = subprocess.run(
             ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
             check=False,
@@ -252,7 +244,7 @@ def mount_rw(dev: str, mount_point: Path, offset_override: int | None = None) ->
             offset = None
     if offset is None:
         raise subprocess.CalledProcessError(result.returncode, result.args)
-    offset_opts = f"{opts},offset={offset}"
+    offset_opts = f"{opts},loop,offset={offset}"
     subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
 
 
@@ -299,9 +291,13 @@ def get_partition_offset(dev: str) -> int | None:
 
 def resolve_mount_device(dev: str) -> str:
     partx = "/sbin/partx"
+    if not os.path.exists(partx):
+        partx = "/usr/sbin/partx"
     if os.path.exists(partx):
         subprocess.run([partx, "-a", dev], check=False)
     kpartx = "/sbin/kpartx"
+    if not os.path.exists(kpartx):
+        kpartx = "/usr/sbin/kpartx"
     if os.path.exists(kpartx):
         subprocess.run([kpartx, "-a", dev], check=False)
         # Try to read the mapping name from kpartx output (e.g. vg0-usb_sync_snap1).
