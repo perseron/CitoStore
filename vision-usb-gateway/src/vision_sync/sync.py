@@ -46,7 +46,15 @@ def mount_ro(dev: str, mount_point: Path) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
-    subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
+    try:
+        subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
+        return
+    except subprocess.CalledProcessError:
+        offset = get_partition_offset(dev) or get_partition_offset(mount_dev)
+        if offset is None:
+            raise
+        offset_opts = f"{opts},offset={offset}"
+        subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
 
 
 def record_snapshot_usage(mount_point: Path, active_dev: str) -> None:
@@ -181,7 +189,39 @@ def mount_rw(dev: str, mount_point: Path) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
-    subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
+    try:
+        subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
+        return
+    except subprocess.CalledProcessError:
+        offset = get_partition_offset(dev) or get_partition_offset(mount_dev)
+        if offset is None:
+            raise
+        offset_opts = f"{opts},offset={offset}"
+        subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
+
+
+def get_partition_offset(dev: str) -> int | None:
+    try:
+        result = subprocess.run(
+            ["sfdisk", "-d", dev],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        for line in result.stdout.splitlines():
+            if line.strip().startswith(dev) and "start=" in line:
+                parts = line.split(",")
+                for part in parts:
+                    part = part.strip()
+                    if part.startswith("start="):
+                        start = int(part.split("=", 1)[1])
+                        return start * 512
+        return None
+    except Exception:
+        return None
 
 
 def resolve_mount_device(dev: str) -> str:
