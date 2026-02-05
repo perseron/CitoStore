@@ -731,6 +731,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_maintenance(["resize"])
         if self.path == "/api/maintenance/restore-defaults":
             return self.handle_maintenance(["restore-defaults"])
+        if self.path == "/api/maintenance/clone-usb-format":
+            return self.handle_maintenance(["clone-usb-format"])
         if self.path == "/api/maintenance/shutdown":
             return self.handle_maintenance(["shutdown"])
         if self.path == "/api/network":
@@ -925,6 +927,8 @@ class WebHandler(BaseHTTPRequestHandler):
                 args = ["/usr/sbin/shutdown", "-h", "now"]
             elif action == ["restore-defaults"]:
                 args = [f"{gh}/scripts/restore-defaults.sh", "--i-know-what-im-doing"]
+            elif action == ["clone-usb-format"]:
+                args = ["/bin/systemctl", "start", "vision-usb-format.service"]
             else:
                 return self.send_json({"ok": False, "error": "unknown action"}, status=400)
             code, out, err = run_cmd(args, timeout=3600)

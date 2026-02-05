@@ -20,6 +20,7 @@ if [[ "$active" == "/dev/$LVM_VG/$lv_name" ]]; then
 fi
 
 dev="/dev/$LVM_VG/$lv_name"
+fs_dev=$(resolve_usb_device "$dev")
 
 : "${MIRROR_MOUNT:=/srv/vision_mirror}"
 : "${USB_PERSIST_DIR:=aoi_settings}"
@@ -57,9 +58,9 @@ persist_record_duration() {
 }
 
 log "fsck FAT32 (read-only check)"
-fsck.fat -n "$dev" || true
+fsck.fat -n "$fs_dev" || true
 log "fsck FAT32 (auto-fix)"
-fsck.fat -a "$dev" || true
+fsck.fat -a "$fs_dev" || true
 
 log "offline export"
 python3 -m vision_sync.sync --config /etc/vision-gw.conf --dev "$dev" --offline
@@ -73,7 +74,7 @@ if persist_enabled; then
   persist_start=$(date +%s)
   log "persist export: $USB_PERSIST_DIR -> $USB_PERSIST_BACKING"
   safe_mkdir "$PERSIST_MNT"
-  if mount -t vfat -o ro,utf8,shortname=mixed,nodev,nosuid,noexec "$dev" "$PERSIST_MNT"; then
+if mount -t vfat -o ro,utf8,shortname=mixed,nodev,nosuid,noexec "$fs_dev" "$PERSIST_MNT"; then
     if [[ -d "$PERSIST_MNT/$USB_PERSIST_DIR" ]]; then
       export_start=$(date +%s)
       persist_sync_dir "$PERSIST_MNT/$USB_PERSIST_DIR/" "$USB_PERSIST_BACKING/"
@@ -93,12 +94,12 @@ if blkdiscard "$dev" >/dev/null 2>&1; then
 fi
 
 log "reformat FAT32"
-mkfs.vfat -F 32 -n "$USB_LABEL" "$dev"
+mkfs.vfat -F 32 -n "$USB_LABEL" "$fs_dev"
 
 if persist_enabled; then
   log "persist restore: $USB_PERSIST_BACKING -> $USB_PERSIST_DIR"
   safe_mkdir "$PERSIST_MNT"
-  if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "$dev" "$PERSIST_MNT"; then
+if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "$fs_dev" "$PERSIST_MNT"; then
     safe_mkdir "$PERSIST_MNT/$USB_PERSIST_DIR"
     if [[ -d "$USB_PERSIST_BACKING" ]]; then
       import_start=$(date +%s)

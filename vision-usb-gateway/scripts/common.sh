@@ -52,3 +52,19 @@ safe_mkdir() {
 require_cmd() {
   command -v "$1" >/dev/null 2>&1 || { echo "missing command: $1" >&2; exit 1; }
 }
+
+resolve_usb_device() {
+  local dev="$1"
+  if [[ -x /sbin/partx ]]; then
+    /sbin/partx -a "$dev" >/dev/null 2>&1 || true
+  fi
+  if command -v lsblk >/dev/null 2>&1; then
+    local part
+    part=$(lsblk -n -o NAME,TYPE -r "$dev" 2>/dev/null | awk '$2=="part"{print "/dev/"$1; exit}')
+    if [[ -n "$part" ]]; then
+      echo "$part"
+      return
+    fi
+  fi
+  echo "$dev"
+}

@@ -45,7 +45,8 @@ def lv_remove(snap_name: str, vg: str) -> None:
 def mount_ro(dev: str, mount_point: Path) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
-    subprocess.run(["mount", "-t", "vfat", "-o", opts, dev, str(mount_point)], check=True)
+    mount_dev = resolve_mount_device(dev)
+    subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
 
 
 def record_snapshot_usage(mount_point: Path, active_dev: str) -> None:
@@ -179,7 +180,26 @@ def sync_dir(src: Path, dst: Path) -> None:
 def mount_rw(dev: str, mount_point: Path) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "utf8,shortname=mixed,nodev,nosuid,noexec"
-    subprocess.run(["mount", "-t", "vfat", "-o", opts, dev, str(mount_point)], check=True)
+    mount_dev = resolve_mount_device(dev)
+    subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
+
+
+def resolve_mount_device(dev: str) -> str:
+    partx = "/sbin/partx"
+    if os.path.exists(partx):
+        subprocess.run([partx, "-a", dev], check=False)
+    result = subprocess.run(
+        ["lsblk", "-n", "-o", "NAME,TYPE", "-r", dev],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[1] == "part":
+            return f"/dev/{parts[0]}"
+    return dev
 
 
 def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:

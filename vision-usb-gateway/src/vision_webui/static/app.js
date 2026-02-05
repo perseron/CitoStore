@@ -374,6 +374,10 @@ async function maintenance(action) {
     const ok = prompt('Type "RESTORE DEFAULTS" to confirm.');
     if (ok !== "RESTORE DEFAULTS") return;
   }
+  if (action === "clone-usb-format") {
+    const ok = prompt('Type "CLONE USB FORMAT" to confirm.');
+    if (ok !== "CLONE USB FORMAT") return;
+  }
   await api(`/api/maintenance/${action}`, { method: "POST", body: JSON.stringify(payload) });
   setStatus(`${action} started`);
 }
@@ -387,6 +391,7 @@ document.getElementById("wipe").addEventListener("click", () => maintenance("wip
 document.getElementById("rebalance").addEventListener("click", () => maintenance("rebalance"));
 document.getElementById("resize-usb").addEventListener("click", () => maintenance("resize"));
 document.getElementById("restore-defaults").addEventListener("click", () => maintenance("restore-defaults"));
+document.getElementById("clone-usb-format").addEventListener("click", () => maintenance("clone-usb-format"));
 document.getElementById("shutdown").addEventListener("click", () => maintenance("shutdown"));
 document.getElementById("set-time").addEventListener("click", setManualTime);
 

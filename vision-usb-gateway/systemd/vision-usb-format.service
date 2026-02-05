@@ -1,0 +1,15 @@
+[Unit]
+Description=Vision Clone USB Format
+After=local-fs.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/clone-usb-format.sh --i-know-what-im-doing
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/run /mnt /dev
+
+[Install]
+WantedBy=multi-user.target

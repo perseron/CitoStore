@@ -241,6 +241,8 @@ Maintenance utilities
   - `sudo /opt/vision-usb-gateway/scripts/wipe-all-data.sh --i-know-what-im-doing --force-umount`
 - Restore default configuration (does not touch data volumes):
   - `sudo /opt/vision-usb-gateway/scripts/restore-defaults.sh --i-know-what-im-doing`
+- Clone USB format from active LV to all inactive LVs:
+  - `sudo /opt/vision-usb-gateway/scripts/clone-usb-format.sh --i-know-what-im-doing`
 - Rebalance storage from config (destructive):
   - `sudo /opt/vision-usb-gateway/scripts/rebalance-storage.sh --i-know-what-im-doing --update-config`
   - Add `--force-umount` if the mirror is busy.

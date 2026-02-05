@@ -105,6 +105,12 @@ fi
 if [[ -f "$MIRROR_MOUNT/.state/network.json" ]]; then
   cp "$MIRROR_MOUNT/.state/network.json" "$BACKUP_DIR/network.json"
 fi
+if [[ -f "$MIRROR_MOUNT/.state/webui.passwd" ]]; then
+  cp "$MIRROR_MOUNT/.state/webui.passwd" "$BACKUP_DIR/webui.passwd"
+fi
+if [[ -f "$MIRROR_MOUNT/.state/webui.secret" ]]; then
+  cp "$MIRROR_MOUNT/.state/webui.secret" "$BACKUP_DIR/webui.secret"
+fi
 
 if mountpoint -q "$MIRROR_MOUNT"; then
   if ! umount "$MIRROR_MOUNT"; then
@@ -151,6 +157,12 @@ fi
 if [[ -f "$BACKUP_DIR/network.json" ]]; then
   cp "$BACKUP_DIR/network.json" "$MIRROR_MOUNT/.state/network.json"
 fi
+if [[ -f "$BACKUP_DIR/webui.passwd" ]]; then
+  cp "$BACKUP_DIR/webui.passwd" "$MIRROR_MOUNT/.state/webui.passwd"
+fi
+if [[ -f "$BACKUP_DIR/webui.secret" ]]; then
+  cp "$BACKUP_DIR/webui.secret" "$MIRROR_MOUNT/.state/webui.secret"
+fi
 
 for lv in "${USB_LVS[@]}"; do
   mkfs.vfat -F 32 -n "$USB_LABEL" "/dev/$VG/$lv"
@@ -165,6 +177,8 @@ for lv in "${USB_LVS[@]}"; do
 done
 
 systemctl start usb-gadget.service || true
+systemctl start smbd.service nmbd.service wsdd.service || true
+systemctl start vision-webui.service || true
 systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
 systemctl enable --now vision-sync.timer vision-monitor.timer vision-rotator.timer || true
 
