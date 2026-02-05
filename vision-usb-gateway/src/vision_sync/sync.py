@@ -54,6 +54,32 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
         )
         if result.returncode == 0:
             return
+        if os.path.exists(ACTIVE_FILE):
+            try:
+                alt = get_partition_offset(read_active())
+            except Exception:
+                alt = None
+            if alt and alt != offset_override:
+                offset_opts = f"{opts},offset={alt}"
+                result = subprocess.run(
+                    ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
+                    check=False,
+                )
+                if result.returncode == 0:
+                    return
+        if os.path.exists(ACTIVE_FILE):
+            try:
+                alt = get_partition_offset(read_active())
+            except Exception:
+                alt = None
+            if alt and alt != offset_override:
+                offset_opts = f"{opts},offset={alt}"
+                result = subprocess.run(
+                    ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
+                    check=False,
+                )
+                if result.returncode == 0:
+                    return
     result = subprocess.run(
         ["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)],
         check=False,
