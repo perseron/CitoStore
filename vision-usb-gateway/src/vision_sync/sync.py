@@ -188,9 +188,31 @@ def resolve_mount_device(dev: str) -> str:
     partx = "/sbin/partx"
     if os.path.exists(partx):
         subprocess.run([partx, "-a", dev], check=False)
+    kpartx = "/sbin/kpartx"
+    if os.path.exists(kpartx):
+        subprocess.run([kpartx, "-a", dev], check=False)
     udevadm = "/sbin/udevadm"
     if os.path.exists(udevadm):
         subprocess.run([udevadm, "settle"], check=False)
+    base = os.path.basename(dev)
+    mapper_name = base
+    if base.startswith("vg0-") or base.startswith("vg") is False:
+        # If /dev/vg0/<name>, mapper is vg0-<name>
+        if "/dev/" in dev and dev.count("/") >= 2:
+            parts = dev.split("/")
+            if len(parts) >= 3 and parts[1] == "dev":
+                if parts[2].startswith("vg"):
+                    vg = parts[2]
+                    lv = parts[3] if len(parts) > 3 else base
+                    mapper_name = f"{vg}-{lv}"
+    candidates = [
+        f"/dev/{base}p1",
+        f"/dev/mapper/{mapper_name}p1",
+        f"/dev/mapper/{base}p1",
+    ]
+    for cand in candidates:
+        if os.path.exists(cand):
+            return cand
     result = subprocess.run(
         ["lsblk", "-n", "-o", "NAME,TYPE", "-r", dev],
         text=True,
