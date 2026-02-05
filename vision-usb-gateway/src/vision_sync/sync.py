@@ -32,18 +32,18 @@ def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
     if not os.path.exists(kpartx):
         kpartx = "/usr/sbin/kpartx"
     if os.path.exists(kpartx):
-        subprocess.run([kpartx, "-d", snap_path], check=False)
+        subprocess.run([kpartx, "-d", snap_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     partx = "/sbin/partx"
     if not os.path.exists(partx):
         partx = "/usr/sbin/partx"
     if os.path.exists(partx):
-        subprocess.run([partx, "-d", snap_path], check=False)
+        subprocess.run([partx, "-d", snap_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     dmsetup = "/sbin/dmsetup"
     if not os.path.exists(dmsetup):
         dmsetup = "/usr/sbin/dmsetup"
     if os.path.exists(dmsetup):
-        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"], check=False)
-        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}"], check=False)
+        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     subprocess.run(["lvremove", "-y", snap_path], check=False)
     subprocess.run(["lvcreate", "-s", "-n", snap_name, active_dev], check=True)
     # Ensure the snapshot is activatable and active so a device node appears.
@@ -55,7 +55,24 @@ def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
 
 
 def lv_remove(snap_name: str, vg: str) -> None:
-    subprocess.run(["lvremove", "-y", f"/dev/{vg}/{snap_name}"], check=False)
+    snap_path = f"/dev/{vg}/{snap_name}"
+    kpartx = "/sbin/kpartx"
+    if not os.path.exists(kpartx):
+        kpartx = "/usr/sbin/kpartx"
+    if os.path.exists(kpartx):
+        subprocess.run([kpartx, "-d", snap_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    partx = "/sbin/partx"
+    if not os.path.exists(partx):
+        partx = "/usr/sbin/partx"
+    if os.path.exists(partx):
+        subprocess.run([partx, "-d", snap_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    dmsetup = "/sbin/dmsetup"
+    if not os.path.exists(dmsetup):
+        dmsetup = "/usr/sbin/dmsetup"
+    if os.path.exists(dmsetup):
+        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(["lvremove", "-y", snap_path], check=False)
 
 
 def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) -> None:
