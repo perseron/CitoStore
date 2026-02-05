@@ -27,8 +27,9 @@ def iter_files(root: Path) -> Iterator[Tuple[Path, os.stat_result]]:
 def safe_join(base: Path, rel: Path) -> Path:
     if rel.is_absolute():
         raise ValueError("absolute path not allowed")
-    norm = (base / rel).resolve()
-    if not str(norm).startswith(str(base.resolve())):
+    base_resolved = base.resolve()
+    norm = (base_resolved / rel).resolve()
+    if norm != base_resolved and base_resolved not in norm.parents:
         raise ValueError("path traversal")
     return norm
 
