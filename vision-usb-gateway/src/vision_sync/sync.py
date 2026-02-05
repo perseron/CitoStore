@@ -53,6 +53,11 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
     if result.returncode == 0:
         return
     offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
+    if offset is None and os.path.exists(ACTIVE_FILE):
+        try:
+            offset = get_partition_offset(read_active())
+        except Exception:
+            offset = None
     if offset is None:
         raise subprocess.CalledProcessError(result.returncode, result.args)
     offset_opts = f"{opts},offset={offset}"
@@ -198,6 +203,11 @@ def mount_rw(dev: str, mount_point: Path, offset_override: int | None = None) ->
     if result.returncode == 0:
         return
     offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
+    if offset is None and os.path.exists(ACTIVE_FILE):
+        try:
+            offset = get_partition_offset(read_active())
+        except Exception:
+            offset = None
     if offset is None:
         raise subprocess.CalledProcessError(result.returncode, result.args)
     offset_opts = f"{opts},offset={offset}"
