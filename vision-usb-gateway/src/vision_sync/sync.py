@@ -20,6 +20,10 @@ def log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def run_best_effort(args: list[str]) -> None:
+    subprocess.run(args, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 def read_active() -> str:
     if not os.path.exists(ACTIVE_FILE):
         raise RuntimeError("active device file missing")
@@ -44,13 +48,13 @@ def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
     if os.path.exists(dmsetup):
         subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["lvremove", "-y", snap_path], check=False)
+    run_best_effort(["lvremove", "-y", snap_path])
     subprocess.run(["lvcreate", "-s", "-n", snap_name, active_dev], check=True)
     # Ensure the snapshot is activatable and active so a device node appears.
     # Different LVM versions expose different flags, so try both.
-    subprocess.run(["lvchange", "--setactivationskip", "n", snap_path], check=False)
-    subprocess.run(["lvchange", "-K", "n", snap_path], check=False)
-    subprocess.run(["lvchange", "-ay", snap_path], check=False)
+    run_best_effort(["lvchange", "--setactivationskip", "n", snap_path])
+    run_best_effort(["lvchange", "-K", "n", snap_path])
+    run_best_effort(["lvchange", "-ay", snap_path])
     return wait_for_dev(snap_path, vg, snap_name)
 
 
@@ -72,7 +76,7 @@ def lv_remove(snap_name: str, vg: str) -> None:
     if os.path.exists(dmsetup):
         subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    subprocess.run(["lvremove", "-y", snap_path], check=False)
+    run_best_effort(["lvremove", "-y", snap_path])
 
 
 def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) -> None:
