@@ -304,6 +304,14 @@ def resolve_mount_device(dev: str) -> str:
     kpartx = "/sbin/kpartx"
     if os.path.exists(kpartx):
         subprocess.run([kpartx, "-a", dev], check=False)
+        # Try to read the mapping name from kpartx output (e.g. vg0-usb_sync_snap1).
+        kp = subprocess.run([kpartx, "-l", dev], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        for line in kp.stdout.splitlines():
+            name = line.split()[0].strip() if line.split() else ""
+            if name:
+                mapper = f"/dev/mapper/{name}"
+                if os.path.exists(mapper):
+                    return mapper
     udevadm = "/sbin/udevadm"
     if os.path.exists(udevadm):
         subprocess.run([udevadm, "settle"], check=False)
@@ -322,6 +330,8 @@ def resolve_mount_device(dev: str) -> str:
         f"/dev/{base}p1",
         f"/dev/mapper/{mapper_name}p1",
         f"/dev/mapper/{base}p1",
+        f"/dev/mapper/{mapper_name}1",
+        f"/dev/mapper/{base}1",
     ]
     for cand in candidates:
         if os.path.exists(cand):
