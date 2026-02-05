@@ -317,15 +317,15 @@ def resolve_mount_device(dev: str) -> str:
         subprocess.run([udevadm, "settle"], check=False)
     base = os.path.basename(dev)
     mapper_name = base
-    if base.startswith("vg0-") or base.startswith("vg") is False:
-        # If /dev/vg0/<name>, mapper is vg0-<name>
-        if "/dev/" in dev and dev.count("/") >= 2:
-            parts = dev.split("/")
-            if len(parts) >= 3 and parts[1] == "dev":
-                if parts[2].startswith("vg"):
-                    vg = parts[2]
-                    lv = parts[3] if len(parts) > 3 else base
-                    mapper_name = f"{vg}-{lv}"
+    if "/dev/" in dev and dev.count("/") >= 2:
+        parts = dev.split("/")
+        if len(parts) >= 4 and parts[1] == "dev" and parts[2].startswith("vg"):
+            vg = parts[2]
+            lv = parts[3]
+            mapper_name = f"{vg}-{lv}"
+    direct_mapper = f"/dev/mapper/{mapper_name}1"
+    if os.path.exists(direct_mapper):
+        return direct_mapper
     candidates = [
         f"/dev/{base}p1",
         f"/dev/mapper/{mapper_name}p1",
