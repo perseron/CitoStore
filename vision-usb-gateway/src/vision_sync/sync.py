@@ -188,6 +188,9 @@ def resolve_mount_device(dev: str) -> str:
     partx = "/sbin/partx"
     if os.path.exists(partx):
         subprocess.run([partx, "-a", dev], check=False)
+    udevadm = "/sbin/udevadm"
+    if os.path.exists(udevadm):
+        subprocess.run([udevadm, "settle"], check=False)
     result = subprocess.run(
         ["lsblk", "-n", "-o", "NAME,TYPE", "-r", dev],
         text=True,
