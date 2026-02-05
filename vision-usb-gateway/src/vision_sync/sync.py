@@ -46,6 +46,14 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
+    if offset_override is not None:
+        offset_opts = f"{opts},offset={offset_override}"
+        result = subprocess.run(
+            ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
+            check=False,
+        )
+        if result.returncode == 0:
+            return
     result = subprocess.run(
         ["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)],
         check=False,
@@ -196,6 +204,14 @@ def mount_rw(dev: str, mount_point: Path, offset_override: int | None = None) ->
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
+    if offset_override is not None:
+        offset_opts = f"{opts},offset={offset_override}"
+        result = subprocess.run(
+            ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
+            check=False,
+        )
+        if result.returncode == 0:
+            return
     result = subprocess.run(
         ["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)],
         check=False,
@@ -228,16 +244,15 @@ def get_partition_offset(dev: str) -> int | None:
             stderr=subprocess.PIPE,
             check=False,
         )
-        if result.returncode != 0:
-            result = None
-        for line in result.stdout.splitlines():
-            if line.strip().startswith(dev) and "start=" in line:
-                parts = line.split(",")
-                for part in parts:
-                    part = part.strip()
-                    if part.startswith("start="):
-                        start = int(part.split("=", 1)[1])
-                        return start * 512
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if "start=" in line:
+                    parts = line.split(",")
+                    for part in parts:
+                        part = part.strip()
+                        if part.startswith("start="):
+                            start = int(part.split("=", 1)[1])
+                            return start * 512
         # Fall back to lsblk START column (in sectors) if sfdisk output isn't usable.
         lsblk_res = subprocess.run(
             ["lsblk", "-n", "-o", "START", "-r", dev],
