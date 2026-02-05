@@ -216,8 +216,13 @@ def mount_rw(dev: str, mount_point: Path, offset_override: int | None = None) ->
 
 def get_partition_offset(dev: str) -> int | None:
     try:
+        sfdisk = "/sbin/sfdisk"
+        if not os.path.exists(sfdisk):
+            sfdisk = "/usr/sbin/sfdisk"
+        if not os.path.exists(sfdisk):
+            sfdisk = "sfdisk"
         result = subprocess.run(
-            ["sfdisk", "-d", dev],
+            [sfdisk, "-d", dev],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
