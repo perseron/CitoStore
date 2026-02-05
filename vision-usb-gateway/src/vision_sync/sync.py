@@ -33,6 +33,17 @@ def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
         kpartx = "/usr/sbin/kpartx"
     if os.path.exists(kpartx):
         subprocess.run([kpartx, "-d", snap_path], check=False)
+    partx = "/sbin/partx"
+    if not os.path.exists(partx):
+        partx = "/usr/sbin/partx"
+    if os.path.exists(partx):
+        subprocess.run([partx, "-d", snap_path], check=False)
+    dmsetup = "/sbin/dmsetup"
+    if not os.path.exists(dmsetup):
+        dmsetup = "/usr/sbin/dmsetup"
+    if os.path.exists(dmsetup):
+        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"], check=False)
+        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}"], check=False)
     subprocess.run(["lvremove", "-y", snap_path], check=False)
     subprocess.run(["lvcreate", "-s", "-n", snap_name, active_dev], check=True)
     # Ensure the snapshot is activatable and active so a device node appears.
