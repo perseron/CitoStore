@@ -188,7 +188,18 @@
 
     <section>
       <h2>Logs</h2>
-      <pre id="log-output">Logs are written to /srv/vision_mirror/.state/vision-webui.log</pre>
+      <div class="grid">
+        <label>Service
+          <select id="LOG_SERVICE"></select>
+        </label>
+        <label>Lines <input id="LOG_LINES" value="200" data-validate="lines">
+          <span class="hint">10-2000</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button id="refresh-logs">Refresh Logs</button>
+      </div>
+      <pre id="log-output">Select a service and click Refresh.</pre>
     </section>
   </main>
 

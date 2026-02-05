@@ -123,6 +123,12 @@ function validateField(el) {
     setFieldValidity(el, ok, ok ? "e.g. 100G, 512M" : "invalid size");
     return ok;
   }
+  if (rule === "lines") {
+    const num = Number(value);
+    const ok = Number.isInteger(num) && num >= 10 && num <= 2000;
+    setFieldValidity(el, ok, ok ? "10-2000" : "invalid");
+    return ok;
+  }
   if (rule === "datetime") {
     const ok = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value);
     setFieldValidity(el, ok, ok ? "YYYY-MM-DD HH:MM:SS" : "invalid datetime");
@@ -264,6 +270,37 @@ async function loadConfig() {
   if (net.dns) document.getElementById("NET_DNS").value = net.dns;
 }
 
+async function loadLogServices() {
+  const data = await api("/api/log-services", { method: "GET" });
+  const sel = document.getElementById("LOG_SERVICE");
+  if (!sel || !data.services) return;
+  sel.innerHTML = "";
+  data.services.forEach(name => {
+    const opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  if (!sel.value) {
+    sel.value = "vision-sync.service";
+  }
+}
+
+async function refreshLogs() {
+  const sel = document.getElementById("LOG_SERVICE");
+  const linesEl = document.getElementById("LOG_LINES");
+  if (!sel || !linesEl) return;
+  if (!validateField(linesEl)) {
+    setStatus("Invalid log line count");
+    return;
+  }
+  const service = sel.value;
+  const lines = linesEl.value || "200";
+  const data = await api(`/api/logs?service=${encodeURIComponent(service)}&lines=${encodeURIComponent(lines)}`, { method: "GET" });
+  const out = data.text || "";
+  document.getElementById("log-output").textContent = out || "(no output)";
+}
+
 async function saveConfig(apply = false) {
   if (!validateAll()) {
     setStatus("Fix invalid fields before saving");
@@ -394,6 +431,7 @@ document.getElementById("restore-defaults").addEventListener("click", () => main
 document.getElementById("clone-usb-format").addEventListener("click", () => maintenance("clone-usb-format"));
 document.getElementById("shutdown").addEventListener("click", () => maintenance("shutdown"));
 document.getElementById("set-time").addEventListener("click", setManualTime);
+document.getElementById("refresh-logs").addEventListener("click", refreshLogs);
 
 async function refreshStatus() {
   try {
@@ -433,6 +471,7 @@ function setManualTimeDefaults() {
 
 refreshStatus()
   .then(loadConfig)
+  .then(loadLogServices)
   .then(setManualTimeDefaults)
   .catch(err => setStatus("Error: " + err.message));
 setInterval(refreshStatus, 10000);

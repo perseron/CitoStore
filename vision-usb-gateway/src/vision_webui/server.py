@@ -59,6 +59,21 @@ SERVICES = [
     "vision-webui.service",
 ]
 
+LOG_SERVICES = sorted(
+    set(
+        SERVICES
+        + [
+            "vision-wipe.service",
+            "vision-usb-format.service",
+            "vision-nvme-health.service",
+            "vision-gw-health.service",
+            "vision-sync.timer",
+            "vision-monitor.timer",
+            "vision-rotator.timer",
+        ]
+    )
+)
+
 
 def get_gateway_home() -> str:
     cfg = parse_config(load_config_text())
@@ -669,6 +684,36 @@ class WebHandler(BaseHTTPRequestHandler):
                 "nvme": get_nvme_smart(),
             }
             return self.send_json(data)
+        if self.path.startswith("/api/log-services"):
+            return self.send_json({"services": LOG_SERVICES})
+        if self.path.startswith("/api/logs"):
+            query = urlparse(self.path).query
+            params = parse_qs(query)
+            service = params.get("service", [""])[0]
+            lines = params.get("lines", ["200"])[0]
+            if service not in LOG_SERVICES:
+                return self.send_json({"error": "invalid service"}, status=400)
+            try:
+                lines_int = int(lines)
+            except ValueError:
+                return self.send_json({"error": "invalid lines"}, status=400)
+            lines_int = max(10, min(lines_int, 2000))
+            code, out, err = run_cmd(
+                [
+                    "journalctl",
+                    "-u",
+                    service,
+                    "-n",
+                    str(lines_int),
+                    "--no-pager",
+                    "--output",
+                    "short-iso",
+                ],
+                timeout=10,
+            )
+            if code != 0:
+                return self.send_json({"error": err or out or "failed to read logs"}, status=500)
+            return self.send_json({"service": service, "lines": lines_int, "text": out})
         if self.path.startswith("/api/health"):
             health = STATE_DIR / "health.json"
             fallback = Path("/run/vision-health.json")
