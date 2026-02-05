@@ -46,15 +46,17 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
-    try:
-        subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
+    result = subprocess.run(
+        ["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)],
+        check=False,
+    )
+    if result.returncode == 0:
         return
-    except subprocess.CalledProcessError:
-        offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
-        if offset is None:
-            raise
-        offset_opts = f"{opts},offset={offset}"
-        subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
+    offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
+    if offset is None:
+        raise subprocess.CalledProcessError(result.returncode, result.args)
+    offset_opts = f"{opts},offset={offset}"
+    subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
 
 
 def record_snapshot_usage(mount_point: Path, active_dev: str) -> None:
@@ -189,15 +191,17 @@ def mount_rw(dev: str, mount_point: Path, offset_override: int | None = None) ->
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
-    try:
-        subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
+    result = subprocess.run(
+        ["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)],
+        check=False,
+    )
+    if result.returncode == 0:
         return
-    except subprocess.CalledProcessError:
-        offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
-        if offset is None:
-            raise
-        offset_opts = f"{opts},offset={offset}"
-        subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
+    offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
+    if offset is None:
+        raise subprocess.CalledProcessError(result.returncode, result.args)
+    offset_opts = f"{opts},offset={offset}"
+    subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
 
 
 def get_partition_offset(dev: str) -> int | None:
