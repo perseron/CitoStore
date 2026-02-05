@@ -229,7 +229,7 @@ def get_partition_offset(dev: str) -> int | None:
             check=False,
         )
         if result.returncode != 0:
-            return None
+            result = None
         for line in result.stdout.splitlines():
             if line.strip().startswith(dev) and "start=" in line:
                 parts = line.split(",")
@@ -238,6 +238,19 @@ def get_partition_offset(dev: str) -> int | None:
                     if part.startswith("start="):
                         start = int(part.split("=", 1)[1])
                         return start * 512
+        # Fall back to lsblk START column (in sectors) if sfdisk output isn't usable.
+        lsblk_res = subprocess.run(
+            ["lsblk", "-n", "-o", "START", "-r", dev],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if lsblk_res.returncode == 0:
+            for line in lsblk_res.stdout.splitlines():
+                line = line.strip()
+                if line.isdigit():
+                    return int(line) * 512
         return None
     except Exception:
         return None
