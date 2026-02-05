@@ -72,15 +72,21 @@ for lv in "${USB_LVS[@]}"; do
 
   log "formatting $dev"
   if [[ "$has_part_table" == "true" ]]; then
+    if command -v wipefs >/dev/null 2>&1; then
+      wipefs -a "$dev" >/dev/null 2>&1 || true
+    fi
     sed_active=$(printf '%s' "$active" | sed -e 's/[\/&]/\\&/g')
     sed_dev=$(printf '%s' "$dev" | sed -e 's/[\/&]/\\&/g')
     dump_dev=$(printf '%s\n' "$table_dump" | sed -e "s#^device: .*#device: $dev#" -e "s#^${sed_active}#${sed_dev}#")
-    echo "$dump_dev" | sfdisk "$dev" >/dev/null
+    echo "$dump_dev" | sfdisk --wipe always "$dev" >/dev/null
     if [[ -x /sbin/partx ]]; then
       /sbin/partx -u "$dev" >/dev/null 2>&1 || true
     fi
     fs_dev=$(resolve_usb_device "$dev")
   else
+    if command -v wipefs >/dev/null 2>&1; then
+      wipefs -a "$dev" >/dev/null 2>&1 || true
+    fi
     fs_dev="$dev"
   fi
 

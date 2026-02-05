@@ -165,11 +165,19 @@ if [[ -f "$BACKUP_DIR/webui.secret" ]]; then
 fi
 
 for lv in "${USB_LVS[@]}"; do
-  mkfs.vfat -F 32 -n "$USB_LABEL" "/dev/$VG/$lv"
+  dev="/dev/$VG/$lv"
+  fs_dev="$dev"
+  if command -v sfdisk >/dev/null 2>&1; then
+    dump=$(sfdisk -d "$dev" 2>/dev/null || true)
+    if [[ -n "$dump" && "$dump" == *"label:"* && "$dump" == *"$dev"* ]]; then
+      fs_dev=$(resolve_usb_device "$dev")
+    fi
+  fi
+  mkfs.vfat -F 32 -n "$USB_LABEL" "$fs_dev"
   if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
     persist_mnt="/mnt/vision_wipe_${lv}"
     safe_mkdir "$persist_mnt"
-    if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "/dev/$VG/$lv" "$persist_mnt"; then
+    if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "$fs_dev" "$persist_mnt"; then
       safe_mkdir "$persist_mnt/$USB_PERSIST_DIR"
       umount "$persist_mnt" || true
     fi
