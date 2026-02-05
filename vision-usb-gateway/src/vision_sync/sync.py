@@ -42,7 +42,7 @@ def lv_remove(snap_name: str, vg: str) -> None:
     subprocess.run(["lvremove", "-y", f"/dev/{vg}/{snap_name}"], check=False)
 
 
-def mount_ro(dev: str, mount_point: Path) -> None:
+def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
@@ -50,7 +50,7 @@ def mount_ro(dev: str, mount_point: Path) -> None:
         subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
         return
     except subprocess.CalledProcessError:
-        offset = get_partition_offset(dev) or get_partition_offset(mount_dev)
+        offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
         if offset is None:
             raise
         offset_opts = f"{opts},offset={offset}"
@@ -185,7 +185,7 @@ def sync_dir(src: Path, dst: Path) -> None:
     shutil.copytree(src, dst)
 
 
-def mount_rw(dev: str, mount_point: Path) -> None:
+def mount_rw(dev: str, mount_point: Path, offset_override: int | None = None) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
     opts = "utf8,shortname=mixed,nodev,nosuid,noexec"
     mount_dev = resolve_mount_device(dev)
@@ -193,7 +193,7 @@ def mount_rw(dev: str, mount_point: Path) -> None:
         subprocess.run(["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)], check=True)
         return
     except subprocess.CalledProcessError:
-        offset = get_partition_offset(dev) or get_partition_offset(mount_dev)
+        offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
         if offset is None:
             raise
         offset_opts = f"{opts},offset={offset}"
@@ -375,7 +375,8 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
         active = read_active()
         if dev == active:
             raise RuntimeError("refusing to mount active device")
-        mount_ro(dev, cfg.snapshot_mount)
+        active_offset = get_partition_offset(dev)
+        mount_ro(dev, cfg.snapshot_mount, active_offset)
         try:
             record_snapshot_usage(cfg.snapshot_mount, dev)
             stable_and_copy(cfg, cfg.snapshot_mount, conn)
@@ -384,9 +385,10 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
         return
 
     active = read_active()
+    active_offset = get_partition_offset(active)
     snap = lv_snapshot(active, cfg.lvm_vg, cfg.snapshot_name)
     try:
-        mount_ro(snap, cfg.snapshot_mount)
+        mount_ro(snap, cfg.snapshot_mount, active_offset)
         record_snapshot_usage(cfg.snapshot_mount, active)
         sync_manifest = None
         if not offline:
