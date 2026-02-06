@@ -25,7 +25,36 @@ if mountpoint -q "$BOOT_MOUNT"; then
   fi
 fi
 
-cmdline_add "overlayroot=tmpfs:recurse=0"
+normalize_overlayroot_cmdline() {
+  local cmdline_file="/boot/firmware/cmdline.txt"
+  [[ -f "$cmdline_file" ]] || return 0
+  local normalized
+  normalized=$(tr ' ' '\n' < "$cmdline_file" | grep -v '^overlayroot=tmpfs:recurse=0$' | paste -sd' ' -)
+  normalized="${normalized} overlayroot=tmpfs:recurse=0"
+  normalized=$(echo "$normalized" | xargs)
+  if [[ -z "$normalized" ]]; then
+    log "cmdline would be empty; refusing to write"
+    exit 1
+  fi
+  echo "$normalized" > "$cmdline_file"
+}
+
+maybe_recover_previous_failed_enable() {
+  local current_root cmdline_count
+  current_root=$(findmnt -no FSTYPE / 2>/dev/null || true)
+  cmdline_count=$(grep -o 'overlayroot=tmpfs:recurse=0' /proc/cmdline 2>/dev/null | wc -l | xargs || echo 0)
+  if [[ "$current_root" != "overlay" && "$cmdline_count" -gt 0 ]]; then
+    log "detected previous overlay enable attempt (kernel arg present, root=$current_root)"
+    if command -v raspi-config >/dev/null 2>&1; then
+      log "attempting overlayfs recovery toggle via raspi-config"
+      raspi-config nonint do_overlayfs 1 || true
+      raspi-config nonint do_overlayfs 0
+    fi
+  fi
+}
+
+maybe_recover_previous_failed_enable
+normalize_overlayroot_cmdline
 
 overlay_method="overlayroot"
 if command -v raspi-config >/dev/null 2>&1; then
@@ -82,3 +111,4 @@ log "overlay configuration applied using $overlay_method"
 log "reboot required; verify after reboot:"
 log "  grep -o 'overlayroot=[^ ]*' /proc/cmdline"
 log "  findmnt -no FSTYPE /"
+log "expected: root filesystem type is overlay"
