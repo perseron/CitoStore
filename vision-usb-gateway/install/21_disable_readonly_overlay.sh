@@ -6,6 +6,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$SCRIPT_DIR/../scripts/common.sh"
 
 require_root
+require_cmd update-initramfs
 
 BOOT_MOUNT=/boot/firmware
 BOOT_WAS_RO=false
@@ -25,14 +26,34 @@ for arg in "$@"; do
   esac
 done
 
-CMDLINE=/boot/firmware/cmdline.txt
-if [[ -f "$CMDLINE" ]]; then
-  cmdline=$(tr ' ' '\n' < "$CMDLINE" | grep -v '^overlayroot=tmpfs:recurse=0$' | paste -sd' ' -)
-  if [[ -z "$cmdline" ]]; then
-    log "cmdline would be empty; refusing to write"
+normalize_cmdline_remove_overlayroot() {
+  local cmdline_file="/boot/firmware/cmdline.txt"
+  [[ -f "$cmdline_file" ]] || return 0
+  local normalized
+  normalized=$(tr ' ' '\n' < "$cmdline_file" | grep -v '^overlayroot=tmpfs:recurse=0$' | paste -sd' ' -)
+  normalized=$(echo "$normalized" | xargs)
+  if [[ -z "$normalized" ]]; then
+    log "cmdline would be empty after removing overlayroot; refusing to write"
     exit 1
   fi
-  echo "$cmdline" > "$CMDLINE"
+  echo "$normalized" > "$cmdline_file"
+}
+
+normalize_cmdline_remove_overlayroot
+
+if command -v raspi-config >/dev/null 2>&1; then
+  log "disabling overlayfs via raspi-config"
+  raspi-config nonint do_overlayfs 1
+  if raspi-config nonint get_overlayfs >/dev/null 2>&1; then
+    overlay_state=$(raspi-config nonint get_overlayfs || true)
+    case "$overlay_state" in
+      1|disabled|false) ;;
+      *)
+        log "overlay disable verification failed (raspi-config state=$overlay_state)"
+        exit 1
+        ;;
+    esac
+  fi
 fi
 
 if [[ -f /etc/overlayroot.conf ]]; then
@@ -41,6 +62,9 @@ if [[ -f /etc/overlayroot.conf ]]; then
     rm -f /etc/overlayroot.conf
   fi
 fi
+
+log "updating initramfs"
+update-initramfs -u
 
 if $BOOT_RW; then
   log "setting boot partition read-write in fstab"
@@ -57,3 +81,7 @@ if $BOOT_WAS_RO && ! $BOOT_RW; then
 fi
 
 log "overlay disabled (reboot required)"
+log "verify after reboot:"
+log "  grep -o 'overlayroot=[^ ]*' /proc/cmdline || echo 'overlayroot arg missing'"
+log "  findmnt -no FSTYPE /"
+log "expected: root filesystem type is ext4"
