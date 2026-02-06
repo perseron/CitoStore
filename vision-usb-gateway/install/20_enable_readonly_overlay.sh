@@ -82,7 +82,8 @@ ensure_initramfs_boot_config() {
   [[ -f "$config_file" ]] || return 0
 
   local initrd=""
-  for candidate in "/boot/firmware/initrd.img-$(uname -r)" /boot/firmware/initrd.img* /boot/initrd.img-$(uname -r) /boot/initrd.img*; do
+  # Prefer Raspberry Pi firmware-side initramfs names first.
+  for candidate in /boot/firmware/initramfs_2712 /boot/firmware/initramfs8 "/boot/firmware/initrd.img-$(uname -r)" /boot/firmware/initrd.img* /boot/initrd.img-$(uname -r) /boot/initrd.img*; do
     if [[ -e "$candidate" ]]; then
       initrd=$(basename "$candidate")
       break
@@ -98,6 +99,13 @@ ensure_initramfs_boot_config() {
     sed -i "s#^initramfs .*#initramfs $initrd followkernel#" "$config_file"
   else
     echo "initramfs $initrd followkernel" >> "$config_file"
+  fi
+
+  # Keep Pi firmware in auto-initramfs mode as well.
+  if grep -q '^auto_initramfs=' "$config_file"; then
+    sed -i 's/^auto_initramfs=.*/auto_initramfs=1/' "$config_file"
+  else
+    echo "auto_initramfs=1" >> "$config_file"
   fi
 }
 
