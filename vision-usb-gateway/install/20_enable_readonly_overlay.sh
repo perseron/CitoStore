@@ -27,9 +27,24 @@ fi
 
 cmdline_add "overlayroot=tmpfs:recurse=0"
 
+overlay_method="overlayroot"
 if command -v raspi-config >/dev/null 2>&1; then
   log "enabling overlayfs via raspi-config"
-  raspi-config nonint do_overlayfs 0 || true
+  raspi-config nonint do_overlayfs 0
+  overlay_method="raspi-config"
+  if raspi-config nonint get_overlayfs >/dev/null 2>&1; then
+    overlay_state=$(raspi-config nonint get_overlayfs || true)
+    case "$overlay_state" in
+      0|enabled|true) ;;
+      *)
+        log "overlay enable verification failed (raspi-config state=$overlay_state)"
+        exit 1
+        ;;
+    esac
+  fi
+elif ! command -v overlayroot >/dev/null 2>&1; then
+  log "no supported overlay enable method found (raspi-config/overlayroot missing)"
+  exit 1
 fi
 
 # overlayroot config for Debian overlayroot if present
@@ -63,4 +78,7 @@ if $BOOT_RO || $BOOT_WAS_RO; then
   fi
 fi
 
-log "overlay configuration applied"
+log "overlay configuration applied using $overlay_method"
+log "reboot required; verify after reboot:"
+log "  grep -o 'overlayroot=[^ ]*' /proc/cmdline"
+log "  findmnt -no FSTYPE /"
