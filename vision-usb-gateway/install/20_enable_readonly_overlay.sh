@@ -6,6 +6,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$SCRIPT_DIR/../scripts/common.sh"
 
 require_root
+require_cmd update-initramfs
 
 BOOT_RO=false
 for arg in "$@"; do
@@ -76,12 +77,40 @@ elif ! command -v overlayroot >/dev/null 2>&1; then
   exit 1
 fi
 
+ensure_initramfs_boot_config() {
+  local config_file="/boot/firmware/config.txt"
+  [[ -f "$config_file" ]] || return 0
+
+  local initrd=""
+  for candidate in "/boot/firmware/initrd.img-$(uname -r)" /boot/firmware/initrd.img* /boot/initrd.img-$(uname -r) /boot/initrd.img*; do
+    if [[ -e "$candidate" ]]; then
+      initrd=$(basename "$candidate")
+      break
+    fi
+  done
+
+  if [[ -z "$initrd" ]]; then
+    log "initrd image not found after update-initramfs"
+    exit 1
+  fi
+
+  if grep -q '^initramfs ' "$config_file"; then
+    sed -i "s#^initramfs .*#initramfs $initrd followkernel#" "$config_file"
+  else
+    echo "initramfs $initrd followkernel" >> "$config_file"
+  fi
+}
+
 # overlayroot config for Debian overlayroot if present
 if [[ -f /etc/overlayroot.conf ]]; then
   sed -i 's/^overlayroot=.*/overlayroot=tmpfs:recurse=0/' /etc/overlayroot.conf
 else
   echo 'overlayroot=tmpfs:recurse=0' > /etc/overlayroot.conf
 fi
+
+log "updating initramfs"
+update-initramfs -u
+ensure_initramfs_boot_config
 
 # journald volatile
 JOURNALD=/etc/systemd/journald.conf

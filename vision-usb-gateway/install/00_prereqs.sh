@@ -15,7 +15,15 @@ apt-get install -y \
   samba cifs-utils rsync wsdd kpartx \
   nvme-cli \
   python3 python3-venv python3-pip \
-  util-linux
+  util-linux \
+  initramfs-tools
+
+# Install overlayroot provider. Package name varies by distro.
+if ! dpkg -s overlayroot >/dev/null 2>&1; then
+  if ! apt-get install -y overlayroot; then
+    apt-get install -y cloud-initramfs-tools
+  fi
+fi
 
 if [[ ! -f /etc/vision-gw.conf ]]; then
   log "installing default config to /etc/vision-gw.conf"
