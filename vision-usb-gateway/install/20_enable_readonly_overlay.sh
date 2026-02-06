@@ -8,6 +8,16 @@ source "$SCRIPT_DIR/../scripts/common.sh"
 require_root
 require_cmd update-initramfs
 
+ensure_initramfs_modules_policy() {
+  local conf="/etc/initramfs-tools/initramfs.conf"
+  [[ -f "$conf" ]] || return 0
+  if grep -q '^MODULES=' "$conf"; then
+    sed -i 's/^MODULES=.*/MODULES=most/' "$conf"
+  else
+    echo "MODULES=most" >> "$conf"
+  fi
+}
+
 BOOT_RO=false
 for arg in "$@"; do
   case "$arg" in
@@ -117,6 +127,7 @@ else
 fi
 
 log "updating initramfs"
+ensure_initramfs_modules_policy
 update-initramfs -u
 ensure_initramfs_boot_config
 
