@@ -10,6 +10,8 @@ require_cmd update-initramfs
 
 BOOT_MOUNT=/boot/firmware
 BOOT_WAS_RO=false
+PERSIST_ROOT=/
+PERSIST_ROOT_WAS_RO=false
 if mountpoint -q "$BOOT_MOUNT"; then
   opts=$(findmnt -no OPTIONS "$BOOT_MOUNT" 2>/dev/null || true)
   if echo ",$opts," | grep -q ",ro,"; then
@@ -18,6 +20,29 @@ if mountpoint -q "$BOOT_MOUNT"; then
     mount -o remount,rw "$BOOT_MOUNT"
   fi
 fi
+
+root_fs=$(findmnt -no FSTYPE / 2>/dev/null || true)
+if [[ "$root_fs" == "overlay" ]] && mountpoint -q /media/root-ro; then
+  PERSIST_ROOT=/media/root-ro
+  propts=$(findmnt -no OPTIONS /media/root-ro 2>/dev/null || true)
+  if echo ",$propts," | grep -q ",ro,"; then
+    log "remounting $PERSIST_ROOT read-write"
+    mount -o remount,rw "$PERSIST_ROOT"
+    PERSIST_ROOT_WAS_RO=true
+  fi
+fi
+
+cleanup_mounts() {
+  if $BOOT_WAS_RO && mountpoint -q "$BOOT_MOUNT"; then
+    log "remounting $BOOT_MOUNT read-only"
+    mount -o remount,ro "$BOOT_MOUNT" || true
+  fi
+  if $PERSIST_ROOT_WAS_RO && mountpoint -q "$PERSIST_ROOT"; then
+    log "remounting $PERSIST_ROOT read-only"
+    mount -o remount,ro "$PERSIST_ROOT" || true
+  fi
+}
+trap cleanup_mounts EXIT
 
 BOOT_RW=false
 for arg in "$@"; do
@@ -57,10 +82,24 @@ if command -v raspi-config >/dev/null 2>&1; then
   fi
 fi
 
-if [[ -f /etc/overlayroot.conf ]]; then
-  sed -i 's/^overlayroot=.*/overlayroot=disabled/' /etc/overlayroot.conf
-else
-  echo "overlayroot=disabled" > /etc/overlayroot.conf
+set_overlay_conf_disabled() {
+  local path="$1"
+  local dir
+  dir=$(dirname "$path")
+  [[ -d "$dir" ]] || mkdir -p "$dir"
+  if [[ -f "$path" ]]; then
+    sed -i 's/^overlayroot=.*/overlayroot=disabled/' "$path"
+    if ! grep -q '^overlayroot=' "$path"; then
+      echo "overlayroot=disabled" >> "$path"
+    fi
+  else
+    echo "overlayroot=disabled" > "$path"
+  fi
+}
+
+set_overlay_conf_disabled "/etc/overlayroot.conf"
+if [[ "$PERSIST_ROOT" != "/" ]]; then
+  set_overlay_conf_disabled "$PERSIST_ROOT/etc/overlayroot.conf"
 fi
 
 log "updating initramfs"
@@ -68,15 +107,12 @@ update-initramfs -u
 
 if $BOOT_RW; then
   log "setting boot partition read-write in fstab"
-  if grep -q '^/dev/mmcblk0p1' /etc/fstab; then
-    sed -i 's#/boot/firmware vfat ro,#/boot/firmware vfat #' /etc/fstab
+  fstab_target="/etc/fstab"
+  if [[ "$PERSIST_ROOT" != "/" && -f "$PERSIST_ROOT/etc/fstab" ]]; then
+    fstab_target="$PERSIST_ROOT/etc/fstab"
   fi
-fi
-
-if $BOOT_WAS_RO && ! $BOOT_RW; then
-  if mountpoint -q "$BOOT_MOUNT"; then
-    log "remounting $BOOT_MOUNT read-only"
-    mount -o remount,ro "$BOOT_MOUNT"
+  if grep -q '^/dev/mmcblk0p1' "$fstab_target"; then
+    sed -i 's#/boot/firmware vfat ro,#/boot/firmware vfat #' "$fstab_target"
   fi
 fi
 
