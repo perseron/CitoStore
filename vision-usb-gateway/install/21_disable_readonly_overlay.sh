@@ -27,16 +27,17 @@ for arg in "$@"; do
 done
 
 normalize_cmdline_remove_overlayroot() {
-  local cmdline_file="/boot/firmware/cmdline.txt"
-  [[ -f "$cmdline_file" ]] || return 0
-  local normalized
-  normalized=$(tr ' ' '\n' < "$cmdline_file" | grep -v '^overlayroot=tmpfs:recurse=0$' | paste -sd' ' -)
-  normalized=$(echo "$normalized" | xargs)
-  if [[ -z "$normalized" ]]; then
-    log "cmdline would be empty after removing overlayroot; refusing to write"
-    exit 1
-  fi
-  echo "$normalized" > "$cmdline_file"
+  local cmdline_file normalized
+  for cmdline_file in /boot/firmware/cmdline.txt /boot/cmdline.txt; do
+    [[ -f "$cmdline_file" ]] || continue
+    normalized=$(tr ' ' '\n' < "$cmdline_file" | awk '$0!="overlayroot=tmpfs:recurse=0" && $0!="boot=overlay"' | paste -sd' ' - || true)
+    normalized=$(echo "$normalized" | xargs)
+    if [[ -z "$normalized" ]]; then
+      log "cmdline would be empty after removing overlay args; refusing to write"
+      exit 1
+    fi
+    echo "$normalized" > "$cmdline_file"
+  done
 }
 
 normalize_cmdline_remove_overlayroot
@@ -44,7 +45,7 @@ normalize_cmdline_remove_overlayroot
 if command -v raspi-config >/dev/null 2>&1; then
   log "disabling overlayfs via raspi-config"
   raspi-config nonint do_overlayfs 1
-  if raspi-config nonint get_overlayfs >/dev/null 2>&1; then
+  if raspi-config nonint get_overlayfs >/dev/null 2>/dev/null; then
     overlay_state=$(raspi-config nonint get_overlayfs || true)
     case "$overlay_state" in
       1|disabled|false) ;;
@@ -57,10 +58,9 @@ if command -v raspi-config >/dev/null 2>&1; then
 fi
 
 if [[ -f /etc/overlayroot.conf ]]; then
-  sed -i '/^overlayroot=tmpfs:recurse=0$/d' /etc/overlayroot.conf
-  if ! grep -q '.' /etc/overlayroot.conf; then
-    rm -f /etc/overlayroot.conf
-  fi
+  sed -i 's/^overlayroot=.*/overlayroot=disabled/' /etc/overlayroot.conf
+else
+  echo "overlayroot=disabled" > /etc/overlayroot.conf
 fi
 
 log "updating initramfs"
