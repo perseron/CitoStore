@@ -142,6 +142,7 @@ Operational flow (detailed, step-by-step)
    - The next LV is pre-seeded; rotation verifies and auto-repairs if it drifts.
 8) Rotation decision
    - `vision-monitor` checks active LV usage (`THRESH_HI`/`THRESH_CRIT`) and thinpool metadata (`META_HI`/`META_CRIT`).
+   - In the high-usage zone (`THRESH_HI` <= usage < `THRESH_CRIT`), switch is allowed only after unchanged usage for `THRESH_HI_STABLE_SCANS` consecutive sync cycles.
    - Writes `/run/vision-rotate.state` with `state=ok|rotate_pending|panic`.
 9) Rotation execution
    - `vision-rotator` switches LVs inside the configured window unless in `panic`.
@@ -196,6 +197,7 @@ USB persist (AOI settings)
 
 Rotation thresholds
 - `THRESH_HI`/`THRESH_CRIT`: Percent usage of the active USB LV that triggers rotate-pending / panic.
+- `THRESH_HI_STABLE_SCANS`: Required unchanged sync cycles before rotating in the `THRESH_HI` zone.
 - `META_HI`/`META_CRIT`: Percent metadata usage of the thinpool that triggers rotate-pending / panic.
 - `SWITCH_WINDOW_START`/`SWITCH_WINDOW_END`: Allowed window for non-critical rotation.
 

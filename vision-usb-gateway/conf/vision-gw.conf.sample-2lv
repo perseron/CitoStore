@@ -50,6 +50,7 @@ USB_PERSIST_DURATION_FILE=/srv/vision_mirror/aoi_settings_duration.txt
 # Rotation thresholds (percent)
 THRESH_HI=80
 THRESH_CRIT=92
+THRESH_HI_STABLE_SCANS=3
 META_HI=70
 META_CRIT=85
 SWITCH_WINDOW_START=00:00

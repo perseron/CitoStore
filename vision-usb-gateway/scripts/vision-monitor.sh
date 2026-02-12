@@ -11,12 +11,14 @@ load_config "${CONF_FILE:-}"
 : "${THINPOOL_LV:=usbpool}"
 : "${THRESH_HI:=80}"
 : "${THRESH_CRIT:=92}"
+: "${THRESH_HI_STABLE_SCANS:=3}"
 : "${META_HI:=70}"
 : "${META_CRIT:=85}"
 
 ACTIVE_FILE=/run/vision-usb-active
 STATE_FILE=/run/vision-rotate.state
 USB_USAGE_FILE=/run/vision-usb-usage.json
+USAGE_STABLE_FILE=/run/vision-usage-stable.state
 
 to_int_percent() {
   local raw="${1:-}"
@@ -58,6 +60,39 @@ except Exception:
 PY
 }
 
+usage_signature() {
+  local raw="${1:-}" parsed="${2:-0}"
+  raw=$(echo "$raw" | tr -d '[:space:]')
+  if [[ -n "$raw" ]]; then
+    echo "$raw"
+  else
+    echo "$parsed"
+  fi
+}
+
+usage_stable_count() {
+  local active="$1" sig="$2"
+  local prev_active="" prev_sig="" prev_count=0
+  if [[ -f "$USAGE_STABLE_FILE" ]]; then
+    prev_active=$(grep '^active=' "$USAGE_STABLE_FILE" | cut -d= -f2- || true)
+    prev_sig=$(grep '^sig=' "$USAGE_STABLE_FILE" | cut -d= -f2- || true)
+    prev_count=$(grep '^count=' "$USAGE_STABLE_FILE" | cut -d= -f2- || true)
+  fi
+  if [[ ! "$prev_count" =~ ^[0-9]+$ ]]; then
+    prev_count=0
+  fi
+  local count=1
+  if [[ "$prev_active" == "$active" && "$prev_sig" == "$sig" ]]; then
+    count=$((prev_count + 1))
+  fi
+  {
+    echo "active=$active"
+    echo "sig=$sig"
+    echo "count=$count"
+  } > "$USAGE_STABLE_FILE"
+  echo "$count"
+}
+
 active_dev=$(cat "$ACTIVE_FILE" 2>/dev/null || true)
 if [[ -z "$active_dev" ]]; then
   log "active device unknown"
@@ -80,14 +115,23 @@ meta=$(to_int_percent "$meta_raw")
 if [[ -z "$meta" ]]; then
   meta=0
 fi
+sig=$(usage_signature "$usage_raw" "$usage")
+stable_count=$(usage_stable_count "$active_dev" "$sig")
 
 state=ok
-reason="usage=${usage} (lv=${usage_raw:-n/a}) meta=${meta} (pool=${meta_raw:-n/a})"
+reason="usage=${usage} (lv=${usage_raw:-n/a}) stable=${stable_count}/${THRESH_HI_STABLE_SCANS} meta=${meta} (pool=${meta_raw:-n/a})"
 
 if [[ $usage -ge $THRESH_CRIT || $meta -ge $META_CRIT ]]; then
   state=panic
-elif [[ $usage -ge $THRESH_HI || $meta -ge $META_HI ]]; then
+elif [[ $meta -ge $META_HI ]]; then
   state=rotate_pending
+elif [[ $usage -ge $THRESH_HI ]]; then
+  if [[ $stable_count -ge $THRESH_HI_STABLE_SCANS ]]; then
+    state=rotate_pending
+  else
+    state=ok
+    reason="$reason hold=high-usage-but-changing"
+  fi
 fi
 
 echo "state=$state" > "$STATE_FILE"

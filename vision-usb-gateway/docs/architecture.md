@@ -69,7 +69,7 @@ Operational description (detailed)
    - `vision-rotator` verifies the persist folder on the next LV and auto-repairs if it drifts.
 9) Rotation decision (monitor)
    - `vision-monitor` reads:
-     - Active LV data usage (`THRESH_HI`/`THRESH_CRIT`)
+     - Active LV data usage (`THRESH_HI`/`THRESH_CRIT`; high-zone rotate requires `THRESH_HI_STABLE_SCANS` unchanged sync cycles)
      - Thinpool metadata usage (`META_HI`/`META_CRIT`)
    - It writes `/run/vision-rotate.state` with `state=ok|rotate_pending|panic`.
 10) Rotation execution (rotator)
