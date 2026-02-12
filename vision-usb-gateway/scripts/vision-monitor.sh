@@ -61,9 +61,9 @@ PY
 }
 
 usage_signature() {
-  local raw="${1:-}" parsed="${2:-0}"
+  local raw="${1:-}" parsed="${2:-0}" source="${3:-lv}"
   raw=$(echo "$raw" | tr -d '[:space:]')
-  if [[ -n "$raw" ]]; then
+  if [[ "$source" == "lv" && -n "$raw" ]]; then
     echo "$raw"
   else
     echo "$parsed"
@@ -102,14 +102,18 @@ fi
 lv_name=$(basename "$active_dev")
 
 usage_raw=$(lvs --noheadings -o data_percent "/dev/$LVM_VG/$lv_name" 2>/dev/null | awk 'NF{print $1; exit}')
-usage=$(to_int_percent "$usage_raw")
-if [[ -z "$usage" ]]; then
-  usage=0
+usage_lv=$(to_int_percent "$usage_raw")
+if [[ -z "$usage_lv" ]]; then
+  usage_lv=0
 fi
 
 fs_usage=$(cached_usage_percent "$active_dev")
-if [[ -n "$fs_usage" && "$fs_usage" =~ ^[0-9]+$ && $fs_usage -gt $usage ]]; then
+usage_source="lv"
+usage=$usage_lv
+if [[ -n "$fs_usage" && "$fs_usage" =~ ^[0-9]+$ ]]; then
+  # Prefer filesystem fullness when available; LV data_percent can stay high after prior writes.
   usage=$fs_usage
+  usage_source="fs"
 fi
 
 meta_raw=$(lvs --noheadings -o metadata_percent "/dev/$LVM_VG/$THINPOOL_LV" 2>/dev/null | awk 'NF{print $1; exit}')
@@ -117,11 +121,11 @@ meta=$(to_int_percent "$meta_raw")
 if [[ -z "$meta" ]]; then
   meta=0
 fi
-sig=$(usage_signature "$usage_raw" "$usage")
+sig=$(usage_signature "$usage_raw" "$usage" "$usage_source")
 stable_count=$(usage_stable_count "$active_dev" "$sig")
 
 state=ok
-reason="usage=${usage} (lv=${usage_raw:-n/a} fs=${fs_usage:-n/a}) stable=${stable_count}/${THRESH_HI_STABLE_SCANS} meta=${meta} (pool=${meta_raw:-n/a})"
+reason="usage=${usage} src=${usage_source} (lv=${usage_raw:-n/a} fs=${fs_usage:-n/a}) stable=${stable_count}/${THRESH_HI_STABLE_SCANS} meta=${meta} (pool=${meta_raw:-n/a})"
 
 if [[ $usage -ge $THRESH_CRIT || $meta -ge $META_CRIT ]]; then
   state=panic
