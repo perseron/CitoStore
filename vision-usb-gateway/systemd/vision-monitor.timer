@@ -2,6 +2,7 @@
 Description=Vision Monitor Timer
 
 [Timer]
+OnBootSec=2min
 OnUnitActiveSec=5min
 Persistent=true
 
