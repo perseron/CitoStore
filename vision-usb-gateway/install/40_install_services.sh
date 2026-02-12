@@ -92,7 +92,8 @@ systemctl enable vision-gw-health.service
 systemctl enable usb-gadget.service
 systemctl enable vision-gw-network.service
 systemctl enable vision-gw-config.service
-systemctl enable vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer
+systemctl enable vision-sync.timer mirror-retention.timer
+systemctl disable vision-monitor.timer vision-rotator.timer >/dev/null 2>&1 || true
 systemctl enable vision-webui.service
 systemctl enable vision-rtc-boot.service
 systemctl enable vision-rtc-sync.timer

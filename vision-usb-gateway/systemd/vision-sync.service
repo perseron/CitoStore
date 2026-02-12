@@ -8,6 +8,8 @@ Type=oneshot
 Environment=GATEWAY_HOME=/opt/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/usr/bin/python3 -m vision_sync.sync --config /etc/vision-gw.conf
+ExecStartPost=-/bin/bash ${GATEWAY_HOME}/scripts/vision-monitor.sh
+ExecStartPost=-/bin/bash ${GATEWAY_HOME}/scripts/vision-rotator.sh
 ProtectSystem=strict
 PrivateTmp=true
 ReadWritePaths=/srv/vision_mirror /run /mnt
