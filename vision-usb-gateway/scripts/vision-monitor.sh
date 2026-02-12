@@ -104,10 +104,12 @@ lv_name=$(basename "$active_dev")
 usage_raw=$(lvs --noheadings -o data_percent "/dev/$LVM_VG/$lv_name" 2>/dev/null | awk 'NF{print $1; exit}')
 usage=$(to_int_percent "$usage_raw")
 if [[ -z "$usage" ]]; then
-  usage=$(cached_usage_percent "$active_dev")
-fi
-if [[ -z "$usage" ]]; then
   usage=0
+fi
+
+fs_usage=$(cached_usage_percent "$active_dev")
+if [[ -n "$fs_usage" && "$fs_usage" =~ ^[0-9]+$ && $fs_usage -gt $usage ]]; then
+  usage=$fs_usage
 fi
 
 meta_raw=$(lvs --noheadings -o metadata_percent "/dev/$LVM_VG/$THINPOOL_LV" 2>/dev/null | awk 'NF{print $1; exit}')
@@ -119,7 +121,7 @@ sig=$(usage_signature "$usage_raw" "$usage")
 stable_count=$(usage_stable_count "$active_dev" "$sig")
 
 state=ok
-reason="usage=${usage} (lv=${usage_raw:-n/a}) stable=${stable_count}/${THRESH_HI_STABLE_SCANS} meta=${meta} (pool=${meta_raw:-n/a})"
+reason="usage=${usage} (lv=${usage_raw:-n/a} fs=${fs_usage:-n/a}) stable=${stable_count}/${THRESH_HI_STABLE_SCANS} meta=${meta} (pool=${meta_raw:-n/a})"
 
 if [[ $usage -ge $THRESH_CRIT || $meta -ge $META_CRIT ]]; then
   state=panic
