@@ -16,6 +16,47 @@ load_config "${CONF_FILE:-}"
 
 ACTIVE_FILE=/run/vision-usb-active
 STATE_FILE=/run/vision-rotate.state
+USB_USAGE_FILE=/run/vision-usb-usage.json
+
+to_int_percent() {
+  local raw="${1:-}"
+  raw=$(echo "$raw" | tr -d '[:space:]%<>' )
+  if [[ -z "$raw" ]]; then
+    echo ""
+    return
+  fi
+  if [[ "$raw" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    awk -v v="$raw" 'BEGIN{print int(v)}'
+    return
+  fi
+  echo ""
+}
+
+cached_usage_percent() {
+  local active="$1"
+  [[ -f "$USB_USAGE_FILE" ]] || { echo ""; return; }
+  python3 - "$USB_USAGE_FILE" "$active" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+active = sys.argv[2]
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except Exception:
+    print("")
+    raise SystemExit(0)
+if payload.get("lv") != active:
+    print("")
+    raise SystemExit(0)
+percent = str(payload.get("percent", "")).strip().replace("%", "")
+try:
+    print(int(float(percent)))
+except Exception:
+    print("")
+PY
+}
 
 active_dev=$(cat "$ACTIVE_FILE" 2>/dev/null || true)
 if [[ -z "$active_dev" ]]; then
@@ -25,11 +66,23 @@ fi
 
 lv_name=$(basename "$active_dev")
 
-usage=$(lvs --noheadings -o data_percent "/dev/$LVM_VG/$lv_name" | tr -d ' %' | awk '{print int($1)}')
-meta=$(lvs --noheadings -o metadata_percent "/dev/$LVM_VG/$THINPOOL_LV" | tr -d ' %' | awk '{print int($1)}')
+usage_raw=$(lvs --noheadings -o data_percent "/dev/$LVM_VG/$lv_name" 2>/dev/null | awk 'NF{print $1; exit}')
+usage=$(to_int_percent "$usage_raw")
+if [[ -z "$usage" ]]; then
+  usage=$(cached_usage_percent "$active_dev")
+fi
+if [[ -z "$usage" ]]; then
+  usage=0
+fi
+
+meta_raw=$(lvs --noheadings -o metadata_percent "/dev/$LVM_VG/$THINPOOL_LV" 2>/dev/null | awk 'NF{print $1; exit}')
+meta=$(to_int_percent "$meta_raw")
+if [[ -z "$meta" ]]; then
+  meta=0
+fi
 
 state=ok
-reason="usage=${usage} meta=${meta}"
+reason="usage=${usage} (lv=${usage_raw:-n/a}) meta=${meta} (pool=${meta_raw:-n/a})"
 
 if [[ $usage -ge $THRESH_CRIT || $meta -ge $META_CRIT ]]; then
   state=panic
