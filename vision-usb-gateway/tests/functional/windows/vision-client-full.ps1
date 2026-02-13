@@ -8,8 +8,11 @@ param(
     [int]$PollSec = 5,
     [int]$LoadFileSizeMB = 2,
     [int]$LoadIntervalSec = 1,
-    [int]$LoadDurationSec = 300,
+    [int]$LoadDurationSec = 0,
     [int]$LoadFileCount = 0,
+    [int]$LoadTargetUsedPercent = 85,
+    [int]$LoadReserveFreePercent = 5,
+    [int]$LoadMaxAutoFiles = 20000,
     [switch]$SkipRotateCheck,
     [switch]$Cleanup
 )
@@ -76,8 +79,12 @@ $loadParams = @{
 }
 if ($LoadFileCount -gt 0) {
     $loadParams.FileCount = $LoadFileCount
-} else {
+} elseif ($LoadDurationSec -gt 0) {
     $loadParams.DurationSec = $LoadDurationSec
+} else {
+    $loadParams.TargetUsedPercent = $LoadTargetUsedPercent
+    $loadParams.ReserveFreePercent = $LoadReserveFreePercent
+    $loadParams.MaxAutoFiles = $LoadMaxAutoFiles
 }
 if (-not $SkipRotateCheck.IsPresent) {
     $loadParams.WaitForRotate = $true
