@@ -11,9 +11,15 @@ param(
     [switch]$WaitForRotate
 )
 
-function Pass($msg) { Write-Host "PASS: $msg" }
-function Fail($msg) { Write-Host "FAIL: $msg"; exit 1 }
-function Warn($msg) { Write-Host "WARN: $msg" }
+function Show-Banner($msg) {
+    Write-Host ""
+    Write-Host ("=" * 72) -ForegroundColor Cyan
+    Write-Host $msg -ForegroundColor Cyan
+    Write-Host ("=" * 72) -ForegroundColor Cyan
+}
+function Pass($msg) { Write-Host "[PASS] $msg" -ForegroundColor Green }
+function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
+function Warn($msg) { Write-Host "[WARN] $msg" -ForegroundColor Yellow }
 function Get-VolumeIdentity($v) {
     if (-not $v) { return "" }
     $uid = if ($v.UniqueId) { $v.UniqueId } else { "" }
@@ -21,7 +27,7 @@ function Get-VolumeIdentity($v) {
     return "$uid|$dl|$($v.Size)"
 }
 
-Write-Host "== Vision USB Gateway load test (Windows client) =="
+Show-Banner "Vision USB Gateway load test (Windows client)"
 
 $vol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $vol) {
@@ -80,6 +86,7 @@ if (-not $plannedByCount -and -not $plannedByDuration) {
 
 $start = Get-Date
 $count = 0
+$nextProgressMark = 100
 
 while ($true) {
     if ($plannedByCount) {
@@ -96,6 +103,10 @@ while ($true) {
     # Create a fixed-size file quickly.
     cmd /c "fsutil file createnew `"$path`" $sizeBytes" | Out-Null
     $count++
+    if ($count -ge $nextProgressMark) {
+        Write-Host "[INFO] Generated $count files..." -ForegroundColor Cyan
+        $nextProgressMark += 100
+    }
 
     Start-Sleep -Seconds $IntervalSec
 }
@@ -108,12 +119,14 @@ if ($WaitForRotate.IsPresent) {
     } else {
         [math]::Max(120, ($count * [math]::Max(1, $IntervalSec)) + 120)
     }
-    Write-Host "Waiting for USB volume to detach..."
+    Write-Host "[INFO] Waiting for USB rotation signal..." -ForegroundColor Cyan
     $deadline = (Get-Date).AddSeconds($waitSec)
     $gone = $false
     $rotated = $false
     $rotationMode = ""
+    $nextWaitLog = Get-Date
     while ((Get-Date) -lt $deadline) {
+        $now = Get-Date
         $curVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
         if (-not $curVol) {
             $gone = $true
@@ -130,21 +143,33 @@ if ($WaitForRotate.IsPresent) {
                 break
             }
         }
+        if ($now -ge $nextWaitLog) {
+            $remaining = [int][math]::Ceiling(($deadline - $now).TotalSeconds)
+            Write-Host ("[WAIT] rotation pending ({0}s left)" -f [math]::Max(0, $remaining)) -ForegroundColor DarkYellow
+            $nextWaitLog = $now.AddSeconds(15)
+        }
         Start-Sleep -Seconds 2
     }
     if (-not $rotated -and -not $gone) {
         Warn "USB rotation not observed within ${waitSec}s (no detach and no identity change)"
     } else {
         if (-not $rotated -and $gone) {
-            Write-Host "Waiting for USB volume to reattach..."
+            Write-Host "[INFO] Waiting for USB volume to reattach..." -ForegroundColor Cyan
             $deadline = (Get-Date).AddSeconds($waitSec)
             $newVol = $null
+            $nextWaitLog = Get-Date
             while ((Get-Date) -lt $deadline) {
+                $now = Get-Date
                 $newVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
                 if ($newVol) {
                     $rotated = $true
                     $rotationMode = "detach/reattach"
                     break
+                }
+                if ($now -ge $nextWaitLog) {
+                    $remaining = [int][math]::Ceiling(($deadline - $now).TotalSeconds)
+                    Write-Host ("[WAIT] reattach pending ({0}s left)" -f [math]::Max(0, $remaining)) -ForegroundColor DarkYellow
+                    $nextWaitLog = $now.AddSeconds(15)
                 }
                 Start-Sleep -Seconds 2
             }

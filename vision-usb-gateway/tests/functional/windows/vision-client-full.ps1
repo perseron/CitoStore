@@ -17,16 +17,23 @@ param(
     [switch]$Cleanup
 )
 
-function Pass($msg) { Write-Host "PASS: $msg" }
-function Fail($msg) { Write-Host "FAIL: $msg"; exit 1 }
-function Warn($msg) { Write-Host "WARN: $msg" }
+function Show-Banner($msg) {
+    Write-Host ""
+    Write-Host ("=" * 72) -ForegroundColor Cyan
+    Write-Host $msg -ForegroundColor Cyan
+    Write-Host ("=" * 72) -ForegroundColor Cyan
+}
+function Pass($msg) { Write-Host "[PASS] $msg" -ForegroundColor Green }
+function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
+function Warn($msg) { Write-Host "[WARN] $msg" -ForegroundColor Yellow }
 
 function Invoke-Step {
     param(
         [string]$Name,
         [scriptblock]$Action
     )
-    Write-Host "-- Step: $Name"
+    Write-Host ""
+    Write-Host ("-- STEP: {0}" -f $Name) -ForegroundColor Cyan
     try {
         & $Action
     } catch {
@@ -53,8 +60,8 @@ if (-not (Test-Path $loadScript)) {
     Fail "Missing script: $loadScript"
 }
 
-Write-Host "== Vision USB Gateway full functional test (Windows client) =="
-Write-Host "Target: $ShareHost  Share: $ShareName  Label: $UsbLabel"
+Show-Banner "Vision USB Gateway full functional test (Windows client)"
+Write-Host ("[INFO] Target: {0}  Share: {1}  Label: {2}" -f $ShareHost, $ShareName, $UsbLabel) -ForegroundColor Cyan
 
 $commonParams = @{
     UsbLabel = $UsbLabel
@@ -108,5 +115,5 @@ if ($SkipRotateCheck.IsPresent) {
     Warn "Rotation check was skipped (-SkipRotateCheck)"
 }
 
-Write-Host "== Summary =="
-Write-Host "PASS (full client suite)"
+Show-Banner "Summary"
+Write-Host "[PASS] full client suite completed" -ForegroundColor Green

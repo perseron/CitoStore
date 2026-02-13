@@ -10,15 +10,21 @@ param(
     [switch]$Cleanup
 )
 
-function Pass($msg) { Write-Host "PASS: $msg" }
-function Fail($msg) { Write-Host "FAIL: $msg"; exit 1 }
-function Warn($msg) { Write-Host "WARN: $msg" }
+function Show-Banner($msg) {
+    Write-Host ""
+    Write-Host ("=" * 72) -ForegroundColor Cyan
+    Write-Host $msg -ForegroundColor Cyan
+    Write-Host ("=" * 72) -ForegroundColor Cyan
+}
+function Pass($msg) { Write-Host "[PASS] $msg" -ForegroundColor Green }
+function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
+function Warn($msg) { Write-Host "[WARN] $msg" -ForegroundColor Yellow }
 
 if ($ShareHost -eq "") {
     Fail "ShareHost is required (CM5 IP/hostname)"
 }
 
-Write-Host "== Vision USB Gateway functional test (Windows client) =="
+Show-Banner "Vision USB Gateway functional test (Windows client)"
 
 $vol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $vol) {
@@ -92,6 +98,8 @@ while ((Get-Date) -lt $deadline) {
         } |
         Select-Object -First 1
     if ($foundRaw) { break }
+    $remaining = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+    Write-Host ("[WAIT] SMB sync pending ({0}s left)" -f [math]::Max(0, $remaining)) -ForegroundColor DarkYellow
     Start-Sleep -Seconds $PollSec
 }
 
@@ -117,11 +125,13 @@ if (Test-Path $bydatePath) {
 }
 
 if ($WaitForRotate.IsPresent) {
-    Write-Host "Waiting for USB volume to detach..."
+    Write-Host "[INFO] Waiting for USB volume to detach..." -ForegroundColor Cyan
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
         $gone = -not (Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1)
         if ($gone) { break }
+        $remaining = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+        Write-Host ("[WAIT] detach pending ({0}s left)" -f [math]::Max(0, $remaining)) -ForegroundColor DarkYellow
         Start-Sleep -Seconds $PollSec
     }
     if (-not $gone) {
@@ -129,12 +139,14 @@ if ($WaitForRotate.IsPresent) {
     }
     Pass "USB volume detached"
 
-    Write-Host "Waiting for USB volume to reattach..."
+    Write-Host "[INFO] Waiting for USB volume to reattach..." -ForegroundColor Cyan
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $newVol = $null
     while ((Get-Date) -lt $deadline) {
         $newVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($newVol) { break }
+        $remaining = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+        Write-Host ("[WAIT] reattach pending ({0}s left)" -f [math]::Max(0, $remaining)) -ForegroundColor DarkYellow
         Start-Sleep -Seconds $PollSec
     }
     if (-not $newVol) {
@@ -149,5 +161,5 @@ if ($Cleanup.IsPresent) {
     Pass "Removed USB test file"
 }
 
-Write-Host "== Summary =="
-Write-Host "PASS (client)"
+Show-Banner "Summary"
+Write-Host "[PASS] client functional test completed" -ForegroundColor Green
