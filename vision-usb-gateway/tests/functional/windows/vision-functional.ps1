@@ -71,27 +71,38 @@ if (-not (Test-Path $bydatePath)) {
 
 $stem = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
 $ext = [System.IO.Path]::GetExtension($fileName)
-$expectedRegexUtc = "^" + [regex]::Escape($stem + "_" + $epochUtc + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
-$expectedRegexLocal = "^" + [regex]::Escape($stem + "_" + $epochLocal + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
+$expectedExact = "^" + [regex]::Escape($fileName) + "$"
+$expectedRegexUtcMtime = "^" + [regex]::Escape($stem + "_" + $epochUtc) + [regex]::Escape($ext) + "$"
+$expectedRegexLocalMtime = "^" + [regex]::Escape($stem + "_" + $epochLocal) + [regex]::Escape($ext) + "$"
+$expectedRegexUtcHash = "^" + [regex]::Escape($stem + "_" + $epochUtc + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
+$expectedRegexLocalHash = "^" + [regex]::Escape($stem + "_" + $epochLocal + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $foundRaw = $null
 
 while ((Get-Date) -lt $deadline) {
-    $foundRaw = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -Recurse -ErrorAction SilentlyContinue |
-        Where-Object { $_.Length -eq $size -and ($_.Name -match $expectedRegexUtc -or $_.Name -match $expectedRegexLocal) } |
+    $foundRaw = Get-ChildItem -Path $rawPath -Filter "${stem}*${ext}" -Recurse -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Length -eq $size -and (
+                $_.Name -match $expectedExact -or
+                $_.Name -match $expectedRegexUtcMtime -or
+                $_.Name -match $expectedRegexLocalMtime -or
+                $_.Name -match $expectedRegexUtcHash -or
+                $_.Name -match $expectedRegexLocalHash
+            )
+        } |
         Select-Object -First 1
     if ($foundRaw) { break }
     Start-Sleep -Seconds $PollSec
 }
 
 if (-not $foundRaw) {
-    $candidates = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -Recurse -ErrorAction SilentlyContinue |
+    $candidates = Get-ChildItem -Path $rawPath -Filter "${stem}*${ext}" -Recurse -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 5
     if ($candidates) {
         Write-Host "Recent candidates in raw:"
         $candidates | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
     }
-    Fail "Synced file not found in SMB raw within $TimeoutSec seconds (expected name like ${stem}_${epochUtc or epochLocal}_<hash>${ext})"
+    Fail "Synced file not found in SMB raw within $TimeoutSec seconds (expected one of: ${fileName}, ${stem}_${epochUtc}${ext}, ${stem}_${epochUtc}_<hash>${ext})"
 }
 
 Pass "Synced file found in raw: $($foundRaw.Name)"
