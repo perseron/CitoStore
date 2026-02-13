@@ -55,9 +55,9 @@ if (-not $plannedByCount -and -not $plannedByDuration) {
     $usedBytes = $totalBytes - $freeBytes
     $targetUsedBytes = [int64]([math]::Floor($totalBytes * ($TargetUsedPercent / 100.0)))
     $reserveBytes = [int64]([math]::Floor($totalBytes * ($ReserveFreePercent / 100.0)))
-    $maxWritableBytes = [math]::Max(0, $freeBytes - $reserveBytes)
-    $neededBytes = [math]::Max(0, $targetUsedBytes - $usedBytes)
-    $planBytes = [math]::Min($neededBytes, $maxWritableBytes)
+    $maxWritableBytes = [int64][math]::Max([double]0, [double]($freeBytes - $reserveBytes))
+    $neededBytes = [int64][math]::Max([double]0, [double]($targetUsedBytes - $usedBytes))
+    $planBytes = [int64][math]::Min([double]$neededBytes, [double]$maxWritableBytes)
     $autoPlannedCount = [int][math]::Floor($planBytes / $sizeBytes)
     if ($autoPlannedCount -gt $MaxAutoFiles) {
         $autoPlannedCount = $MaxAutoFiles
