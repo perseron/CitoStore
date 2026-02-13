@@ -183,6 +183,9 @@ Snapshot sync
 - `SYNC_ONACTIVE_SEC`: Delay after timer activation before next run (systemd time format).
 - `SYNC_INTERVAL_SEC`: Interval between runs after a successful run (systemd time format).
 - `SYNC_HI_INTERVAL_SEC`: Faster temporary interval used while usage is in `THRESH_HI` zone and still changing.
+- `FAST_SYNC_MIN_ON_SCANS`: Minimum monitor cycles to keep fast-sync active once enabled (anti-flap).
+- `FAST_SYNC_COOLDOWN_SCANS`: Cooldown monitor cycles before fast-sync may be re-enabled after stop.
+- `FAST_SYNC_EXIT_DELTA`: Hysteresis delta below `THRESH_HI` where fast-sync may still be held.
 - `SYNC_CHANGE_DETECT`: If `true`, uses a two-phase manifest gate. When changes are detected, copy runs every cycle. When unchanged for `SYNC_CHANGE_RESUME_SCANS` consecutive runs, the copy phase is skipped; when changes resume, copy runs again.
 - `SYNC_MANIFEST_FILE`: Path to the stored manifest hash used for change detection.
 - `SYNC_CHANGE_RESUME_SCANS`: Number of consecutive unchanged runs required before skipping copy again.
@@ -206,6 +209,8 @@ Rotation thresholds
 Mirror retention
 - `RETENTION_HI`: Percent usage threshold to start deleting oldest mirror entries.
 - `RETENTION_LO`: Percent usage target to stop deleting.
+- `DB_MAINT_INTERVAL_SEC`: Periodic sqlite maintenance interval (WAL checkpoint + VACUUM) during retention runs.
+- `FILE_STATE_PRUNE_DAYS`: Prune `file_state` rows not seen for this many days to keep DB size bounded.
 
 NAS optional
 - `NAS_ENABLED`: Enable NAS sync service.

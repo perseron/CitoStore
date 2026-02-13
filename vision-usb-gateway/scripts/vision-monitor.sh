@@ -14,11 +14,15 @@ load_config "${CONF_FILE:-}"
 : "${THRESH_HI_STABLE_SCANS:=3}"
 : "${META_HI:=70}"
 : "${META_CRIT:=85}"
+: "${FAST_SYNC_MIN_ON_SCANS:=3}"
+: "${FAST_SYNC_COOLDOWN_SCANS:=2}"
+: "${FAST_SYNC_EXIT_DELTA:=5}"
 
 ACTIVE_FILE=/run/vision-usb-active
 STATE_FILE=/run/vision-rotate.state
 USB_USAGE_FILE=/run/vision-usb-usage.json
 USAGE_STABLE_FILE=/run/vision-usage-stable.state
+FAST_SYNC_STATE_FILE=/run/vision-fast-sync.state
 FAST_SYNC_TIMER=vision-sync-fast.timer
 
 to_int_percent() {
@@ -103,6 +107,28 @@ set_fast_sync_mode() {
   fi
 }
 
+load_fast_sync_state() {
+  fast_enabled=0
+  fast_on_scans=0
+  fast_cooldown=0
+  if [[ -f "$FAST_SYNC_STATE_FILE" ]]; then
+    fast_enabled=$(grep '^enabled=' "$FAST_SYNC_STATE_FILE" | cut -d= -f2- || echo 0)
+    fast_on_scans=$(grep '^on_scans=' "$FAST_SYNC_STATE_FILE" | cut -d= -f2- || echo 0)
+    fast_cooldown=$(grep '^cooldown=' "$FAST_SYNC_STATE_FILE" | cut -d= -f2- || echo 0)
+  fi
+  [[ "$fast_enabled" =~ ^[01]$ ]] || fast_enabled=0
+  [[ "$fast_on_scans" =~ ^[0-9]+$ ]] || fast_on_scans=0
+  [[ "$fast_cooldown" =~ ^[0-9]+$ ]] || fast_cooldown=0
+}
+
+save_fast_sync_state() {
+  {
+    echo "enabled=$fast_enabled"
+    echo "on_scans=$fast_on_scans"
+    echo "cooldown=$fast_cooldown"
+  } > "$FAST_SYNC_STATE_FILE"
+}
+
 active_dev=$(cat "$ACTIVE_FILE" 2>/dev/null || true)
 if [[ -z "$active_dev" ]]; then
   log "active device unknown"
@@ -133,28 +159,70 @@ if [[ -z "$meta" ]]; then
 fi
 sig=$(usage_signature "$usage_raw" "$usage" "$usage_source")
 stable_count=$(usage_stable_count "$active_dev" "$sig")
+load_fast_sync_state
 
 state=ok
 reason="usage=${usage} src=${usage_source} (lv=${usage_raw:-n/a} fs=${fs_usage:-n/a}) stable=${stable_count}/${THRESH_HI_STABLE_SCANS} meta=${meta} (pool=${meta_raw:-n/a})"
+fast_desired=false
+fast_forced_off=false
 
 if [[ $usage -ge $THRESH_CRIT || $meta -ge $META_CRIT ]]; then
   state=panic
-  set_fast_sync_mode false
+  fast_forced_off=true
 elif [[ $meta -ge $META_HI ]]; then
   state=rotate_pending
-  set_fast_sync_mode false
+  fast_forced_off=true
 elif [[ $usage -ge $THRESH_HI ]]; then
   if [[ $stable_count -ge $THRESH_HI_STABLE_SCANS ]]; then
     state=rotate_pending
-    set_fast_sync_mode false
+    fast_forced_off=true
   else
     state=ok
     reason="$reason hold=high-usage-but-changing"
+    fast_desired=true
+  fi
+fi
+
+if [[ "$fast_forced_off" == "true" ]]; then
+  fast_enabled=0
+  fast_on_scans=0
+  fast_cooldown=$FAST_SYNC_COOLDOWN_SCANS
+  set_fast_sync_mode false
+elif [[ "$fast_desired" == "true" ]]; then
+  if [[ $fast_enabled -eq 1 ]]; then
+    fast_on_scans=$((fast_on_scans + 1))
     set_fast_sync_mode true
+  else
+    if [[ $fast_cooldown -gt 0 ]]; then
+      fast_cooldown=$((fast_cooldown - 1))
+      reason="$reason fast_sync=cooldown(${fast_cooldown})"
+    else
+      fast_enabled=1
+      fast_on_scans=1
+      set_fast_sync_mode true
+      reason="$reason fast_sync=on"
+    fi
   fi
 else
-  set_fast_sync_mode false
+  # Hysteresis: keep fast mode briefly to avoid flapping near THRESH_HI.
+  keep_floor=$((THRESH_HI - FAST_SYNC_EXIT_DELTA))
+  if [[ $keep_floor -lt 0 ]]; then
+    keep_floor=0
+  fi
+  if [[ $fast_enabled -eq 1 && $fast_on_scans -lt $FAST_SYNC_MIN_ON_SCANS && $usage -ge $keep_floor ]]; then
+    fast_on_scans=$((fast_on_scans + 1))
+    set_fast_sync_mode true
+    reason="$reason fast_sync=hold(${fast_on_scans}/${FAST_SYNC_MIN_ON_SCANS})"
+  else
+    fast_enabled=0
+    fast_on_scans=0
+    if [[ $FAST_SYNC_COOLDOWN_SCANS -gt 0 ]]; then
+      fast_cooldown=$FAST_SYNC_COOLDOWN_SCANS
+    fi
+    set_fast_sync_mode false
+  fi
 fi
+save_fast_sync_state
 
 echo "state=$state" > "$STATE_FILE"
 echo "active=$active_dev" >> "$STATE_FILE"

@@ -72,6 +72,7 @@ Operational description (detailed)
      - Active LV data usage (`THRESH_HI`/`THRESH_CRIT`; high-zone rotate requires `THRESH_HI_STABLE_SCANS` unchanged sync cycles)
      - Thinpool metadata usage (`META_HI`/`META_CRIT`)
    - In high-usage + changing state, monitor enables `vision-sync-fast.timer` (`SYNC_HI_INTERVAL_SEC`) to increase sync cadence until data stabilizes or reaches critical threshold.
+   - Fast mode uses hysteresis/cooldown (`FAST_SYNC_MIN_ON_SCANS`, `FAST_SYNC_COOLDOWN_SCANS`, `FAST_SYNC_EXIT_DELTA`) to avoid rapid on/off flapping.
    - It writes `/run/vision-rotate.state` with `state=ok|rotate_pending|panic`.
 10) Rotation execution (rotator)
    - If `rotate_pending`, switching happens only within `SWITCH_WINDOW_START`–`SWITCH_WINDOW_END`.
