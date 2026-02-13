@@ -153,6 +153,27 @@ RuntimeMaxUse=$JOURNAL_RUNTIME_MAX_USE
 RuntimeKeepFree=$JOURNAL_RUNTIME_KEEP_FREE
 EOF
 
+# Optional one-time cleanup to start overlay mode from a clean log state.
+: "${OVERLAY_CLEAN_LOGS_ON_ENABLE:=true}"
+if [[ "$OVERLAY_CLEAN_LOGS_ON_ENABLE" == "true" ]]; then
+  log "cleaning logs before enabling overlay"
+  if command -v journalctl >/dev/null 2>&1; then
+    journalctl --rotate >/dev/null 2>&1 || true
+    journalctl --vacuum-time=1s >/dev/null 2>&1 || true
+  fi
+  if [[ -d /var/log/journal ]]; then
+    find /var/log/journal -type f -name '*.journal*' -delete 2>/dev/null || true
+  fi
+  if [[ -d /run/log/journal ]]; then
+    find /run/log/journal -type f -name '*.journal*' -delete 2>/dev/null || true
+  fi
+  : "${MIRROR_MOUNT:=/srv/vision_mirror}"
+  STATE_DIR="$MIRROR_MOUNT/.state"
+  if [[ -d "$STATE_DIR" ]]; then
+    find "$STATE_DIR" -maxdepth 2 -type f -name '*.log*' -delete 2>/dev/null || true
+  fi
+fi
+
 if $BOOT_RO; then
   log "setting boot partition read-only in fstab"
   if ! grep -q '^/dev/mmcblk0p1' /etc/fstab; then

@@ -226,6 +226,7 @@ RTC
 Journald memory cap (overlay mode)
 - `JOURNAL_RUNTIME_MAX_USE`: Max volatile journal size in RAM/tmpfs (default `64M`).
 - `JOURNAL_RUNTIME_KEEP_FREE`: Minimum RAM/tmpfs to keep free for the system (default `32M`).
+- `OVERLAY_CLEAN_LOGS_ON_ENABLE`: If `true`, `install/20_enable_readonly_overlay.sh` clears journal files and `*.log*` files under `/srv/vision_mirror/.state` before enabling overlay.
 - Applied by `install/20_enable_readonly_overlay.sh` via `/etc/systemd/journald.conf.d/vision-gw.conf`.
 
 Samba + discovery
