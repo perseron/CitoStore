@@ -223,6 +223,11 @@ RTC
 - Boot sync runs only if NTP is not synchronized.
 - Web UI supports manual time set as a fallback (writes system time and updates RTC).
 
+Journald memory cap (overlay mode)
+- `JOURNAL_RUNTIME_MAX_USE`: Max volatile journal size in RAM/tmpfs (default `64M`).
+- `JOURNAL_RUNTIME_KEEP_FREE`: Minimum RAM/tmpfs to keep free for the system (default `32M`).
+- Applied by `install/20_enable_readonly_overlay.sh` via `/etc/systemd/journald.conf.d/vision-gw.conf`.
+
 Samba + discovery
 - `SMB_BIND_INTERFACE`: Network interface Samba/WSDD bind to.
 - `SMB_USER`: Samba user for read-only access.

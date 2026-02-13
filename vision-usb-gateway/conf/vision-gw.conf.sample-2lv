@@ -76,6 +76,10 @@ RTC_DEVICE=/dev/rtc0
 RTC_UTC=true
 RTC_SYNC_INTERVAL=1h
 
+# Journald (overlay mode memory cap)
+JOURNAL_RUNTIME_MAX_USE=64M
+JOURNAL_RUNTIME_KEEP_FREE=32M
+
 # Samba
 SMB_BIND_INTERFACE=eth0
 SMB_USER=smbuser

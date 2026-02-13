@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/../scripts/common.sh"
 
 require_root
 require_cmd update-initramfs
+load_config
 
 ensure_initramfs_modules_policy() {
   local conf="/etc/initramfs-tools/initramfs.conf"
@@ -138,6 +139,19 @@ if [[ -f "$JOURNALD" ]]; then
 else
   echo 'Storage=volatile' > "$JOURNALD"
 fi
+
+# Cap volatile journald memory usage to protect overlay/tmpfs.
+: "${JOURNAL_RUNTIME_MAX_USE:=64M}"
+: "${JOURNAL_RUNTIME_KEEP_FREE:=32M}"
+JOURNALD_DROPIN_DIR=/etc/systemd/journald.conf.d
+JOURNALD_DROPIN=$JOURNALD_DROPIN_DIR/vision-gw.conf
+mkdir -p "$JOURNALD_DROPIN_DIR"
+cat > "$JOURNALD_DROPIN" <<EOF
+[Journal]
+Storage=volatile
+RuntimeMaxUse=$JOURNAL_RUNTIME_MAX_USE
+RuntimeKeepFree=$JOURNAL_RUNTIME_KEEP_FREE
+EOF
 
 if $BOOT_RO; then
   log "setting boot partition read-only in fstab"
