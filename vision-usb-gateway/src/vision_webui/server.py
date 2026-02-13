@@ -37,6 +37,7 @@ ALLOWED_CONFIG_KEYS = {
     "SYNC_INTERVAL_SEC",
     "SYNC_ONBOOT_SEC",
     "SYNC_ONACTIVE_SEC",
+    "SYNC_HI_INTERVAL_SEC",
     "NAS_ENABLED",
     "NAS_REMOTE",
     "NAS_MOUNT",
@@ -585,7 +586,7 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
         iface = updates["SMB_BIND_INTERFACE"]
         if not iface or not all(c.isalnum() or c in "._:-" for c in iface):
             return False, "SMB_BIND_INTERFACE contains invalid characters"
-    for key in ("SYNC_INTERVAL_SEC", "SYNC_ONBOOT_SEC", "SYNC_ONACTIVE_SEC"):
+    for key in ("SYNC_INTERVAL_SEC", "SYNC_ONBOOT_SEC", "SYNC_ONACTIVE_SEC", "SYNC_HI_INTERVAL_SEC"):
         if key in updates:
             val = updates[key]
             if not val or not all(c.isalnum() for c in val):

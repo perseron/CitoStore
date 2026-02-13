@@ -23,6 +23,7 @@ load_config
 : "${SYNC_ONBOOT_SEC:=2min}"
 : "${SYNC_ONACTIVE_SEC:=2min}"
 : "${SYNC_INTERVAL_SEC:=2min}"
+: "${SYNC_HI_INTERVAL_SEC:=10s}"
 : "${RTC_SYNC_INTERVAL:=1h}"
 
 # Write systemd-safe env file (no arrays)
@@ -40,6 +41,7 @@ RTC_ENABLED=${RTC_ENABLED:-false}
 RTC_DEVICE=${RTC_DEVICE:-/dev/rtc0}
 RTC_UTC=${RTC_UTC:-true}
 RTC_SYNC_INTERVAL=${RTC_SYNC_INTERVAL:-1h}
+SYNC_HI_INTERVAL_SEC=${SYNC_HI_INTERVAL_SEC:-10s}
 EOF
 
 log "installing python package"
@@ -73,6 +75,16 @@ OnActiveSec=$SYNC_ONACTIVE_SEC
 OnUnitActiveSec=$SYNC_INTERVAL_SEC
 EOF
 
+log "configuring vision-sync-fast.timer override"
+SYNC_FAST_TIMER_DIR=/etc/systemd/system/vision-sync-fast.timer.d
+SYNC_FAST_TIMER_OVERRIDE=$SYNC_FAST_TIMER_DIR/override.conf
+mkdir -p "$SYNC_FAST_TIMER_DIR"
+cat > "$SYNC_FAST_TIMER_OVERRIDE" <<EOF
+[Timer]
+OnActiveSec=$SYNC_HI_INTERVAL_SEC
+OnUnitActiveSec=$SYNC_HI_INTERVAL_SEC
+EOF
+
 log "configuring vision-rtc-sync.timer override"
 RTC_TIMER_DIR=/etc/systemd/system/vision-rtc-sync.timer.d
 RTC_TIMER_OVERRIDE=$RTC_TIMER_DIR/override.conf
@@ -93,6 +105,8 @@ systemctl enable usb-gadget.service
 systemctl enable vision-gw-network.service
 systemctl enable vision-gw-config.service
 systemctl enable vision-sync.timer mirror-retention.timer
+systemctl disable vision-sync-fast.timer >/dev/null 2>&1 || true
+systemctl stop vision-sync-fast.timer >/dev/null 2>&1 || true
 systemctl disable vision-monitor.timer vision-rotator.timer >/dev/null 2>&1 || true
 systemctl enable vision-webui.service
 systemctl enable vision-rtc-boot.service

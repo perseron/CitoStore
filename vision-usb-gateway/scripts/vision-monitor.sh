@@ -19,6 +19,7 @@ ACTIVE_FILE=/run/vision-usb-active
 STATE_FILE=/run/vision-rotate.state
 USB_USAGE_FILE=/run/vision-usb-usage.json
 USAGE_STABLE_FILE=/run/vision-usage-stable.state
+FAST_SYNC_TIMER=vision-sync-fast.timer
 
 to_int_percent() {
   local raw="${1:-}"
@@ -93,6 +94,15 @@ usage_stable_count() {
   echo "$count"
 }
 
+set_fast_sync_mode() {
+  local enabled="$1"
+  if [[ "$enabled" == "true" ]]; then
+    systemctl start "$FAST_SYNC_TIMER" >/dev/null 2>&1 || true
+  else
+    systemctl stop "$FAST_SYNC_TIMER" >/dev/null 2>&1 || true
+  fi
+}
+
 active_dev=$(cat "$ACTIVE_FILE" 2>/dev/null || true)
 if [[ -z "$active_dev" ]]; then
   log "active device unknown"
@@ -129,15 +139,21 @@ reason="usage=${usage} src=${usage_source} (lv=${usage_raw:-n/a} fs=${fs_usage:-
 
 if [[ $usage -ge $THRESH_CRIT || $meta -ge $META_CRIT ]]; then
   state=panic
+  set_fast_sync_mode false
 elif [[ $meta -ge $META_HI ]]; then
   state=rotate_pending
+  set_fast_sync_mode false
 elif [[ $usage -ge $THRESH_HI ]]; then
   if [[ $stable_count -ge $THRESH_HI_STABLE_SCANS ]]; then
     state=rotate_pending
+    set_fast_sync_mode false
   else
     state=ok
     reason="$reason hold=high-usage-but-changing"
+    set_fast_sync_mode true
   fi
+else
+  set_fast_sync_mode false
 fi
 
 echo "state=$state" > "$STATE_FILE"

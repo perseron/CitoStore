@@ -80,7 +80,7 @@ Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
 - Offline processing logs: `journalctl -u offline-maint@usb_0`
 - Sync timer tuning (in `/etc/vision-gw.conf`):
-  - `SYNC_ONBOOT_SEC`, `SYNC_ONACTIVE_SEC`, `SYNC_INTERVAL_SEC`
+  - `SYNC_ONBOOT_SEC`, `SYNC_ONACTIVE_SEC`, `SYNC_INTERVAL_SEC`, `SYNC_HI_INTERVAL_SEC`
 - USB persist (AOI settings):
   - Folder on USB LV: `USB_PERSIST_DIR` (default `aoi_settings`)
   - Backing store: `USB_PERSIST_BACKING` (default `/srv/vision_mirror/.state/aoi_settings`)
@@ -143,6 +143,7 @@ Operational flow (detailed, step-by-step)
 8) Rotation decision
    - `vision-monitor` checks active LV usage (`THRESH_HI`/`THRESH_CRIT`) and thinpool metadata (`META_HI`/`META_CRIT`).
    - In the high-usage zone (`THRESH_HI` <= usage < `THRESH_CRIT`), switch is allowed only after unchanged usage for `THRESH_HI_STABLE_SCANS` consecutive sync cycles.
+   - While high-usage data is still changing, a fast sync timer is enabled (`SYNC_HI_INTERVAL_SEC`) to find safe switch gaps sooner.
    - Writes `/run/vision-rotate.state` with `state=ok|rotate_pending|panic`.
 9) Rotation execution
    - `vision-rotator` switches LVs inside the configured window unless in `panic`.
@@ -181,6 +182,7 @@ Snapshot sync
 - `SYNC_ONBOOT_SEC`: Delay after boot before first sync run (systemd time format).
 - `SYNC_ONACTIVE_SEC`: Delay after timer activation before next run (systemd time format).
 - `SYNC_INTERVAL_SEC`: Interval between runs after a successful run (systemd time format).
+- `SYNC_HI_INTERVAL_SEC`: Faster temporary interval used while usage is in `THRESH_HI` zone and still changing.
 - `SYNC_CHANGE_DETECT`: If `true`, uses a two-phase manifest gate. When changes are detected, copy runs every cycle. When unchanged for `SYNC_CHANGE_RESUME_SCANS` consecutive runs, the copy phase is skipped; when changes resume, copy runs again.
 - `SYNC_MANIFEST_FILE`: Path to the stored manifest hash used for change detection.
 - `SYNC_CHANGE_RESUME_SCANS`: Number of consecutive unchanged runs required before skipping copy again.

@@ -27,6 +27,7 @@ GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
 : "${SYNC_ONBOOT_SEC:=2min}"
 : "${SYNC_ONACTIVE_SEC:=2min}"
 : "${SYNC_INTERVAL_SEC:=2min}"
+: "${SYNC_HI_INTERVAL_SEC:=10s}"
 : "${RTC_SYNC_INTERVAL:=1h}"
 
 # Write systemd-safe env file (no arrays).
@@ -44,6 +45,7 @@ RTC_ENABLED=${RTC_ENABLED:-false}
 RTC_DEVICE=${RTC_DEVICE:-/dev/rtc0}
 RTC_UTC=${RTC_UTC:-true}
 RTC_SYNC_INTERVAL=${RTC_SYNC_INTERVAL:-1h}
+SYNC_HI_INTERVAL_SEC=${SYNC_HI_INTERVAL_SEC:-10s}
 EOF
 
 # Update timer override from config.
@@ -57,6 +59,16 @@ OnActiveSec=$SYNC_ONACTIVE_SEC
 OnUnitActiveSec=$SYNC_INTERVAL_SEC
 EOF
 
+SYNC_FAST_TIMER_DIR=/etc/systemd/system/vision-sync-fast.timer.d
+SYNC_FAST_TIMER_OVERRIDE=$SYNC_FAST_TIMER_DIR/override.conf
+mkdir -p "$SYNC_FAST_TIMER_DIR"
+cat > "$SYNC_FAST_TIMER_OVERRIDE" <<EOF
+[Timer]
+OnActiveSec=$SYNC_HI_INTERVAL_SEC
+OnUnitActiveSec=$SYNC_HI_INTERVAL_SEC
+EOF
+
 systemctl daemon-reload
 systemctl restart vision-sync.timer
+systemctl restart vision-sync-fast.timer >/dev/null 2>&1 || true
 systemctl restart vision-rtc-sync.timer || true
