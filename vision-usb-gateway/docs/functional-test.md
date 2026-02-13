@@ -54,6 +54,30 @@ Parameters:
 - `-WaitForRotate` (wait for USB detach/reattach after server rotation)
 - `-Cleanup` (removes the USB test file)
 
+## Full Windows client suite (sync + load + rotation + re-sync)
+
+Run this when the CM5 is already in read-only shadow/overlay mode and you want an end-to-end client-side validation:
+
+```
+powershell -ExecutionPolicy Bypass -File .\tests\functional\windows\vision-client-full.ps1 `
+  -ShareHost <cm5-ip-or-hostname> `
+  -UsbLabel VISIONUSB `
+  -ShareName vision_mirror `
+  -LoadFileSizeMB 2 `
+  -LoadIntervalSec 1 `
+  -LoadDurationSec 300
+```
+
+What it does:
+- Runs baseline client sync validation (`vision-functional.ps1`)
+- Generates write pressure (`vision-load.ps1`) and by default waits for detach/reattach (rotation proof)
+- Runs a second client sync validation after load/rotation
+
+Optional:
+- `-SkipRotateCheck` (if you only want sync+load without detach/reattach assertion)
+- `-LoadFileCount <n>` (fixed file count instead of duration-based load)
+- `-Cleanup` (remove final sync test file from USB)
+
 ## Load test (Windows + server)
 
 Windows (generate load):

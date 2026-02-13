@@ -15,6 +15,7 @@
 - Add NAS offline queueing + retry backoff summary in WebUI
 - Add time sync policy (RTC + NTP fallback, display status in WebUI)
 - Add web-based update system: upload a compressed update package with install script and apply safely
+- Add NVMe pressure safeguards: keep retention decoupled from sync, but add sync-side mirror free-space guard and optional non-blocking retention trigger when mirror usage is high.
 
 ## P2 - Medium (operations)
 - Add "maintenance mode" switch in WebUI (disable rotation/sync safely)
