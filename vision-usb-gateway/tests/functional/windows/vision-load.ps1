@@ -14,6 +14,12 @@ param(
 function Pass($msg) { Write-Host "PASS: $msg" }
 function Fail($msg) { Write-Host "FAIL: $msg"; exit 1 }
 function Warn($msg) { Write-Host "WARN: $msg" }
+function Get-VolumeIdentity($v) {
+    if (-not $v) { return "" }
+    $uid = if ($v.UniqueId) { $v.UniqueId } else { "" }
+    $dl = if ($v.DriveLetter) { $v.DriveLetter } else { "" }
+    return "$uid|$dl|$($v.Size)"
+}
 
 Write-Host "== Vision USB Gateway load test (Windows client) =="
 
@@ -27,6 +33,7 @@ if (-not $vol.DriveLetter) {
 
 $drive = "$($vol.DriveLetter):"
 Pass "USB volume detected: $drive ($UsbLabel)"
+$initialIdentity = Get-VolumeIdentity $vol
 
 $sizeBytes = $FileSizeMB * 1024 * 1024
 $totalBytes = [int64]$vol.Size
@@ -104,28 +111,51 @@ if ($WaitForRotate.IsPresent) {
     Write-Host "Waiting for USB volume to detach..."
     $deadline = (Get-Date).AddSeconds($waitSec)
     $gone = $false
+    $rotated = $false
+    $rotationMode = ""
     while ((Get-Date) -lt $deadline) {
-        $gone = -not (Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1)
-        if ($gone) { break }
+        $curVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $curVol) {
+            $gone = $true
+        } else {
+            $curIdentity = Get-VolumeIdentity $curVol
+            if ($gone) {
+                $rotated = $true
+                $rotationMode = "detach/reattach"
+                break
+            }
+            if ($curIdentity -ne $initialIdentity) {
+                $rotated = $true
+                $rotationMode = "identity-change"
+                break
+            }
+        }
         Start-Sleep -Seconds 2
     }
-    if (-not $gone) {
-        Warn "USB volume did not detach within ${waitSec}s"
+    if (-not $rotated -and -not $gone) {
+        Warn "USB rotation not observed within ${waitSec}s (no detach and no identity change)"
     } else {
-        Pass "USB volume detached"
-        Write-Host "Waiting for USB volume to reattach..."
-        $deadline = (Get-Date).AddSeconds($waitSec)
-        $newVol = $null
-        while ((Get-Date) -lt $deadline) {
-            $newVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($newVol) { break }
-            Start-Sleep -Seconds 2
+        if (-not $rotated -and $gone) {
+            Write-Host "Waiting for USB volume to reattach..."
+            $deadline = (Get-Date).AddSeconds($waitSec)
+            $newVol = $null
+            while ((Get-Date) -lt $deadline) {
+                $newVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($newVol) {
+                    $rotated = $true
+                    $rotationMode = "detach/reattach"
+                    break
+                }
+                Start-Sleep -Seconds 2
+            }
         }
-        if (-not $newVol) {
-            Warn "USB volume did not reattach within ${waitSec}s"
+
+        if (-not $rotated) {
+            Warn "USB volume detached but did not reattach within ${waitSec}s"
         } else {
-            $newDrive = if ($newVol.DriveLetter) { "$($newVol.DriveLetter):" } else { "<no-drive-letter>" }
-            Pass "USB volume reattached: $newDrive"
+            $newVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
+            $newDrive = if ($newVol -and $newVol.DriveLetter) { "$($newVol.DriveLetter):" } else { "<no-drive-letter>" }
+            Pass "USB rotation observed (${rotationMode}); current volume: $newDrive"
         }
     }
 }
