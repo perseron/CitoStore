@@ -424,58 +424,71 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
     raw_dir = cfg.mirror_mount / "raw"
     bydate_dir = cfg.mirror_mount / "bydate"
     now = int(time.time())
+    scanned = 0
+    synced = 0
+    skipped_large = 0
+    log_every = max(0, int(getattr(cfg, "sync_log_every", 0)))
 
-    for path, st in iter_files(mount_root):
-        rel = path.relative_to(mount_root)
-        size = int(st.st_size)
-        mtime = int(st.st_mtime)
-        if size >= cfg.max_file_size:
-            log(f"skip too large: {rel}")
-            continue
+    try:
+        for path, st in iter_files(mount_root):
+            scanned += 1
+            rel = path.relative_to(mount_root)
+            size = int(st.st_size)
+            mtime = int(st.st_mtime)
+            if size >= cfg.max_file_size:
+                skipped_large += 1
+                continue
 
-        stable = update_state(conn, str(rel), size, mtime, now)
-        if stable < cfg.stable_scans:
-            continue
+            stable = update_state(conn, str(rel), size, mtime, now)
+            if stable < cfg.stable_scans:
+                continue
 
-        if is_already_synced(conn, str(rel), size, mtime):
-            continue
+            if is_already_synced(conn, str(rel), size, mtime):
+                continue
 
-        dt = datetime.fromtimestamp(mtime if cfg.bydate_use_file_time else now)
-        date_path = bydate_dir / dt.strftime("%Y/%m/%d")
+            dt = datetime.fromtimestamp(mtime if cfg.bydate_use_file_time else now)
+            date_path = bydate_dir / dt.strftime("%Y/%m/%d")
 
-        raw_subdir = safe_join(raw_dir, rel.parent)
-        name = rel.name
-        stem = Path(name).stem
-        suffix = Path(name).suffix
-        collision = (raw_subdir / name).exists()
-        if cfg.append_always:
-            collision = True
-        if collision:
-            final_name = f"{stem}_{mtime}{suffix}"
-        else:
-            final_name = name
-
-        dest_path, digest = atomic_copy(path, raw_subdir, final_name, cfg.copy_chunk)
-
-        if collision:
-            hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
-            hash_path = raw_subdir / hash_name
-            if hash_path.exists():
-                dest_path.unlink(missing_ok=True)
-                final_path = hash_path
+            raw_subdir = safe_join(raw_dir, rel.parent)
+            name = rel.name
+            stem = Path(name).stem
+            suffix = Path(name).suffix
+            collision = (raw_subdir / name).exists()
+            if cfg.append_always:
+                collision = True
+            if collision:
+                final_name = f"{stem}_{mtime}{suffix}"
             else:
-                dest_path.rename(hash_path)
-                final_path = hash_path
-        else:
-            final_path = dest_path
+                final_name = name
 
-        date_path.mkdir(parents=True, exist_ok=True)
-        link_path = date_path / final_path.name
-        if not link_path.exists():
-            os.link(final_path, link_path)
+            dest_path, digest = atomic_copy(path, raw_subdir, final_name, cfg.copy_chunk)
 
-        mark_synced(conn, str(rel), size, mtime, str(final_path), str(link_path), now)
-        log(f"synced: {rel}")
+            if collision:
+                hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
+                hash_path = raw_subdir / hash_name
+                if hash_path.exists():
+                    dest_path.unlink(missing_ok=True)
+                    final_path = hash_path
+                else:
+                    dest_path.rename(hash_path)
+                    final_path = hash_path
+            else:
+                final_path = dest_path
+
+            date_path.mkdir(parents=True, exist_ok=True)
+            link_path = date_path / final_path.name
+            if not link_path.exists():
+                os.link(final_path, link_path)
+
+            mark_synced(conn, str(rel), size, mtime, str(final_path), str(link_path), now)
+            synced += 1
+            if log_every > 0 and synced % log_every == 0:
+                log(f"sync progress: synced={synced} scanned={scanned}")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    log(f"sync summary: scanned={scanned} synced={synced} skipped_large={skipped_large}")
 
 
 def run(cfg, dev_override: str | None, offline: bool) -> None:

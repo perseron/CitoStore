@@ -192,6 +192,7 @@ Snapshot sync
 - `STABLE_SCAN_REQUIRED`: Number of consecutive scans required before a file is copied. If set to `2`, a new file typically appears on the second run after creation.
 - `MAX_FILE_SIZE_BYTES`: Files equal/above this size are skipped (FAT32 4GiB limit default).
 - `COPY_CHUNK_BYTES`: Copy chunk size for atomic copy.
+- `SYNC_LOG_EVERY`: Per-file progress log interval. `0` disables per-file logs and only writes `sync summary` (recommended for high file-rate AOI feeds).
 - `RAW_APPEND_ALWAYS`: If `true`, always append to raw filenames (legacy behavior). If `false`, append only on collisions.
 - `BYDATE_USE_FILE_TIME`: If `true`, use file mtime for `bydate/YYYY/MM/DD/`. If `false`, use current local time (default).
 
