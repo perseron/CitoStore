@@ -129,6 +129,15 @@ function validateField(el) {
     setFieldValidity(el, ok, ok ? "10-2000" : "invalid");
     return ok;
   }
+  if (rule.startsWith("int-range:")) {
+    const parts = rule.split(":");
+    const min = Number(parts[1]);
+    const max = Number(parts[2]);
+    const num = Number(value);
+    const ok = Number.isInteger(num) && num >= min && num <= max;
+    setFieldValidity(el, ok, ok ? `${min}-${max}` : `out of range ${min}-${max}`);
+    return ok;
+  }
   if (rule === "datetime") {
     const ok = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value);
     setFieldValidity(el, ok, ok ? "YYYY-MM-DD HH:MM:SS" : "invalid datetime");
@@ -312,6 +321,9 @@ async function saveConfig(apply = false) {
     SYNC_INTERVAL_SEC: document.getElementById("SYNC_INTERVAL_SEC").value,
     SYNC_ONBOOT_SEC: document.getElementById("SYNC_ONBOOT_SEC").value,
     SYNC_ONACTIVE_SEC: document.getElementById("SYNC_ONACTIVE_SEC").value,
+    SYNC_SCAN_DEPTH: document.getElementById("SYNC_SCAN_DEPTH").value,
+    SYNC_HOT_DIRS: document.getElementById("SYNC_HOT_DIRS").value,
+    SYNC_COLD_AUDIT_DIRS_PER_RUN: document.getElementById("SYNC_COLD_AUDIT_DIRS_PER_RUN").value,
     BYDATE_USE_FILE_TIME: document.getElementById("BYDATE_USE_FILE_TIME").value,
     RAW_APPEND_ALWAYS: document.getElementById("RAW_APPEND_ALWAYS").value,
     NAS_ENABLED: document.getElementById("NAS_ENABLED").value,

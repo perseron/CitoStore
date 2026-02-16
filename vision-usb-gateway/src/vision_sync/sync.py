@@ -10,7 +10,7 @@ from typing import Iterator, Tuple
 
 from .config import get_config
 from .db import init_db, update_state, is_already_synced, mark_synced
-from .fsops import iter_files, atomic_copy, safe_join, compute_manifest
+from .fsops import iter_files, atomic_copy, safe_join, compute_manifest, SKIP_DIRS
 
 
 ACTIVE_FILE = "/run/vision-usb-active"
@@ -53,19 +53,28 @@ def save_dir_index(path: Path, state: dict) -> None:
         return
 
 
-def top_level_dirs(root: Path) -> list[tuple[str, int]]:
+def scan_dirs_at_depth(root: Path, depth: int) -> list[tuple[str, int]]:
     items: list[tuple[str, int]] = []
+    if depth <= 0:
+        return items
     try:
-        for entry in os.scandir(root):
-            if not entry.is_dir(follow_symlinks=False):
+        for dirpath, dirnames, _ in os.walk(root, topdown=True):
+            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            current = Path(dirpath)
+            rel = current.relative_to(root)
+            rel_depth = len(rel.parts)
+            if rel_depth == depth:
+                if rel_depth > 0:
+                    try:
+                        st = current.stat()
+                    except FileNotFoundError:
+                        continue
+                    items.append((rel.as_posix(), int(st.st_mtime)))
+                dirnames[:] = []
                 continue
-            if entry.name in (".", ".."):
+            if rel_depth > depth:
+                dirnames[:] = []
                 continue
-            try:
-                st = entry.stat(follow_symlinks=False)
-            except FileNotFoundError:
-                continue
-            items.append((entry.name, int(st.st_mtime)))
     except FileNotFoundError:
         return []
     items.sort(key=lambda x: (x[1], x[0]), reverse=True)
@@ -90,7 +99,12 @@ def iter_root_files(root: Path) -> Iterator[Tuple[Path, os.stat_result]]:
 
 
 def select_scan_roots(cfg, mount_root: Path) -> tuple[list[Path], dict]:
-    dirs = top_level_dirs(mount_root)
+    scan_depth = max(1, int(getattr(cfg, "sync_scan_depth", 1)))
+    dirs = scan_dirs_at_depth(mount_root, scan_depth)
+    if not dirs and scan_depth > 1:
+        # Safety fallback for shallower layouts.
+        dirs = scan_dirs_at_depth(mount_root, 1)
+        scan_depth = 1
     dir_names = [name for name, _ in dirs]
     hot_n = max(0, int(getattr(cfg, "sync_hot_dirs", 1)))
     audit_n = max(0, int(getattr(cfg, "sync_cold_audit_dirs_per_run", 1)))
@@ -123,6 +137,7 @@ def select_scan_roots(cfg, mount_root: Path) -> tuple[list[Path], dict]:
     roots = [mount_root / name for name in selected_names]
     plan = {
         "top_dirs": len(dir_names),
+        "depth": scan_depth,
         "hot": hot_names,
         "audit": audit_names,
         "selected": selected_names,
@@ -542,12 +557,13 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
     if scan_plan["selected"]:
         log(
             "sync plan: "
+            f"depth={scan_plan['depth']} "
             f"top_dirs={scan_plan['top_dirs']} "
             f"hot={','.join(scan_plan['hot']) if scan_plan['hot'] else '-'} "
             f"audit={','.join(scan_plan['audit']) if scan_plan['audit'] else '-'}"
         )
     else:
-        log(f"sync plan: top_dirs={scan_plan['top_dirs']} root-files-only")
+        log(f"sync plan: depth={scan_plan['depth']} top_dirs={scan_plan['top_dirs']} root-files-only")
 
     try:
         # Always include files directly in root (non-recursive).

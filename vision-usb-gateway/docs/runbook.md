@@ -129,8 +129,8 @@ Operational flow (detailed, step-by-step)
    - Mounts the snapshot read-only at `SYNC_MOUNT`.
    - Scans files using a targeted strategy:
      - files directly under snapshot root are scanned every run
-     - newest `SYNC_HOT_DIRS` top-level folders are scanned recursively every run
-     - plus `SYNC_COLD_AUDIT_DIRS_PER_RUN` older top-level folders (round-robin) each run
+     - newest `SYNC_HOT_DIRS` folders at depth `SYNC_SCAN_DEPTH` are scanned recursively every run
+     - plus `SYNC_COLD_AUDIT_DIRS_PER_RUN` older folders at that depth (round-robin) each run
    - This keeps scan cost bounded while still covering the full tree over time.
 5) Stability gating
    - A file must be stable across `STABLE_SCAN_REQUIRED` consecutive scans (size+mtime unchanged).
@@ -197,8 +197,9 @@ Snapshot sync
 - `MAX_FILE_SIZE_BYTES`: Files equal/above this size are skipped (FAT32 4GiB limit default).
 - `COPY_CHUNK_BYTES`: Copy chunk size for atomic copy.
 - `SYNC_LOG_EVERY`: Per-file progress log interval. `0` disables per-file logs and only writes `sync summary` (recommended for high file-rate AOI feeds).
-- `SYNC_HOT_DIRS`: Number of newest top-level folders to scan every run (recursive).
-- `SYNC_COLD_AUDIT_DIRS_PER_RUN`: Number of older top-level folders audited per run (round-robin, one-by-one style when set to `1`).
+- `SYNC_SCAN_DEPTH`: Folder depth used for targeted scanning (`1` = top-level, `4` matches layouts like `cv-x/image/SD1_000/<session>/...`). If no folder exists at this depth, sync falls back to depth `1`.
+- `SYNC_HOT_DIRS`: Number of newest folders at `SYNC_SCAN_DEPTH` to scan every run (recursive).
+- `SYNC_COLD_AUDIT_DIRS_PER_RUN`: Number of older folders at `SYNC_SCAN_DEPTH` audited per run (round-robin, one-by-one style when set to `1`).
 - `SYNC_DIR_INDEX_FILE`: State file for round-robin cursor across cold folders.
 - `RAW_APPEND_ALWAYS`: If `true`, always append to raw filenames (legacy behavior). If `false`, append only on collisions.
 - `BYDATE_USE_FILE_TIME`: If `true`, use file mtime for `bydate/YYYY/MM/DD/`. If `false`, use current local time (default).

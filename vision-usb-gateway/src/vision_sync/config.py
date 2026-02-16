@@ -22,6 +22,7 @@ class Config:
     append_always: bool
     bydate_use_file_time: bool
     sync_log_every: int
+    sync_scan_depth: int
     sync_hot_dirs: int
     sync_cold_audit_dirs_per_run: int
     sync_dir_index_file: Path
@@ -83,6 +84,7 @@ def get_config(path: str) -> Config:
     append_always = str(data.get("RAW_APPEND_ALWAYS", "false")).lower() in ("1", "true", "yes", "on")
     bydate_use_file_time = str(data.get("BYDATE_USE_FILE_TIME", "false")).lower() in ("1", "true", "yes", "on")
     sync_log_every = int(data.get("SYNC_LOG_EVERY", "0"))
+    sync_scan_depth = int(data.get("SYNC_SCAN_DEPTH", "1"))
     sync_hot_dirs = int(data.get("SYNC_HOT_DIRS", "1"))
     sync_cold_audit_dirs_per_run = int(data.get("SYNC_COLD_AUDIT_DIRS_PER_RUN", "1"))
     sync_dir_index_file = Path(
@@ -106,6 +108,7 @@ def get_config(path: str) -> Config:
         append_always=append_always,
         bydate_use_file_time=bydate_use_file_time,
         sync_log_every=sync_log_every,
+        sync_scan_depth=sync_scan_depth,
         sync_hot_dirs=sync_hot_dirs,
         sync_cold_audit_dirs_per_run=sync_cold_audit_dirs_per_run,
         sync_dir_index_file=sync_dir_index_file,

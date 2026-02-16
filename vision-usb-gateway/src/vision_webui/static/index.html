@@ -37,6 +37,15 @@
         <label>First sync after timer start <input id="SYNC_ONACTIVE_SEC" data-validate="time">
           <span class="hint">e.g. 2min</span>
         </label>
+        <label>Scan depth <input id="SYNC_SCAN_DEPTH" data-validate="int-range:1:16">
+          <span class="hint">1 = top-level, 4 = deeper session folders</span>
+        </label>
+        <label>Hot folders per sync <input id="SYNC_HOT_DIRS" data-validate="int-range:1:32">
+          <span class="hint">newest folders scanned every cycle</span>
+        </label>
+        <label>Cold audit folders per sync <input id="SYNC_COLD_AUDIT_DIRS_PER_RUN" data-validate="int-range:0:32">
+          <span class="hint">older folders audited round-robin each cycle</span>
+        </label>
         <label>Bydate uses file time
           <select id="BYDATE_USE_FILE_TIME">
             <option value="false">false</option>

@@ -38,6 +38,9 @@ ALLOWED_CONFIG_KEYS = {
     "SYNC_ONBOOT_SEC",
     "SYNC_ONACTIVE_SEC",
     "SYNC_HI_INTERVAL_SEC",
+    "SYNC_SCAN_DEPTH",
+    "SYNC_HOT_DIRS",
+    "SYNC_COLD_AUDIT_DIRS_PER_RUN",
     "NAS_ENABLED",
     "NAS_REMOTE",
     "NAS_MOUNT",
@@ -591,6 +594,18 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
             val = updates[key]
             if not val or not all(c.isalnum() for c in val):
                 return False, f"{key} must be a systemd time string like 30s or 2min"
+    for key, min_v, max_v in (
+        ("SYNC_SCAN_DEPTH", 1, 16),
+        ("SYNC_HOT_DIRS", 1, 32),
+        ("SYNC_COLD_AUDIT_DIRS_PER_RUN", 0, 32),
+    ):
+        if key in updates:
+            try:
+                val = int(updates[key])
+            except ValueError:
+                return False, f"{key} must be an integer"
+            if val < min_v or val > max_v:
+                return False, f"{key} out of range ({min_v}-{max_v})"
     if "WEBUI_PORT" in updates:
         try:
             port = int(updates["WEBUI_PORT"])
