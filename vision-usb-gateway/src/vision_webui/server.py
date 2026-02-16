@@ -332,6 +332,58 @@ def get_sync_timer_status() -> dict:
     }
 
 
+def get_sync_service_status() -> dict:
+    code, out, err = run_cmd(
+        [
+            "systemctl",
+            "show",
+            "-p",
+            "CPUUsageNSec",
+            "-p",
+            "ExecMainStartTimestampMonotonic",
+            "-p",
+            "ExecMainExitTimestampMonotonic",
+            "-p",
+            "ActiveEnterTimestamp",
+            "-p",
+            "Result",
+            "vision-sync.service",
+        ]
+    )
+    if code != 0:
+        return {"error": err or "failed to read sync service status"}
+    data = {}
+    for line in out.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            data[key] = value
+
+    cpu_nsec_raw = data.get("CPUUsageNSec", "0")
+    cpu_total_sec = None
+    try:
+        cpu_total_sec = round(int(cpu_nsec_raw) / 1_000_000_000, 3)
+    except ValueError:
+        cpu_total_sec = None
+
+    runtime_sec = None
+    start_mono = data.get("ExecMainStartTimestampMonotonic", "0")
+    exit_mono = data.get("ExecMainExitTimestampMonotonic", "0")
+    try:
+        start_us = int(start_mono)
+        exit_us = int(exit_mono)
+        if exit_us >= start_us and start_us > 0:
+            runtime_sec = round((exit_us - start_us) / 1_000_000, 3)
+    except ValueError:
+        runtime_sec = None
+
+    return {
+        "cpu_total_sec": cpu_total_sec,
+        "last_runtime_sec": runtime_sec,
+        "last_finish": data.get("ActiveEnterTimestamp", "n/a"),
+        "result": data.get("Result", "unknown"),
+    }
+
+
 def parse_duration_seconds(text: str) -> float:
     units = {
         "ms": 0.001,
@@ -696,6 +748,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 "active_usb_usage": get_usb_lv_usage(active_lv),
                 "network": get_network_config(iface),
                 "sync_timer": get_sync_timer_status(),
+                "sync_service": get_sync_service_status(),
                 "mirror_usage": get_disk_usage("/srv/vision_mirror"),
                 "nvme": get_nvme_smart(),
             }

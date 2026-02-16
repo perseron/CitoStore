@@ -196,6 +196,7 @@ async function loadStatus() {
   document.getElementById("status-usb").textContent = usbLine;
   const net = data.network || {};
   const timer = data.sync_timer || {};
+  const syncSvc = data.sync_service || {};
   const usage = data.mirror_usage || {};
   const nvme = data.nvme || {};
   const timerLine = timer.next_remaining
@@ -241,6 +242,16 @@ async function loadStatus() {
   }
   document.getElementById("status-network").textContent =
     `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}\n${timerLine}\n${usageLine}`;
+  const syncRuntime = syncSvc.last_runtime_sec !== null && syncSvc.last_runtime_sec !== undefined
+    ? `${syncSvc.last_runtime_sec}s`
+    : "n/a";
+  const syncCpu = syncSvc.cpu_total_sec !== null && syncSvc.cpu_total_sec !== undefined
+    ? `${syncSvc.cpu_total_sec}s`
+    : "n/a";
+  const syncFinish = syncSvc.last_finish || "n/a";
+  const syncResult = syncSvc.result || "unknown";
+  document.getElementById("status-sync").textContent =
+    `Sync last runtime: ${syncRuntime}\nSync CPU total: ${syncCpu}\nLast finish: ${syncFinish}\nResult: ${syncResult}`;
   const nvmeEl = document.getElementById("status-nvme");
   nvmeEl.textContent = nvmeLine;
   nvmeEl.classList.remove("status-ok", "status-warn", "status-error");
