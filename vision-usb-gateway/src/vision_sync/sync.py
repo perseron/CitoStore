@@ -6,6 +6,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 import json
+from typing import Iterator, Tuple
 
 from .config import get_config
 from .db import init_db, update_state, is_already_synced, mark_synced
@@ -14,10 +15,119 @@ from .fsops import iter_files, atomic_copy, safe_join, compute_manifest
 
 ACTIVE_FILE = "/run/vision-usb-active"
 USB_USAGE_FILE = "/run/vision-usb-usage.json"
+SYNC_INDEX_VERSION = 1
 
 
 def log(msg: str) -> None:
     print(msg, flush=True)
+
+
+def load_dir_index(path: Path) -> dict:
+    if not path.exists():
+        return {"version": SYNC_INDEX_VERSION, "cursor": 0}
+    try:
+        raw = json.loads(path.read_text())
+        if not isinstance(raw, dict):
+            raise ValueError("invalid index")
+        return {
+            "version": int(raw.get("version", SYNC_INDEX_VERSION)),
+            "cursor": int(raw.get("cursor", 0)),
+        }
+    except Exception:
+        return {"version": SYNC_INDEX_VERSION, "cursor": 0}
+
+
+def save_dir_index(path: Path, state: dict) -> None:
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "version": SYNC_INDEX_VERSION,
+                    "cursor": int(state.get("cursor", 0)),
+                    "ts": datetime.now().isoformat(timespec="seconds"),
+                }
+            )
+        )
+    except Exception:
+        return
+
+
+def top_level_dirs(root: Path) -> list[tuple[str, int]]:
+    items: list[tuple[str, int]] = []
+    try:
+        for entry in os.scandir(root):
+            if not entry.is_dir(follow_symlinks=False):
+                continue
+            if entry.name in (".", ".."):
+                continue
+            try:
+                st = entry.stat(follow_symlinks=False)
+            except FileNotFoundError:
+                continue
+            items.append((entry.name, int(st.st_mtime)))
+    except FileNotFoundError:
+        return []
+    items.sort(key=lambda x: (x[1], x[0]), reverse=True)
+    return items
+
+
+def iter_root_files(root: Path) -> Iterator[Tuple[Path, os.stat_result]]:
+    try:
+        for entry in os.scandir(root):
+            if not entry.is_file(follow_symlinks=False):
+                continue
+            p = Path(entry.path)
+            try:
+                st = p.stat()
+            except FileNotFoundError:
+                continue
+            if not p.is_file():
+                continue
+            yield p, st
+    except FileNotFoundError:
+        return
+
+
+def select_scan_roots(cfg, mount_root: Path) -> tuple[list[Path], dict]:
+    dirs = top_level_dirs(mount_root)
+    dir_names = [name for name, _ in dirs]
+    hot_n = max(0, int(getattr(cfg, "sync_hot_dirs", 1)))
+    audit_n = max(0, int(getattr(cfg, "sync_cold_audit_dirs_per_run", 1)))
+
+    hot_names = dir_names[:hot_n]
+    cold_names = dir_names[hot_n:]
+
+    state = load_dir_index(cfg.sync_dir_index_file)
+    cursor = int(state.get("cursor", 0))
+    audit_names: list[str] = []
+    if cold_names and audit_n > 0:
+        start = cursor % len(cold_names)
+        take = min(audit_n, len(cold_names))
+        for i in range(take):
+            idx = (start + i) % len(cold_names)
+            audit_names.append(cold_names[idx])
+        state["cursor"] = (start + take) % len(cold_names)
+    else:
+        state["cursor"] = 0
+    save_dir_index(cfg.sync_dir_index_file, state)
+
+    selected_names: list[str] = []
+    seen = set()
+    for name in hot_names + audit_names:
+        if name in seen:
+            continue
+        seen.add(name)
+        selected_names.append(name)
+
+    roots = [mount_root / name for name in selected_names]
+    plan = {
+        "top_dirs": len(dir_names),
+        "hot": hot_names,
+        "audit": audit_names,
+        "selected": selected_names,
+    }
+    return roots, plan
 
 
 def run_best_effort(args: list[str]) -> None:
@@ -428,9 +538,20 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
     synced = 0
     skipped_large = 0
     log_every = max(0, int(getattr(cfg, "sync_log_every", 0)))
+    selected_roots, scan_plan = select_scan_roots(cfg, mount_root)
+    if scan_plan["selected"]:
+        log(
+            "sync plan: "
+            f"top_dirs={scan_plan['top_dirs']} "
+            f"hot={','.join(scan_plan['hot']) if scan_plan['hot'] else '-'} "
+            f"audit={','.join(scan_plan['audit']) if scan_plan['audit'] else '-'}"
+        )
+    else:
+        log(f"sync plan: top_dirs={scan_plan['top_dirs']} root-files-only")
 
     try:
-        for path, st in iter_files(mount_root):
+        # Always include files directly in root (non-recursive).
+        for path, st in iter_root_files(mount_root):
             scanned += 1
             rel = path.relative_to(mount_root)
             size = int(st.st_size)
@@ -484,6 +605,64 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
             synced += 1
             if log_every > 0 and synced % log_every == 0:
                 log(f"sync progress: synced={synced} scanned={scanned}")
+
+        for root in selected_roots:
+            if not root.exists():
+                continue
+            for path, st in iter_files(root):
+                scanned += 1
+                rel = path.relative_to(mount_root)
+                size = int(st.st_size)
+                mtime = int(st.st_mtime)
+                if size >= cfg.max_file_size:
+                    skipped_large += 1
+                    continue
+
+                stable = update_state(conn, str(rel), size, mtime, now)
+                if stable < cfg.stable_scans:
+                    continue
+
+                if is_already_synced(conn, str(rel), size, mtime):
+                    continue
+
+                dt = datetime.fromtimestamp(mtime if cfg.bydate_use_file_time else now)
+                date_path = bydate_dir / dt.strftime("%Y/%m/%d")
+
+                raw_subdir = safe_join(raw_dir, rel.parent)
+                name = rel.name
+                stem = Path(name).stem
+                suffix = Path(name).suffix
+                collision = (raw_subdir / name).exists()
+                if cfg.append_always:
+                    collision = True
+                if collision:
+                    final_name = f"{stem}_{mtime}{suffix}"
+                else:
+                    final_name = name
+
+                dest_path, digest = atomic_copy(path, raw_subdir, final_name, cfg.copy_chunk)
+
+                if collision:
+                    hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
+                    hash_path = raw_subdir / hash_name
+                    if hash_path.exists():
+                        dest_path.unlink(missing_ok=True)
+                        final_path = hash_path
+                    else:
+                        dest_path.rename(hash_path)
+                        final_path = hash_path
+                else:
+                    final_path = dest_path
+
+                date_path.mkdir(parents=True, exist_ok=True)
+                link_path = date_path / final_path.name
+                if not link_path.exists():
+                    os.link(final_path, link_path)
+
+                mark_synced(conn, str(rel), size, mtime, str(final_path), str(link_path), now)
+                synced += 1
+                if log_every > 0 and synced % log_every == 0:
+                    log(f"sync progress: synced={synced} scanned={scanned}")
         conn.commit()
     except Exception:
         conn.rollback()
