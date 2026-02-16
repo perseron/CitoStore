@@ -340,6 +340,10 @@ def get_sync_service_status() -> dict:
             "-p",
             "CPUUsageNSec",
             "-p",
+            "ExecMainStartTimestamp",
+            "-p",
+            "ExecMainExitTimestamp",
+            "-p",
             "ExecMainStartTimestampMonotonic",
             "-p",
             "ExecMainExitTimestampMonotonic",
@@ -376,10 +380,14 @@ def get_sync_service_status() -> dict:
     except ValueError:
         runtime_sec = None
 
+    last_finish = data.get("ExecMainExitTimestamp", "") or data.get("ActiveEnterTimestamp", "n/a")
+    if not last_finish:
+        last_finish = "n/a"
+
     return {
         "cpu_total_sec": cpu_total_sec,
         "last_runtime_sec": runtime_sec,
-        "last_finish": data.get("ActiveEnterTimestamp", "n/a"),
+        "last_finish": last_finish,
         "result": data.get("Result", "unknown"),
     }
 
