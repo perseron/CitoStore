@@ -94,7 +94,11 @@ if blkdiscard "$dev" >/dev/null 2>&1; then
 fi
 
 log "reformat FAT32"
-mkfs.vfat -F 32 -n "$USB_LABEL" "$fs_dev"
+mkfs_opts=(-F 32 -n "$USB_LABEL")
+if [[ -n "${USB_VOLUME_SERIAL:-}" ]]; then
+  mkfs_opts+=(-i "$USB_VOLUME_SERIAL")
+fi
+mkfs.vfat "${mkfs_opts[@]}" "$fs_dev"
 
 if persist_enabled; then
   log "persist restore: $USB_PERSIST_BACKING -> $USB_PERSIST_DIR"

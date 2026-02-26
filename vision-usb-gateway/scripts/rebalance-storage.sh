@@ -167,7 +167,11 @@ lvcreate -L "$POOL_SIZE" --poolmetadatasize "$POOL_META" --type thin-pool -n "$P
 
 for lv in "${USB_LVS[@]}"; do
   lvcreate -V "$USB_LV_SIZE" -T "$VG/$POOL" -n "$lv"
-  mkfs.vfat -F 32 -n "$USB_LABEL" "/dev/$VG/$lv"
+  mkfs_opts=(-F 32 -n "$USB_LABEL")
+  if [[ -n "${USB_VOLUME_SERIAL:-}" ]]; then
+    mkfs_opts+=(-i "$USB_VOLUME_SERIAL")
+  fi
+  mkfs.vfat "${mkfs_opts[@]}" "/dev/$VG/$lv"
   if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
     persist_mnt="/mnt/vision_rebalance_${lv}"
     safe_mkdir "$persist_mnt"

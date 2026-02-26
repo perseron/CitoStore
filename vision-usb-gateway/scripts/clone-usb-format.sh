@@ -90,7 +90,11 @@ for lv in "${USB_LVS[@]}"; do
     fs_dev="$dev"
   fi
 
-  mkfs.vfat -F 32 -n "$USB_LABEL" "$fs_dev"
+  mkfs_opts=(-F 32 -n "$USB_LABEL")
+  if [[ -n "${USB_VOLUME_SERIAL:-}" ]]; then
+    mkfs_opts+=(-i "$USB_VOLUME_SERIAL")
+  fi
+  mkfs.vfat "${mkfs_opts[@]}" "$fs_dev"
 
   if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
     mnt="/mnt/vision_clone_${lv}"

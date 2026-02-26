@@ -25,8 +25,68 @@ GADGET_DIR=/sys/kernel/config/usb_gadget/$USB_GADGET_NAME
 ACTIVE_FILE=/run/vision-usb-active
 ACTIVE_PERSIST="${USB_ACTIVE_PERSIST:-/srv/vision_mirror/.state/vision-usb-active}"
 
+# dm-linear proxy: sits between USB gadget and the LVM LV so that LV
+# rotation never causes a USB disconnect visible to the AOI host.
+PROXY_DM_NAME="vision--usb--proxy"
+PROXY_DEV="/dev/mapper/$PROXY_DM_NAME"
+
 get_udc() {
   ls /sys/class/udc | head -n1
+}
+
+# --- dm-linear proxy helpers ---
+
+has_dmsetup() {
+  command -v dmsetup >/dev/null 2>&1
+}
+
+proxy_exists() {
+  has_dmsetup && dmsetup info "$PROXY_DM_NAME" >/dev/null 2>&1
+}
+
+create_proxy() {
+  local dev="$1"
+  if ! has_dmsetup; then
+    log "dmsetup not available, skipping proxy"
+    return 1
+  fi
+  if proxy_exists; then
+    log "proxy $PROXY_DM_NAME already exists, removing first"
+    remove_proxy
+  fi
+  local sectors
+  sectors=$(blockdev --getsz "$dev")
+  if [[ -z "$sectors" || "$sectors" -le 0 ]]; then
+    log "cannot determine size of $dev"
+    return 1
+  fi
+  echo "0 $sectors linear $dev 0" | dmsetup create "$PROXY_DM_NAME"
+  log "proxy created: $PROXY_DEV -> $dev ($sectors sectors)"
+}
+
+swap_proxy() {
+  local new_dev="$1"
+  if ! proxy_exists; then
+    log "proxy does not exist, cannot swap"
+    return 1
+  fi
+  local sectors
+  sectors=$(blockdev --getsz "$new_dev")
+  if [[ -z "$sectors" || "$sectors" -le 0 ]]; then
+    log "cannot determine size of $new_dev"
+    return 1
+  fi
+  dmsetup suspend --nolockfs "$PROXY_DM_NAME"
+  echo "0 $sectors linear $new_dev 0" | dmsetup load "$PROXY_DM_NAME"
+  dmsetup resume "$PROXY_DM_NAME"
+  log "proxy swapped: $PROXY_DEV -> $new_dev ($sectors sectors)"
+}
+
+remove_proxy() {
+  if proxy_exists; then
+    dmsetup remove "$PROXY_DM_NAME" 2>/dev/null || true
+    log "proxy removed: $PROXY_DM_NAME"
+  fi
 }
 
 ensure_configfs() {
@@ -75,7 +135,16 @@ ensure_gadget() {
 
 bind_gadget() {
   local dev="$1"
-  echo "$dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file"
+  local gadget_dev="$dev"
+
+  # Try to use dm-linear proxy so rotations are invisible to the host.
+  if create_proxy "$dev"; then
+    gadget_dev="$PROXY_DEV"
+  else
+    log "proxy unavailable, binding LV directly"
+  fi
+
+  echo "$gadget_dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file"
   local udc
   udc=$(get_udc)
   echo "$udc" > "$GADGET_DIR/UDC"
@@ -87,6 +156,20 @@ unbind_gadget() {
   if [[ -f "$GADGET_DIR/UDC" ]]; then
     echo "" > "$GADGET_DIR/UDC" || true
   fi
+}
+
+seamless_switch() {
+  local dev="$1"
+
+  if swap_proxy "$dev"; then
+    echo "$dev" > "$ACTIVE_FILE"
+    echo "$dev" > "$ACTIVE_PERSIST" 2>/dev/null || true
+    log "seamless switch to $dev via proxy"
+    return 0
+  fi
+
+  log "proxy swap failed, falling back to force_switch"
+  return 1
 }
 
 force_switch() {
@@ -136,6 +219,7 @@ force_switch() {
 
 remove_gadget() {
   unbind_gadget
+  remove_proxy
   rm -f "$GADGET_DIR/configs/c.1/mass_storage.0"
   rmdir "$GADGET_DIR/functions/mass_storage.0" 2>/dev/null || true
   rmdir "$GADGET_DIR/configs/c.1/strings/0x409" 2>/dev/null || true
@@ -175,11 +259,18 @@ case "${1:-}" in
     ensure_gadget
     local_current=$(current_active)
     new_dev="${2:-$(next_lv "$local_current")}"
-    force_switch "$new_dev"
+    # Prefer seamless proxy swap (no USB disconnect); fall back to legacy
+    # force_switch only when the proxy layer is unavailable.
+    seamless_switch "$new_dev" || force_switch "$new_dev"
     ;;
   status)
     echo "gadget: $GADGET_DIR"
     echo "active: $(current_active)"
+    if proxy_exists; then
+      echo "proxy: $PROXY_DEV (active)"
+    else
+      echo "proxy: none"
+    fi
     ;;
   *)
     echo "usage: $0 start|stop|switch [dev]|status" >&2

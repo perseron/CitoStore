@@ -18,6 +18,10 @@ USB_LABEL=VISIONUSB
 USB_LV_SIZE=100G
 USB_ACTIVE_PERSIST=/srv/vision_mirror/.state/vision-usb-active
 
+# FAT32 volume serial (hex, 8 chars, no 0x prefix). All USB LVs get the
+# same serial so the host OS keeps the same drive letter after rotation.
+USB_VOLUME_SERIAL=DEADBEEF
+
 # USB gadget
 USB_GADGET_NAME=vision
 USB_VENDOR_ID=0x1d6b
