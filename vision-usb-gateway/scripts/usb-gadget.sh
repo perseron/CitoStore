@@ -161,15 +161,23 @@ unbind_gadget() {
 seamless_switch() {
   local dev="$1"
 
-  if swap_proxy "$dev"; then
-    echo "$dev" > "$ACTIVE_FILE"
-    echo "$dev" > "$ACTIVE_PERSIST" 2>/dev/null || true
-    log "seamless switch to $dev via proxy"
-    return 0
+  if ! swap_proxy "$dev"; then
+    log "proxy swap failed, falling back to force_switch"
+    return 1
   fi
 
-  log "proxy swap failed, falling back to force_switch"
-  return 1
+  # Trigger SCSI media change so the host invalidates its FAT32 cache
+  # and re-reads the (now empty) filesystem from the new LV.
+  # This is equivalent to swapping an SD card in a card reader:
+  # the USB device stays connected, only the media changes.
+  local lun_file="$GADGET_DIR/functions/mass_storage.0/lun.0/file"
+  echo "" > "$lun_file" 2>/dev/null || true
+  echo "$PROXY_DEV" > "$lun_file"
+
+  echo "$dev" > "$ACTIVE_FILE"
+  echo "$dev" > "$ACTIVE_PERSIST" 2>/dev/null || true
+  log "seamless switch to $dev via proxy (media change signalled)"
+  return 0
 }
 
 force_switch() {
