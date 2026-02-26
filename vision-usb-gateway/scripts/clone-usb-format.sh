@@ -72,6 +72,12 @@ for lv in "${USB_LVS[@]}"; do
 
   log "formatting $dev"
   if [[ "$has_part_table" == "true" ]]; then
+    # Remove existing partition mappings so sfdisk can repartition.
+    if command -v kpartx >/dev/null 2>&1; then
+      kpartx -d "$dev" >/dev/null 2>&1 || true
+    elif [[ -x /sbin/partx ]]; then
+      /sbin/partx -d "$dev" >/dev/null 2>&1 || true
+    fi
     if command -v wipefs >/dev/null 2>&1; then
       wipefs -a "$dev" >/dev/null 2>&1 || true
     fi
