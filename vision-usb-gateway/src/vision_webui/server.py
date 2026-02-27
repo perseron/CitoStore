@@ -52,6 +52,7 @@ ALLOWED_CONFIG_KEYS = {
     "RAW_APPEND_ALWAYS",
     "SWITCH_WINDOW_START",
     "SWITCH_WINDOW_END",
+    "SWITCH_DELAY_SEC",
 }
 
 SERVICES = [
@@ -692,6 +693,13 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
         if key in updates:
             if not re.match(r"^\d{1,2}:\d{2}$", updates[key]):
                 return False, f"{key} must be HH:MM format"
+    if "SWITCH_DELAY_SEC" in updates:
+        try:
+            val = float(updates["SWITCH_DELAY_SEC"])
+            if val < 0 or val > 10:
+                return False, "SWITCH_DELAY_SEC out of range (0-10)"
+        except ValueError:
+            return False, "SWITCH_DELAY_SEC must be a number"
     return True, ""
 
 

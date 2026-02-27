@@ -122,12 +122,13 @@ seamless_switch() {
     echo 1 > "$force_eject" || true
   fi
 
-  # Allow the host OS at least one SCSI polling cycle (~1-2 s on
-  # Windows) to observe MEDIUM NOT PRESENT before new media is
-  # presented.  Without this gap, the host may never fully process the
-  # media removal and keeps serving stale FAT directory cache — files
-  # from the *previous* LV bleed into the new one.
-  sleep 1
+  # Allow the host OS time to observe MEDIUM NOT PRESENT before new
+  # media is presented.  Set to 0 for silent switch (relies on unique
+  # FAT volume serials alone), or ~1-2 for Windows SCSI polling gap.
+  local delay="${SWITCH_DELAY_SEC:-0}"
+  if [[ "$delay" != "0" ]]; then
+    sleep "$delay"
+  fi
 
   # Set the new backing LV directly.  Because this is a different
   # block device than the previous LV, there is no kernel page-cache

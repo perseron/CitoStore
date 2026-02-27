@@ -72,6 +72,9 @@ META_HI=70
 META_CRIT=85
 SWITCH_WINDOW_START=00:00
 SWITCH_WINDOW_END=23:59
+# Delay (seconds) between forced_eject and new media presentation.
+# 0 = silent switch (relies on unique FAT serials), 1-2 = Windows SCSI gap.
+SWITCH_DELAY_SEC=0
 
 # Mirror retention
 RETENTION_HI=90

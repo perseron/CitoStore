@@ -138,6 +138,15 @@ function validateField(el) {
     setFieldValidity(el, ok, ok ? `${min}-${max}` : `out of range ${min}-${max}`);
     return ok;
   }
+  if (rule.startsWith("float-range:")) {
+    const parts = rule.split(":");
+    const min = Number(parts[1]);
+    const max = Number(parts[2]);
+    const num = Number(value);
+    const ok = !isNaN(num) && num >= min && num <= max;
+    setFieldValidity(el, ok, ok ? `${min}-${max}` : `out of range ${min}-${max}`);
+    return ok;
+  }
   if (rule === "datetime") {
     const ok = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value);
     setFieldValidity(el, ok, ok ? "YYYY-MM-DD HH:MM:SS" : "invalid datetime");
@@ -347,6 +356,7 @@ async function saveConfig(apply = false) {
     NAS_MOUNT: document.getElementById("NAS_MOUNT").value,
     SWITCH_WINDOW_START: document.getElementById("SWITCH_WINDOW_START").value,
     SWITCH_WINDOW_END: document.getElementById("SWITCH_WINDOW_END").value,
+    SWITCH_DELAY_SEC: document.getElementById("SWITCH_DELAY_SEC").value,
   };
   await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
   await api("/api/nas-creds", {
