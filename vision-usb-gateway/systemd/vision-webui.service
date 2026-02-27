@@ -1,0 +1,22 @@
+[Unit]
+Description=Vision Web UI
+After=network-online.target vision-gw-config.service
+Wants=network-online.target
+Requires=vision-gw-config.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/usr/bin/python3 -m vision_webui.server
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/srv/vision_mirror/.state /etc/vision-gw.conf /etc/vision-gw.env /etc/systemd/system /etc/samba /etc/vision-nas.creds /run /var/log
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target

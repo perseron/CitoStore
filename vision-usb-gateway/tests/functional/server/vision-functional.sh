@@ -68,10 +68,12 @@ NAS_MOUNT=${NAS_MOUNT:-/mnt/nas}
 echo "== Vision USB Gateway functional test (server) =="
 
 # Overlay status (informational)
-if cmdline_has "overlayroot=tmpfs:recurse=0"; then
-  pass "overlayroot enabled in cmdline"
+if grep -Eq 'overlayroot=tmpfs:recurse=0|boot=overlay' /proc/cmdline 2>/dev/null; then
+  pass "overlay enabled in running kernel cmdline"
+elif cmdline_has "overlayroot=tmpfs:recurse=0" || cmdline_has "boot=overlay"; then
+  pass "overlay enabled in boot cmdline"
 else
-  warn "overlayroot not enabled (maintenance mode?)"
+  warn "overlay boot args not enabled (maintenance mode?)"
 fi
 
 root_fs=$(findmnt -no FSTYPE / || true)

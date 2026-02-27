@@ -23,9 +23,23 @@ fi
 
 GADGET_DIR=/sys/kernel/config/usb_gadget/$USB_GADGET_NAME
 ACTIVE_FILE=/run/vision-usb-active
+ACTIVE_PERSIST="${USB_ACTIVE_PERSIST:-/srv/vision_mirror/.state/vision-usb-active}"
+
+# Legacy dm-linear proxy name — only used for cleanup of previous deployments.
+PROXY_DM_NAME="vision--usb--proxy"
 
 get_udc() {
   ls /sys/class/udc | head -n1
+}
+
+# Remove leftover dm-linear proxy from earlier versions.
+cleanup_legacy_proxy() {
+  if command -v dmsetup >/dev/null 2>&1; then
+    if dmsetup info "$PROXY_DM_NAME" >/dev/null 2>&1; then
+      dmsetup remove "$PROXY_DM_NAME" 2>/dev/null || true
+      log "removed legacy proxy $PROXY_DM_NAME"
+    fi
+  fi
 }
 
 ensure_configfs() {
@@ -35,6 +49,8 @@ ensure_configfs() {
 current_active() {
   if [[ -f "$ACTIVE_FILE" ]]; then
     cat "$ACTIVE_FILE"
+  elif [[ -f "$ACTIVE_PERSIST" ]]; then
+    cat "$ACTIVE_PERSIST"
   else
     echo "/dev/$LVM_VG/${USB_LVS[0]}"
   fi
@@ -72,11 +88,13 @@ ensure_gadget() {
 
 bind_gadget() {
   local dev="$1"
+  cleanup_legacy_proxy
   echo "$dev" > "$GADGET_DIR/functions/mass_storage.0/lun.0/file"
   local udc
   udc=$(get_udc)
   echo "$udc" > "$GADGET_DIR/UDC"
   echo "$dev" > "$ACTIVE_FILE"
+  echo "$dev" > "$ACTIVE_PERSIST" 2>/dev/null || true
 }
 
 unbind_gadget() {
@@ -85,11 +103,65 @@ unbind_gadget() {
   fi
 }
 
+seamless_switch() {
+  local dev="$1"
+  local lun_file="$GADGET_DIR/functions/mass_storage.0/lun.0/file"
+  local force_eject="$GADGET_DIR/functions/mass_storage.0/lun.0/forced_eject"
+
+  # Drop the kernel page cache for the new backing device so the
+  # gadget never serves stale blocks (e.g. from a previous cycle
+  # before offline-maint reformatted the LV, or from mkfs writes
+  # that went through a partition dm device with a separate cache).
+  blockdev --flushbufs "$dev" 2>/dev/null || true
+
+  # Force-eject signals SCSI MEDIUM NOT PRESENT to the host, which
+  # overrides any PREVENT MEDIUM REMOVAL lock.  Crucially the UDC
+  # binding is NOT touched, so the USB device stays visible in the
+  # host's Device Manager and the drive letter is preserved.
+  if [[ -f "$force_eject" ]]; then
+    echo 1 > "$force_eject" || true
+  fi
+
+  # Allow the host OS time to observe MEDIUM NOT PRESENT before new
+  # media is presented.  Set to 0 for silent switch (relies on unique
+  # FAT volume serials alone), or ~1-2 for Windows SCSI polling gap.
+  local delay="${SWITCH_DELAY_SEC:-0}"
+  if [[ "$delay" != "0" ]]; then
+    sleep "$delay"
+  fi
+
+  # Set the new backing LV directly.  Because this is a different
+  # block device than the previous LV, there is no kernel page-cache
+  # staleness.  The host receives SCSI UNIT ATTENTION (media changed)
+  # and re-reads the FAT32 — just like swapping an SD card in a USB
+  # card reader.
+  local switched=false
+  for _ in {1..20}; do
+    if echo "$dev" > "$lun_file" 2>/dev/null; then
+      switched=true
+      break
+    fi
+    sleep 0.1
+  done
+
+  if [[ "$switched" != "true" ]]; then
+    log "LUN busy after eject, cannot set $dev"
+    return 1
+  fi
+
+  echo "$dev" > "$ACTIVE_FILE"
+  echo "$dev" > "$ACTIVE_PERSIST" 2>/dev/null || true
+  log "seamless switch to $dev (media change, no USB disconnect)"
+  return 0
+}
+
 force_switch() {
   local dev="$1"
   local udc
   udc=$(get_udc)
   local force_eject="$GADGET_DIR/functions/mass_storage.0/lun.0/forced_eject"
+
+  blockdev --flushbufs "$dev" 2>/dev/null || true
 
   # Force detach from host, then switch LUN, then rebind.
   if [[ -f "$force_eject" ]]; then
@@ -127,10 +199,12 @@ force_switch() {
 
   echo "$udc" > "$GADGET_DIR/UDC"
   echo "$dev" > "$ACTIVE_FILE"
+  echo "$dev" > "$ACTIVE_PERSIST" 2>/dev/null || true
 }
 
 remove_gadget() {
   unbind_gadget
+  cleanup_legacy_proxy
   rm -f "$GADGET_DIR/configs/c.1/mass_storage.0"
   rmdir "$GADGET_DIR/functions/mass_storage.0" 2>/dev/null || true
   rmdir "$GADGET_DIR/configs/c.1/strings/0x409" 2>/dev/null || true
@@ -170,7 +244,9 @@ case "${1:-}" in
     ensure_gadget
     local_current=$(current_active)
     new_dev="${2:-$(next_lv "$local_current")}"
-    force_switch "$new_dev"
+    # Prefer seamless media-change switch (no USB disconnect); fall back
+    # to full force_switch only when the LUN stays busy after eject.
+    seamless_switch "$new_dev" || force_switch "$new_dev"
     ;;
   status)
     echo "gadget: $GADGET_DIR"

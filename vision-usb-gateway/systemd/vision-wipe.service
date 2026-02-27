@@ -1,0 +1,15 @@
+[Unit]
+Description=Vision Wipe All Data
+After=local-fs.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/wipe-all-data.sh --i-know-what-im-doing --force-umount
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/srv/vision_mirror /run /mnt /etc
+
+[Install]
+WantedBy=multi-user.target

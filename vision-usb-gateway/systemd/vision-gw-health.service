@@ -1,0 +1,14 @@
+[Unit]
+Description=Vision Gateway Health Check
+After=local-fs.target
+Before=vision-gw-config.service usb-gadget.service vision-sync.service vision-monitor.service vision-rotator.service vision-webui.service
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/health-check.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=Vision NVMe SMART Cache
+After=local-fs.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/nvme-health.sh
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+ReadWritePaths=/run /srv/vision_mirror/.state
+
+[Install]
+WantedBy=multi-user.target

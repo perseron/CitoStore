@@ -82,6 +82,8 @@ sudo install/40_install_services.sh
 ```
 sudo install/50_configure_samba.sh
 ```
+NetBIOS + WSDD discovery:
+- Set `NETBIOS_NAME` and `SMB_WORKGROUP` in `/etc/vision-gw.conf` before running the script.
 
 ## 11) Optional NAS
 ```

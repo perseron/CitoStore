@@ -1,0 +1,235 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Vision Web UI</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo"><span class="brand-accent">Cito</span>Store</div>
+      <div class="meta">v1.0.0</div>
+    </div>
+    <div class="status" id="status-line">Loading...</div>
+  </header>
+  <div id="health-banner" class="banner hidden"></div>
+
+  <main>
+    <section>
+      <h2>Status</h2>
+      <pre id="status-services"></pre>
+      <pre id="status-network"></pre>
+      <pre id="status-usb"></pre>
+      <pre id="status-sync"></pre>
+      <pre id="status-nvme"></pre>
+    </section>
+
+    <section>
+      <h2>Configuration</h2>
+      <h3>Sync</h3>
+      <div class="grid">
+        <label>Sync interval <input id="SYNC_INTERVAL_SEC" data-validate="time">
+          <span class="hint">e.g. 30s, 2min</span>
+        </label>
+        <label>First sync after boot <input id="SYNC_ONBOOT_SEC" data-validate="time">
+          <span class="hint">e.g. 2min</span>
+        </label>
+        <label>First sync after timer start <input id="SYNC_ONACTIVE_SEC" data-validate="time">
+          <span class="hint">e.g. 2min</span>
+        </label>
+        <label>Scan depth <input id="SYNC_SCAN_DEPTH" data-validate="int-range:1:16">
+          <span class="hint">1 = top-level, 4 = deeper session folders</span>
+        </label>
+        <label>Hot folders per sync <input id="SYNC_HOT_DIRS" data-validate="int-range:1:32">
+          <span class="hint">newest folders scanned every cycle</span>
+        </label>
+        <label>Cold audit folders per sync <input id="SYNC_COLD_AUDIT_DIRS_PER_RUN" data-validate="int-range:0:32">
+          <span class="hint">older folders audited round-robin each cycle</span>
+        </label>
+        <label>Bydate uses file time
+          <select id="BYDATE_USE_FILE_TIME">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+          <span class="hint">false = use current time</span>
+        </label>
+        <label>Always append raw filenames
+          <select id="RAW_APPEND_ALWAYS">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+          <span class="hint">true = always add suffix</span>
+        </label>
+      </div>
+
+      <h3>USB Rotation</h3>
+      <div class="grid">
+        <label>Switch window start <input id="SWITCH_WINDOW_START" data-validate="hhmm">
+          <span class="hint">HH:MM (e.g. 00:00)</span>
+        </label>
+        <label>Switch window end <input id="SWITCH_WINDOW_END" data-validate="hhmm">
+          <span class="hint">HH:MM (e.g. 23:59)</span>
+        </label>
+        <label>Switch delay (sec) <input id="SWITCH_DELAY_SEC" data-validate="float-range:0:10">
+          <span class="hint">0 = silent, 1-2 = Windows gap</span>
+        </label>
+      </div>
+
+      <h3>Samba</h3>
+      <div class="grid">
+        <label>NetBIOS name <input id="NETBIOS_NAME" data-validate="netbios">
+          <span class="hint">1-15 chars, letters/numbers/_/-</span>
+        </label>
+        <label>Workgroup <input id="SMB_WORKGROUP" data-validate="netbios">
+          <span class="hint">1-15 chars, letters/numbers/_/-</span>
+        </label>
+      </div>
+
+      <h3>NAS</h3>
+      <div class="grid">
+        <label>Enable NAS sync
+          <select id="NAS_ENABLED">
+            <option value="false">false</option>
+            <option value="true">true</option>
+          </select>
+        </label>
+        <label>NAS share path <input id="NAS_REMOTE" data-validate="nas-remote">
+          <span class="hint">e.g. //nas/vision</span>
+        </label>
+        <label>Local mount path <input id="NAS_MOUNT" data-validate="path">
+          <span class="hint">absolute path, e.g. /mnt/nas</span>
+        </label>
+        <label>NAS username <input id="NAS_USERNAME" data-validate="user">
+          <span class="hint">optional</span>
+        </label>
+        <label>NAS password <input id="NAS_PASSWORD" type="password" data-validate="password">
+          <span class="hint">optional</span>
+        </label>
+        <label>NAS domain <input id="NAS_DOMAIN" data-validate="domain">
+          <span class="hint">optional</span>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="save-config">Save to Shadow</button>
+        <button id="apply-config">Save + Apply</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Time</h2>
+      <h3>Time status</h3>
+      <pre id="time-status">Loading...</pre>
+
+      <h3>Manual time set (fallback)</h3>
+      <div class="grid">
+        <label>Date <input id="MANUAL_DATE" data-validate="date">
+          <span class="hint">YYYY-MM-DD</span>
+        </label>
+        <label>Time <input id="MANUAL_CLOCK" data-validate="clock">
+          <span class="hint">HH:MM:SS</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button id="set-time">Set Time Now</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Network (NetworkManager)</h2>
+      <div class="grid">
+        <label>Interface <input id="NET_IFACE" value="eth0" data-validate="iface">
+          <span class="hint">e.g. eth0</span>
+        </label>
+        <label>Method
+          <select id="NET_METHOD">
+            <option value="auto">DHCP</option>
+            <option value="manual">Static</option>
+          </select>
+        </label>
+        <label>Address <input id="NET_ADDR" placeholder="192.168.1.50" data-validate="ip">
+          <span class="hint">IPv4, required for static</span>
+        </label>
+        <label>Prefix <input id="NET_PREFIX" placeholder="24" data-validate="prefix">
+          <span class="hint">1-32, required for static</span>
+        </label>
+        <label>Gateway <input id="NET_GW" placeholder="192.168.1.1" data-validate="ip-optional">
+          <span class="hint">optional</span>
+        </label>
+        <label>DNS <input id="NET_DNS" placeholder="1.1.1.1,8.8.8.8" data-validate="dns">
+          <span class="hint">comma-separated IPv4</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button id="apply-network">Apply Network</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Security</h2>
+      <div class="grid">
+        <label>New Web UI Password <input id="WEBUI_PASS" type="password" data-validate="password">
+          <span class="hint">min 6 chars</span>
+        </label>
+        <label>Confirm Web UI Password <input id="WEBUI_PASS2" type="password" data-validate="match:WEBUI_PASS">
+          <span class="hint">must match</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button id="save-webui-pass">Change Web UI Password</button>
+      </div>
+      <div class="grid">
+        <label>New SMB Password <input id="SMB_PASS" type="password" data-validate="password">
+          <span class="hint">min 6 chars</span>
+        </label>
+        <label>Confirm SMB Password <input id="SMB_PASS2" type="password" data-validate="match:SMB_PASS">
+          <span class="hint">must match</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button id="save-smb-pass">Change SMB Password</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Maintenance</h2>
+      <div class="grid">
+        <label>Resize USB LV Size <input id="RESIZE_SIZE" placeholder="100G" data-validate="size">
+          <span class="hint">e.g. 100G, 512M</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button class="danger" id="resize-usb">Resize USB LVs</button>
+        <button class="danger" id="rebalance">Rebalance Storage</button>
+        <button class="danger" id="wipe">Wipe All Data</button>
+        <button class="danger" id="restore-defaults">Restore Defaults</button>
+        <button class="danger" id="clone-usb-format">Clone USB Format</button>
+        <button id="rotate-usb">Rotate USB Now</button>
+        <button class="danger" id="shutdown">Safe Shutdown</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Logs</h2>
+      <div class="grid">
+        <label>Service
+          <select id="LOG_SERVICE"></select>
+        </label>
+        <label>Lines <input id="LOG_LINES" value="200" data-validate="lines">
+          <span class="hint">10-2000</span>
+        </label>
+      </div>
+      <div class="actions">
+        <button id="refresh-logs">Refresh Logs</button>
+      </div>
+      <pre id="log-output">Select a service and click Refresh.</pre>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+  <footer>
+    © 2026 Citomat Kft. All rights reserved.
+  </footer>
+</body>
+</html>

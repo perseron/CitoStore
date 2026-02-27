@@ -1,0 +1,12 @@
+[Unit]
+Description=Vision Snapshot Fast Sync Timer (high-usage mode)
+
+[Timer]
+Unit=vision-sync.service
+OnActiveSec=10s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Persistent=false
+
+[Install]
+WantedBy=timers.target

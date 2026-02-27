@@ -1,0 +1,10 @@
+[Unit]
+Description=System Clock to RTC
+After=local-fs.target
+ConditionPathExists=/dev/rtc0
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/rtc-sync.sh --systohc

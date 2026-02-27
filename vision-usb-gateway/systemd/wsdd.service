@@ -1,0 +1,19 @@
+[Unit]
+Description=WSDD for SMB Discovery
+After=network-online.target vision-gw-config.service
+Requires=vision-gw-config.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=SMB_BIND_INTERFACE=eth0
+Environment=NETBIOS_NAME=CITOSTORE
+Environment=SMB_WORKGROUP=WORKGROUP
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/usr/sbin/wsdd -i ${SMB_BIND_INTERFACE} -n ${NETBIOS_NAME} -w ${SMB_WORKGROUP}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

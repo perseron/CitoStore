@@ -1,0 +1,9 @@
+[Unit]
+Description=Periodic RTC Sync
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target

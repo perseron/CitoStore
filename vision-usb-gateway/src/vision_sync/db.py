@@ -5,6 +5,8 @@ from pathlib import Path
 def init_db(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_path))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS file_state (
@@ -29,6 +31,11 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         )
         """
     )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_file_state_last_seen ON file_state(last_seen)")
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_synced_lookup ON synced_files(source_path, size, mtime)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_synced_at ON synced_files(synced_at)")
     conn.commit()
     return conn
 
@@ -52,7 +59,6 @@ def update_state(conn: sqlite3.Connection, path: str, size: int, mtime: int, now
             "UPDATE file_state SET size=?, mtime=?, stable_count=?, last_seen=? WHERE path=?",
             (size, mtime, stable, now, path),
         )
-    conn.commit()
     return stable
 
 
@@ -69,4 +75,3 @@ def mark_synced(conn: sqlite3.Connection, source_path: str, size: int, mtime: in
         "INSERT INTO synced_files (source_path, size, mtime, raw_path, bydate_path, synced_at) VALUES (?, ?, ?, ?, ?, ?)",
         (source_path, size, mtime, raw_path, bydate_path, now),
     )
-    conn.commit()

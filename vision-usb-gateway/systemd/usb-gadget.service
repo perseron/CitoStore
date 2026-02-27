@@ -5,12 +5,13 @@ After=local-fs.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-EnvironmentFile=/etc/vision-gw.env
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/usb-gadget.sh start
 ExecStop=/bin/bash ${GATEWAY_HOME}/scripts/usb-gadget.sh stop
 ProtectSystem=strict
 PrivateTmp=true
-ReadWritePaths=/run /sys/kernel/config
+ReadWritePaths=/run /sys/kernel/config /srv/vision_mirror
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_RAWIO
 

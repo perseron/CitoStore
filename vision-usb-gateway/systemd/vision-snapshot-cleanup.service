@@ -1,0 +1,9 @@
+[Unit]
+Description=Cleanup stale USB sync snapshot
+After=local-fs.target
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/cleanup-snapshots.sh

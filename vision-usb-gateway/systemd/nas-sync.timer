@@ -2,6 +2,7 @@
 Description=NAS Sync Timer
 
 [Timer]
+OnBootSec=3min
 OnUnitActiveSec=10min
 Persistent=true
 

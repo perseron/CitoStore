@@ -2,7 +2,10 @@
 Description=NAS Mount
 After=network-online.target
 Wants=network-online.target
-EnvironmentFile=/etc/vision-gw.env
+Environment=NAS_REMOTE=//nas/vision
+Environment=NAS_MOUNT=/mnt/nas
+Environment=NAS_CREDENTIALS=/etc/vision-nas.creds
+EnvironmentFile=-/etc/vision-gw.env
 
 [Mount]
 What=%E{NAS_REMOTE}

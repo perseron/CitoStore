@@ -2,6 +2,7 @@
 Description=Vision Rotator Timer
 
 [Timer]
+OnBootSec=2min
 OnUnitActiveSec=1min
 Persistent=true
 

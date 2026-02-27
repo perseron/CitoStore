@@ -19,10 +19,19 @@ Install
    - Add `--wipe` only if you want partition/LVM creation
 6) Install and enable services
    - `sudo install/40_install_services.sh`
+   - `vision-gw-config.service` applies `/etc/vision-gw.conf` to systemd on boot
 7) Configure Samba
    - `sudo install/50_configure_samba.sh`
+   - NetBIOS name + WSDD use `NETBIOS_NAME` and `SMB_WORKGROUP` in `/etc/vision-gw.conf`
 8) Optional NAS
    - `sudo install/60_configure_nas_optional.sh`
+   - Creates `/etc/vision-nas.creds` if missing (mode `0600`).
+   - Contents format:
+     - `username=<nas_user>`
+     - `password=<nas_password>`
+     - `domain=<nas_domain>` (optional)
+   - Under overlay, shadow creds are stored at `/srv/vision_mirror/.state/vision-nas.creds`.
+   - Boot/apply copies shadow creds to `/etc/vision-nas.creds` for mounts.
 9) Reboot
    - `sudo reboot`
 
@@ -31,15 +40,218 @@ Validation checklist
 - `/srv/vision_mirror` mounted from `vg0/mirror`
 - `systemctl status usb-gadget.service vision-sync.service`
 - SMB share reachable read-only
+- Active USB LV persisted at `/srv/vision_mirror/.state/vision-usb-active`
+
+Web UI (minimal config + maintenance)
+- Service: `vision-webui.service`
+- Default bind/port: `WEBUI_BIND=0.0.0.0`, `WEBUI_PORT=80`
+- Access from Windows browser: `http://<device-ip>/`
+- Minimal required config for Web UI: `WEBUI_BIND`, `WEBUI_PORT`, `SMB_BIND_INTERFACE`.
+- First login prompts for a Web UI password (stored hashed in `/srv/vision_mirror/.state/webui.passwd`).
+- The UI edits a shadow config at `/srv/vision_mirror/.state/vision-gw.conf`.
+- Apply config triggers `apply-shadow-config.sh`, which:
+  - Copies the shadow config to `/etc/vision-gw.conf`
+  - Updates systemd overrides (`vision-sync.timer`)
+  - Reconfigures Samba + WSDD
+  - Enables/disables NAS units based on `NAS_ENABLED`
+- Network settings are persisted in `/srv/vision_mirror/.state/network.json` and applied on boot by `vision-gw-network.service`.
+- Destructive actions require typed confirmation in the UI.
+- Smoke check:
+  - `systemctl status vision-webui.service`
+  - `curl -I http://127.0.0.1/` (expect 200/303)
+
+Boot-time auto-recovery
+- `vision-gw-health.service` runs before core services and auto-recovers common issues:
+  - Restores missing shadow config from defaults.
+  - Restores invalid shadow config from `vision-gw.conf.last-good` when available.
+  - Fixes missing `GATEWAY_HOME` in shadow config.
+  - Removes stale sync snapshot LVs.
+  - Validates active USB LV pointer; selects a valid LV if missing.
+  - Validates `vision.db` and moves it aside if corrupted.
+  - Runs `fsck -p` on the mirror LV if it is not mounted.
+  - Runs `fsck.fat -a` on inactive USB LVs to repair FAT32 inconsistencies.
+  - Writes health status to `/srv/vision_mirror/.state/health.json` for the Web UI.
+
+Snapshot cleanup
+- `vision-snapshot-cleanup.timer` removes stale `usb_sync_snap` snapshots periodically.
+  - Enable: `systemctl enable --now vision-snapshot-cleanup.timer`
 
 Rotation + maintenance
 - Monitor state: `/run/vision-rotate.state`
 - Offline processing logs: `journalctl -u offline-maint@usb_0`
+- Sync timer tuning (in `/etc/vision-gw.conf`):
+  - `SYNC_ONBOOT_SEC`, `SYNC_ONACTIVE_SEC`, `SYNC_INTERVAL_SEC`, `SYNC_HI_INTERVAL_SEC`
+- USB persist (AOI settings):
+  - Folder on USB LV: `USB_PERSIST_DIR` (default `aoi_settings`)
+  - Backing store: `USB_PERSIST_BACKING` (default `/srv/vision_mirror/.state/aoi_settings`)
+  - Manifest: `/srv/vision_mirror/.state/usb_persist.manifest`
+  - Sync behavior:
+    - Snapshot sync updates backing + pre-seeds the next LV when contents change.
+    - Rotation verifies the next LV and auto-repairs if it drifts.
+  - Optional duration file: `USB_PERSIST_DURATION_FILE` (default `/srv/vision_mirror/aoi_settings_duration.txt`)
 - Maintenance (overlay off):
   - `sudo install/21_disable_readonly_overlay.sh`
+  - The script auto-remounts `/boot/firmware` read-write if needed, then returns it to read-only.
+  - Use `--boot-rw` to make `/boot/firmware` writable in `fstab`.
   - Reboot, perform changes
   - `sudo install/20_enable_readonly_overlay.sh`
+  - The script auto-remounts `/boot/firmware` read-write if needed, then returns it to read-only.
+  - Use `--boot-ro` to force `/boot/firmware` read-only in `fstab`.
   - Reboot
+
+Operational flow (precise)
+1) USB gadget exposes the active FAT32 LV to the host; the CM5 never mounts the active LV.
+2) `vision-sync.timer` triggers `vision-sync.service` on boot and on schedule.
+3) `vision-sync` creates a thin snapshot of the active LV, mounts it read-only, and scans files.
+4) A file is considered stable after `STABLE_SCAN_REQUIRED` consecutive scans with identical size+mtime.
+5) Stable files are copied into `raw/` preserving the original folder structure, then hardlinked into `bydate/YYYY/MM/DD/` (date source configurable; default is current local time).
+6) `vision-monitor` checks LV usage + thinpool metadata; if thresholds are exceeded it writes `/run/vision-rotate.state`.
+7) `vision-rotator` switches the USB gadget to the next LV (within the configured window unless critical).
+8) After switching, `offline-maint@<old_lv>` runs: filesystem check, offline sync, discard, reformat, and persist-folder handling.
+9) USB persist folder changes are mirrored to `USB_PERSIST_BACKING`; the next LV is pre-seeded and verified.
+10) Mirror retention removes the oldest entries when disk usage exceeds thresholds.
+
+Operational flow (detailed, step-by-step)
+1) Boot + mounts
+   - NVMe mirror LV mounts at `/srv/vision_mirror` (ext4, RW).
+   - Persistent state (SQLite, active LV pointer, persist manifest) lives under `/srv/vision_mirror/.state`.
+2) USB gadget exposure
+   - `usb-gadget.service` binds exactly one FAT32 LV to the USB gadget LUN.
+   - The host sees only the active LV; the CM5 never mounts the active LV.
+   - The previously active LV is restored from `/srv/vision_mirror/.state/vision-usb-active` on boot.
+3) Sync scheduling
+   - `vision-sync.timer` drives the sync cadence:
+     - `SYNC_ONBOOT_SEC`: first run after boot.
+     - `SYNC_ONACTIVE_SEC`: run after timer activation.
+     - `SYNC_INTERVAL_SEC`: subsequent runs after a successful run.
+4) Snapshot + scan
+   - `vision-sync` creates a thin snapshot (`SYNC_SNAPSHOT_NAME`) of the active LV.
+   - Mounts the snapshot read-only at `SYNC_MOUNT`.
+   - Scans files using a targeted strategy:
+     - files directly under snapshot root are scanned every run
+     - newest `SYNC_HOT_DIRS` folders at depth `SYNC_SCAN_DEPTH` are scanned recursively every run
+     - plus `SYNC_COLD_AUDIT_DIRS_PER_RUN` older folders at that depth (round-robin) each run
+   - This keeps scan cost bounded while still covering the full tree over time.
+5) Stability gating
+   - A file must be stable across `STABLE_SCAN_REQUIRED` consecutive scans (size+mtime unchanged).
+   - With `STABLE_SCAN_REQUIRED=2`, a new file typically syncs on the second run.
+6) Copy + indexing
+   - Stable files are copied into `raw/` preserving original folder structure.
+   - Copies are atomic (temp file + rename); content hash is used to de-duplicate.
+   - A hardlink is created in `bydate/YYYY/MM/DD/` pointing to the `raw/` file.
+   - By default the date folder is based on the current local time; set `BYDATE_USE_FILE_TIME=true` to use file mtime instead.
+7) Persist folder handling
+   - If `USB_PERSIST_DIR` exists, a manifest is computed and compared to the last stored hash.
+   - When changed, it is synced to `USB_PERSIST_BACKING`.
+   - The next LV is pre-seeded; rotation verifies and auto-repairs if it drifts.
+8) Rotation decision
+   - `vision-monitor` checks active LV usage (`THRESH_HI`/`THRESH_CRIT`) and thinpool metadata (`META_HI`/`META_CRIT`).
+   - In the high-usage zone (`THRESH_HI` <= usage < `THRESH_CRIT`), switch is allowed only after unchanged usage for `THRESH_HI_STABLE_SCANS` consecutive sync cycles.
+   - While high-usage data is still changing, a fast sync timer is enabled (`SYNC_HI_INTERVAL_SEC`) to find safe switch gaps sooner.
+   - Writes `/run/vision-rotate.state` with `state=ok|rotate_pending|panic`.
+9) Rotation execution
+   - `vision-rotator` switches LVs inside the configured window unless in `panic`.
+   - Updates the persisted active LV pointer.
+10) Offline maintenance
+    - `offline-maint@<old_lv>` performs fsck, offline sync, discard, reformat, and persist-folder restore.
+11) Retention
+    - `mirror-retention` deletes the oldest entry (raw + bydate link) when usage exceeds `RETENTION_HI` until `RETENTION_LO`.
+
+Config parameter reference (key meanings)
+Storage + LVM
+- `NVME_DEVICE`: Block device used for LVM (e.g., `/dev/nvme0n1`).
+- `LVM_VG`: Volume group name hosting mirror + thinpool (default `vg0`).
+- `MIRROR_LV`: LV name for the mirror filesystem (default `mirror`).
+- `MIRROR_MOUNT`: Mount path for the mirror (default `/srv/vision_mirror`).
+- `MIRROR_SIZE`: Size of the mirror LV (e.g., `300G`).
+- `THINPOOL_LV`: Thinpool LV name (default `usbpool`).
+- `THINPOOL_SIZE`: Thinpool size (e.g., `650G`).
+- `THINPOOL_META_SIZE`: Thinpool metadata LV size (e.g., `8G`).
+- `USB_LVS`: Array of thin LVs exported to the host (rotation ring).
+- `USB_LABEL`: FAT32 volume label for the USB LVs.
+- `USB_LV_SIZE`: Size of each USB LV.
+- `USB_ACTIVE_PERSIST`: Persistent file storing active LV device path across reboots.
+
+USB gadget
+- `USB_GADGET_NAME`: ConfigFS gadget name (directory under `/sys/kernel/config/usb_gadget`).
+- `USB_VENDOR_ID`, `USB_PRODUCT_ID`: USB VID/PID.
+- `USB_MANUFACTURER`, `USB_PRODUCT`: USB descriptor strings.
+- `USB_SERIAL`: USB serial string.
+- `USB_CONFIG`: USB configuration string.
+- `USB_MAX_POWER`: Max power (mA) reported to host.
+
+Snapshot sync
+- `SYNC_SNAPSHOT_NAME`: LV snapshot name used for sync (default `usb_sync_snap`).
+- `SYNC_MOUNT`: Mount point for the snapshot (read-only).
+- `SYNC_ONBOOT_SEC`: Delay after boot before first sync run (systemd time format).
+- `SYNC_ONACTIVE_SEC`: Delay after timer activation before next run (systemd time format).
+- `SYNC_INTERVAL_SEC`: Interval between runs after a successful run (systemd time format).
+- `SYNC_HI_INTERVAL_SEC`: Faster temporary interval used while usage is in `THRESH_HI` zone and still changing.
+- `FAST_SYNC_MIN_ON_SCANS`: Minimum monitor cycles to keep fast-sync active once enabled (anti-flap).
+- `FAST_SYNC_COOLDOWN_SCANS`: Cooldown monitor cycles before fast-sync may be re-enabled after stop.
+- `FAST_SYNC_EXIT_DELTA`: Hysteresis delta below `THRESH_HI` where fast-sync may still be held.
+- `SYNC_CHANGE_DETECT`: If `true`, uses a two-phase manifest gate. When changes are detected, copy runs every cycle. When unchanged for `SYNC_CHANGE_RESUME_SCANS` consecutive runs, the copy phase is skipped; when changes resume, copy runs again.
+- `SYNC_MANIFEST_FILE`: Path to the stored manifest hash used for change detection.
+- `SYNC_CHANGE_RESUME_SCANS`: Number of consecutive unchanged runs required before skipping copy again.
+- `STABLE_SCAN_REQUIRED`: Number of consecutive scans required before a file is copied. If set to `2`, a new file typically appears on the second run after creation.
+- `MAX_FILE_SIZE_BYTES`: Files equal/above this size are skipped (FAT32 4GiB limit default).
+- `COPY_CHUNK_BYTES`: Copy chunk size for atomic copy.
+- `SYNC_LOG_EVERY`: Per-file progress log interval. `0` disables per-file logs and only writes `sync summary` (recommended for high file-rate AOI feeds).
+- `SYNC_SCAN_DEPTH`: Folder depth used for targeted scanning (`1` = top-level, `4` matches layouts like `cv-x/image/SD1_000/<session>/...`). If no folder exists at this depth, sync falls back to depth `1`.
+- `SYNC_HOT_DIRS`: Number of newest folders at `SYNC_SCAN_DEPTH` to scan every run (recursive).
+- `SYNC_COLD_AUDIT_DIRS_PER_RUN`: Number of older folders at `SYNC_SCAN_DEPTH` audited per run (round-robin, one-by-one style when set to `1`).
+- `SYNC_DIR_INDEX_FILE`: State file for round-robin cursor across cold folders.
+- `RAW_APPEND_ALWAYS`: If `true`, always append to raw filenames (legacy behavior). If `false`, append only on collisions.
+- `BYDATE_USE_FILE_TIME`: If `true`, use file mtime for `bydate/YYYY/MM/DD/`. If `false`, use current local time (default).
+
+USB persist (AOI settings)
+- `USB_PERSIST_DIR`: Folder name on the USB LV to preserve (e.g., `aoi_settings`).
+- `USB_PERSIST_BACKING`: Backing store on NVMe used to preserve the folder across rotation.
+- `USB_PERSIST_DURATION_FILE`: Optional file to write persist copy durations.
+
+Rotation thresholds
+- `THRESH_HI`/`THRESH_CRIT`: Percent usage of the active USB LV that triggers rotate-pending / panic.
+- `THRESH_HI_STABLE_SCANS`: Required unchanged sync cycles before rotating in the `THRESH_HI` zone.
+- `META_HI`/`META_CRIT`: Percent metadata usage of the thinpool that triggers rotate-pending / panic.
+- `SWITCH_WINDOW_START`/`SWITCH_WINDOW_END`: Allowed window for non-critical rotation.
+
+Mirror retention
+- `RETENTION_HI`: Percent usage threshold to start deleting oldest mirror entries.
+- `RETENTION_LO`: Percent usage target to stop deleting.
+- `DB_MAINT_INTERVAL_SEC`: Periodic sqlite maintenance interval (WAL checkpoint + VACUUM) during retention runs.
+- `FILE_STATE_PRUNE_DAYS`: Prune `file_state` rows not seen for this many days to keep DB size bounded.
+
+NAS optional
+- `NAS_ENABLED`: Enable NAS sync service.
+- `NAS_MOUNT`: Local mount for NAS.
+- `NAS_REMOTE`: Remote NAS path.
+- `NAS_CREDENTIALS`: Credentials file for NAS mount.
+- `NAS_RSYNC_OPTS`: rsync options for NAS sync.
+- `NAS_RETRY_MAX`/`NAS_RETRY_BACKOFF`: Retry behavior for NAS sync.
+
+RTC
+- `RTC_ENABLED`: Enable RTC sync on boot and periodically.
+- `RTC_DEVICE`: RTC device (default `/dev/rtc0`).
+- `RTC_UTC`: `true` for UTC, `false` for localtime.
+- `RTC_SYNC_INTERVAL`: Periodic sync interval (systemd time format).
+- Boot sync runs only if NTP is not synchronized.
+- Web UI supports manual time set as a fallback (writes system time and updates RTC).
+
+Journald memory cap (overlay mode)
+- `JOURNAL_RUNTIME_MAX_USE`: Max volatile journal size in RAM/tmpfs (default `64M`).
+- `JOURNAL_RUNTIME_KEEP_FREE`: Minimum RAM/tmpfs to keep free for the system (default `32M`).
+- `OVERLAY_CLEAN_LOGS_ON_ENABLE`: If `true`, `install/20_enable_readonly_overlay.sh` clears journal files and `*.log*` files under `/srv/vision_mirror/.state` before enabling overlay.
+- Applied by `install/20_enable_readonly_overlay.sh` via `/etc/systemd/journald.conf.d/vision-gw.conf`.
+
+Samba + discovery
+- `SMB_BIND_INTERFACE`: Network interface Samba/WSDD bind to.
+- `SMB_USER`: Samba user for read-only access.
+- `NETBIOS_NAME`: NetBIOS name advertised by Samba/WSDD.
+- `SMB_WORKGROUP`: Windows workgroup name.
+
+Web UI
+- `WEBUI_BIND`: IP to bind the Web UI (default `0.0.0.0`).
+- `WEBUI_PORT`: Port for the Web UI (default `80`).
 
 Windows host setup
 - See `docs/windows-install.md` for a Windows-first, empty system install path.
@@ -51,5 +263,10 @@ Maintenance utilities
   - `sudo /opt/vision-usb-gateway/scripts/resize-usb-lvs.sh --size 4G --force --update-config`
 - Wipe all data (mirror + USB LVs + sync state DB):
   - `sudo /opt/vision-usb-gateway/scripts/wipe-all-data.sh --i-know-what-im-doing --force-umount`
+- Restore default configuration (does not touch data volumes):
+  - `sudo /opt/vision-usb-gateway/scripts/restore-defaults.sh --i-know-what-im-doing`
+- Clone USB format from active LV to all inactive LVs:
+  - `sudo /opt/vision-usb-gateway/scripts/clone-usb-format.sh --i-know-what-im-doing`
 - Rebalance storage from config (destructive):
   - `sudo /opt/vision-usb-gateway/scripts/rebalance-storage.sh --i-know-what-im-doing --update-config`
+  - Add `--force-umount` if the mirror is busy.

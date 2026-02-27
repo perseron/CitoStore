@@ -10,15 +10,21 @@ param(
     [switch]$Cleanup
 )
 
-function Pass($msg) { Write-Host "PASS: $msg" }
-function Fail($msg) { Write-Host "FAIL: $msg"; exit 1 }
-function Warn($msg) { Write-Host "WARN: $msg" }
+function Show-Banner($msg) {
+    Write-Host ""
+    Write-Host ("=" * 72) -ForegroundColor Cyan
+    Write-Host $msg -ForegroundColor Cyan
+    Write-Host ("=" * 72) -ForegroundColor Cyan
+}
+function Pass($msg) { Write-Host "[PASS] $msg" -ForegroundColor Green }
+function Fail($msg) { Write-Host "[FAIL] $msg" -ForegroundColor Red; exit 1 }
+function Warn($msg) { Write-Host "[WARN] $msg" -ForegroundColor Yellow }
 
 if ($ShareHost -eq "") {
     Fail "ShareHost is required (CM5 IP/hostname)"
 }
 
-Write-Host "== Vision USB Gateway functional test (Windows client) =="
+Show-Banner "Vision USB Gateway functional test (Windows client)"
 
 $vol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $vol) {
@@ -71,27 +77,40 @@ if (-not (Test-Path $bydatePath)) {
 
 $stem = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
 $ext = [System.IO.Path]::GetExtension($fileName)
-$expectedRegexUtc = "^" + [regex]::Escape($stem + "_" + $epochUtc + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
-$expectedRegexLocal = "^" + [regex]::Escape($stem + "_" + $epochLocal + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
+$expectedExact = "^" + [regex]::Escape($fileName) + "$"
+$expectedRegexUtcMtime = "^" + [regex]::Escape($stem + "_" + $epochUtc) + [regex]::Escape($ext) + "$"
+$expectedRegexLocalMtime = "^" + [regex]::Escape($stem + "_" + $epochLocal) + [regex]::Escape($ext) + "$"
+$expectedRegexUtcHash = "^" + [regex]::Escape($stem + "_" + $epochUtc + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
+$expectedRegexLocalHash = "^" + [regex]::Escape($stem + "_" + $epochLocal + "_") + "[0-9a-f]{8}" + [regex]::Escape($ext) + "$"
 $deadline = (Get-Date).AddSeconds($TimeoutSec)
 $foundRaw = $null
 
 while ((Get-Date) -lt $deadline) {
-    $foundRaw = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -ErrorAction SilentlyContinue |
-        Where-Object { $_.Length -eq $size -and ($_.Name -match $expectedRegexUtc -or $_.Name -match $expectedRegexLocal) } |
+    $foundRaw = Get-ChildItem -Path $rawPath -Filter "${stem}*${ext}" -Recurse -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Length -eq $size -and (
+                $_.Name -match $expectedExact -or
+                $_.Name -match $expectedRegexUtcMtime -or
+                $_.Name -match $expectedRegexLocalMtime -or
+                $_.Name -match $expectedRegexUtcHash -or
+                $_.Name -match $expectedRegexLocalHash
+            )
+        } |
         Select-Object -First 1
     if ($foundRaw) { break }
+    $remaining = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+    Write-Host ("[WAIT] SMB sync pending ({0}s left)" -f [math]::Max(0, $remaining)) -ForegroundColor DarkYellow
     Start-Sleep -Seconds $PollSec
 }
 
 if (-not $foundRaw) {
-    $candidates = Get-ChildItem -Path $rawPath -Filter "${stem}_*${ext}" -ErrorAction SilentlyContinue |
+    $candidates = Get-ChildItem -Path $rawPath -Filter "${stem}*${ext}" -Recurse -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 5
     if ($candidates) {
         Write-Host "Recent candidates in raw:"
         $candidates | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
     }
-    Fail "Synced file not found in SMB raw within $TimeoutSec seconds (expected name like ${stem}_${epochUtc or epochLocal}_<hash>${ext})"
+    Fail "Synced file not found in SMB raw within $TimeoutSec seconds (expected one of: ${fileName}, ${stem}_${epochUtc}${ext}, ${stem}_${epochUtc}_<hash>${ext})"
 }
 
 Pass "Synced file found in raw: $($foundRaw.Name)"
@@ -106,11 +125,13 @@ if (Test-Path $bydatePath) {
 }
 
 if ($WaitForRotate.IsPresent) {
-    Write-Host "Waiting for USB volume to detach..."
+    Write-Host "[INFO] Waiting for USB volume to detach..." -ForegroundColor Cyan
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     while ((Get-Date) -lt $deadline) {
         $gone = -not (Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1)
         if ($gone) { break }
+        $remaining = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+        Write-Host ("[WAIT] detach pending ({0}s left)" -f [math]::Max(0, $remaining)) -ForegroundColor DarkYellow
         Start-Sleep -Seconds $PollSec
     }
     if (-not $gone) {
@@ -118,12 +139,14 @@ if ($WaitForRotate.IsPresent) {
     }
     Pass "USB volume detached"
 
-    Write-Host "Waiting for USB volume to reattach..."
+    Write-Host "[INFO] Waiting for USB volume to reattach..." -ForegroundColor Cyan
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $newVol = $null
     while ((Get-Date) -lt $deadline) {
         $newVol = Get-Volume -FileSystemLabel $UsbLabel -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($newVol) { break }
+        $remaining = [int][math]::Ceiling(($deadline - (Get-Date)).TotalSeconds)
+        Write-Host ("[WAIT] reattach pending ({0}s left)" -f [math]::Max(0, $remaining)) -ForegroundColor DarkYellow
         Start-Sleep -Seconds $PollSec
     }
     if (-not $newVol) {
@@ -138,5 +161,5 @@ if ($Cleanup.IsPresent) {
     Pass "Removed USB test file"
 }
 
-Write-Host "== Summary =="
-Write-Host "PASS (client)"
+Show-Banner "Summary"
+Write-Host "[PASS] client functional test completed" -ForegroundColor Green

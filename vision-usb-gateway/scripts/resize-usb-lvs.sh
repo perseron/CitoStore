@@ -15,6 +15,7 @@ LVS=()
 FORCE=false
 DRY_RUN=false
 UPDATE_CONFIG=false
+: "${USB_PERSIST_DIR:=aoi_settings}"
 
 usage() {
   cat <<'EOF'
@@ -123,6 +124,14 @@ for lv in "${LVS[@]}"; do
     lvremove -y "$dev" || true
     lvcreate -V "$SIZE" -T "$VG/$POOL" -n "$lv"
     mkfs.vfat -F 32 -n "$LABEL" "$dev"
+    if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
+      persist_mnt="/mnt/vision_resize_${lv}"
+      safe_mkdir "$persist_mnt"
+      if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "$dev" "$persist_mnt"; then
+        safe_mkdir "$persist_mnt/$USB_PERSIST_DIR"
+        umount "$persist_mnt" || true
+      fi
+    fi
   fi
 done
 

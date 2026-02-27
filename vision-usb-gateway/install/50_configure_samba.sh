@@ -14,13 +14,15 @@ SMBD_OVERRIDE_DIR=/etc/systemd/system/smbd.service.d
 SMBD_OVERRIDE_FILE=$SMBD_OVERRIDE_DIR/override.conf
 
 SMB_BIND_INTERFACE=${SMB_BIND_INTERFACE:-eth0}
-SMB_GUEST_OK=${SMB_GUEST_OK:-no}
 SMB_USER=${SMB_USER:-smbuser}
 SMB_PASS=${SMB_PASS:-}
+NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
+SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
 
 sed -e "s/{{SMB_BIND_INTERFACE}}/$SMB_BIND_INTERFACE/" \
-  -e "s/{{SMB_GUEST_OK}}/$SMB_GUEST_OK/" \
   -e "s/{{SMB_USER}}/$SMB_USER/" \
+  -e "s/{{NETBIOS_NAME}}/$NETBIOS_NAME/" \
+  -e "s/{{SMB_WORKGROUP}}/$SMB_WORKGROUP/" \
   "$TEMPLATE" > "$OUT"
 
 if ! id -u "$SMB_USER" >/dev/null 2>&1; then
@@ -34,8 +36,12 @@ else
   log "SMB_PASS not set; skipping smbpasswd setup for $SMB_USER"
 fi
 
-chown -R "$SMB_USER":nogroup /srv/vision_mirror
-chmod -R 2775 /srv/vision_mirror
+chown root:root /srv/vision_mirror
+chmod 0755 /srv/vision_mirror
+chown -R root:root /srv/vision_mirror/.state /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
+chmod 0755 /srv/vision_mirror/.state /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
+find /srv/vision_mirror/.state -type d -exec chmod 0755 {} \; 2>/dev/null || true
+find /srv/vision_mirror/.state -type f -exec chmod 0644 {} \; 2>/dev/null || true
 
 mkdir -p "$SMBD_OVERRIDE_DIR"
 cat > "$SMBD_OVERRIDE_FILE" <<'EOF'
@@ -55,7 +61,8 @@ elif systemctl is-active --quiet systemd-networkd; then
 fi
 
 systemctl daemon-reload
-systemctl enable smbd
-systemctl restart smbd
+systemctl enable smbd nmbd
+systemctl restart smbd nmbd
+systemctl enable --now wsdd.service || true
 
 log "samba configured"

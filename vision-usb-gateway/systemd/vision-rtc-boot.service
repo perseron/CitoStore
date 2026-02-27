@@ -1,0 +1,13 @@
+[Unit]
+Description=RTC to System Clock
+After=local-fs.target
+ConditionPathExists=/dev/rtc0
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/rtc-sync.sh --if-ntp-missing
+
+[Install]
+WantedBy=multi-user.target
