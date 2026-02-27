@@ -52,6 +52,29 @@ if [[ "$CONFIRM" != "true" ]]; then
   exit 1
 fi
 
+# Remove stale LVM snapshots that reference our USB LVs.  Orphaned
+# snapshots (e.g. usb_bf_*, usb_sync_snap) keep LVs in snapshot-origin
+# mode and prevent clean reformatting / offline-maint.
+if command -v lvs >/dev/null 2>&1; then
+  while IFS=$'\t' read -r snap_lv snap_origin; do
+    snap_lv=$(echo "$snap_lv" | xargs)
+    snap_origin=$(echo "$snap_origin" | xargs)
+    [[ -n "$snap_lv" ]] || continue
+    # Only remove snapshots whose origin is one of our USB LVs.
+    for check_lv in "${USB_LVS[@]}"; do
+      if [[ "$snap_origin" == "$check_lv" ]]; then
+        log "removing stale snapshot: $VG/$snap_lv (origin=$snap_origin)"
+        lvremove -y "$VG/$snap_lv" 2>/dev/null || true
+        break
+      fi
+    done
+  done < <(lvs --noheadings --separator $'\t' -o lv_name,origin "$VG" 2>/dev/null \
+           | while IFS=$'\t' read -r n o; do
+               o=$(echo "$o" | xargs)
+               [[ -n "$o" ]] && printf '%s\t%s\n' "$n" "$o"
+             done || true)
+fi
+
 log "cloning USB format from $active"
 
 table_dump=""
