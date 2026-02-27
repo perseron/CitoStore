@@ -108,6 +108,12 @@ seamless_switch() {
   local lun_file="$GADGET_DIR/functions/mass_storage.0/lun.0/file"
   local force_eject="$GADGET_DIR/functions/mass_storage.0/lun.0/forced_eject"
 
+  # Drop the kernel page cache for the new backing device so the
+  # gadget never serves stale blocks (e.g. from a previous cycle
+  # before offline-maint reformatted the LV, or from mkfs writes
+  # that went through a partition dm device with a separate cache).
+  blockdev --flushbufs "$dev" 2>/dev/null || true
+
   # Force-eject signals SCSI MEDIUM NOT PRESENT to the host, which
   # overrides any PREVENT MEDIUM REMOVAL lock.  Crucially the UDC
   # binding is NOT touched, so the USB device stays visible in the
@@ -146,6 +152,8 @@ force_switch() {
   local udc
   udc=$(get_udc)
   local force_eject="$GADGET_DIR/functions/mass_storage.0/lun.0/forced_eject"
+
+  blockdev --flushbufs "$dev" 2>/dev/null || true
 
   # Force detach from host, then switch LUN, then rebind.
   if [[ -f "$force_eject" ]]; then

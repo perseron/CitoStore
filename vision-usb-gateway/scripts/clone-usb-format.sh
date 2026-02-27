@@ -93,6 +93,9 @@ for lv in "${USB_LVS[@]}"; do
     continue
   fi
 
+  # Discard all thin-pool blocks so old data is truly gone.
+  blkdiscard "$dev" >/dev/null 2>&1 || true
+
   log "formatting $dev"
   if [[ "$has_part_table" == "true" ]]; then
     # Remove existing partition mappings so sfdisk can repartition.
@@ -107,7 +110,12 @@ for lv in "${USB_LVS[@]}"; do
     sed_active=$(printf '%s' "$active" | sed -e 's/[\/&]/\\&/g')
     sed_dev=$(printf '%s' "$dev" | sed -e 's/[\/&]/\\&/g')
     dump_dev=$(printf '%s\n' "$table_dump" | sed -e "s#^device: .*#device: $dev#" -e "s#^${sed_active}#${sed_dev}#")
-    echo "$dump_dev" | sfdisk --wipe always "$dev" >/dev/null
+    echo "$dump_dev" | sfdisk --force --wipe always "$dev" >/dev/null
+    # Give each LV a unique MBR disk identifier so the host OS does not
+    # confuse volumes when the gadget switches between LVs.
+    local disk_id
+    disk_id=$(printf '0x%08x' "$(( RANDOM * 65536 + RANDOM ))")
+    sfdisk --disk-id "$dev" "$disk_id" >/dev/null 2>&1 || true
     if [[ -x /sbin/partx ]]; then
       /sbin/partx -u "$dev" >/dev/null 2>&1 || true
     fi
@@ -124,6 +132,12 @@ for lv in "${USB_LVS[@]}"; do
     mkfs_opts+=(-i "$USB_VOLUME_SERIAL")
   fi
   mkfs.vfat "${mkfs_opts[@]}" "$fs_dev"
+
+  # Flush page cache of the raw LV — mkfs wrote through the partition
+  # dm device which has a separate page cache from the raw LV that the
+  # USB gadget reads.
+  sync
+  blockdev --flushbufs "$dev" 2>/dev/null || true
 
   if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
     mnt="/mnt/vision_clone_${lv}"
