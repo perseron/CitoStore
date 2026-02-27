@@ -6,6 +6,7 @@ import hmac
 import ipaddress
 import json
 import os
+import re
 import secrets
 import subprocess
 import time
@@ -49,6 +50,8 @@ ALLOWED_CONFIG_KEYS = {
     "USB_LV_SIZE",
     "BYDATE_USE_FILE_TIME",
     "RAW_APPEND_ALWAYS",
+    "SWITCH_WINDOW_START",
+    "SWITCH_WINDOW_END",
 }
 
 SERVICES = [
@@ -685,6 +688,10 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
     for key in ("BYDATE_USE_FILE_TIME", "RAW_APPEND_ALWAYS"):
         if key in updates and updates[key] not in ("true", "false"):
             return False, f"{key} must be true or false"
+    for key in ("SWITCH_WINDOW_START", "SWITCH_WINDOW_END"):
+        if key in updates:
+            if not re.match(r"^\d{1,2}:\d{2}$", updates[key]):
+                return False, f"{key} must be HH:MM format"
     return True, ""
 
 
@@ -865,6 +872,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_maintenance(["clone-usb-format"])
         if self.path == "/api/maintenance/shutdown":
             return self.handle_maintenance(["shutdown"])
+        if self.path == "/api/maintenance/rotate":
+            return self.handle_maintenance(["rotate"])
         if self.path == "/api/network":
             return self.handle_network()
         if self.path == "/api/time":
@@ -1059,6 +1068,11 @@ class WebHandler(BaseHTTPRequestHandler):
                 args = [f"{gh}/scripts/restore-defaults.sh", "--i-know-what-im-doing"]
             elif action == ["clone-usb-format"]:
                 args = ["/bin/systemctl", "start", "vision-usb-format.service"]
+            elif action == ["rotate"]:
+                Path("/run/vision-rotate.state").write_text(
+                    "state=panic\nreason=webui\n", encoding="utf-8"
+                )
+                args = ["/bin/systemctl", "start", "vision-rotator.service"]
             else:
                 return self.send_json({"ok": False, "error": "unknown action"}, status=400)
             code, out, err = run_cmd(args, timeout=3600)

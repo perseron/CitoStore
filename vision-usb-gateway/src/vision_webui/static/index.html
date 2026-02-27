@@ -63,6 +63,16 @@
         </label>
       </div>
 
+      <h3>USB Rotation</h3>
+      <div class="grid">
+        <label>Switch window start <input id="SWITCH_WINDOW_START" data-validate="hhmm">
+          <span class="hint">HH:MM (e.g. 00:00)</span>
+        </label>
+        <label>Switch window end <input id="SWITCH_WINDOW_END" data-validate="hhmm">
+          <span class="hint">HH:MM (e.g. 23:59)</span>
+        </label>
+      </div>
+
       <h3>Samba</h3>
       <div class="grid">
         <label>NetBIOS name <input id="NETBIOS_NAME" data-validate="netbios">
@@ -192,6 +202,7 @@
         <button class="danger" id="wipe">Wipe All Data</button>
         <button class="danger" id="restore-defaults">Restore Defaults</button>
         <button class="danger" id="clone-usb-format">Clone USB Format</button>
+        <button id="rotate-usb">Rotate USB Now</button>
         <button class="danger" id="shutdown">Safe Shutdown</button>
       </div>
     </section>

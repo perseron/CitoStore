@@ -153,6 +153,11 @@ function validateField(el) {
     setFieldValidity(el, ok, ok ? "HH:MM:SS" : "invalid time");
     return ok;
   }
+  if (rule === "hhmm") {
+    const ok = /^\d{1,2}:\d{2}$/.test(value);
+    setFieldValidity(el, ok, ok ? "HH:MM" : "invalid HH:MM");
+    return ok;
+  }
   if (rule === "user" || rule === "domain" || rule === "password") {
     if (rule === "password" && value !== "" && value.length < 6) {
       setFieldValidity(el, false, "min 6 chars");
@@ -340,6 +345,8 @@ async function saveConfig(apply = false) {
     NAS_ENABLED: document.getElementById("NAS_ENABLED").value,
     NAS_REMOTE: document.getElementById("NAS_REMOTE").value,
     NAS_MOUNT: document.getElementById("NAS_MOUNT").value,
+    SWITCH_WINDOW_START: document.getElementById("SWITCH_WINDOW_START").value,
+    SWITCH_WINDOW_END: document.getElementById("SWITCH_WINDOW_END").value,
   };
   await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
   await api("/api/nas-creds", {
@@ -438,8 +445,14 @@ async function maintenance(action) {
     const ok = prompt('Type "CLONE USB FORMAT" to confirm.');
     if (ok !== "CLONE USB FORMAT") return;
   }
+  if (action === "rotate") {
+    if (!confirm("Rotate USB LV now? The active LV will switch to the next one.")) return;
+  }
   await api(`/api/maintenance/${action}`, { method: "POST", body: JSON.stringify(payload) });
   setStatus(`${action} started`);
+  if (action === "rotate") {
+    setTimeout(refreshStatus, 2000);
+  }
 }
 
 document.getElementById("save-config").addEventListener("click", () => saveConfig(false));
@@ -452,6 +465,7 @@ document.getElementById("rebalance").addEventListener("click", () => maintenance
 document.getElementById("resize-usb").addEventListener("click", () => maintenance("resize"));
 document.getElementById("restore-defaults").addEventListener("click", () => maintenance("restore-defaults"));
 document.getElementById("clone-usb-format").addEventListener("click", () => maintenance("clone-usb-format"));
+document.getElementById("rotate-usb").addEventListener("click", () => maintenance("rotate"));
 document.getElementById("shutdown").addEventListener("click", () => maintenance("shutdown"));
 document.getElementById("set-time").addEventListener("click", setManualTime);
 document.getElementById("refresh-logs").addEventListener("click", refreshLogs);
