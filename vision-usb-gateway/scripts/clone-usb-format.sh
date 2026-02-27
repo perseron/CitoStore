@@ -127,10 +127,13 @@ for lv in "${USB_LVS[@]}"; do
     fs_dev="$dev"
   fi
 
-  mkfs_opts=(-F 32 -n "$USB_LABEL")
-  if [[ -n "${USB_VOLUME_SERIAL:-}" ]]; then
-    mkfs_opts+=(-i "$USB_VOLUME_SERIAL")
-  fi
+  # Each LV MUST get a unique FAT volume serial so the host OS (Windows)
+  # does not confuse volumes and serve stale cached directory data.
+  # USB_VOLUME_SERIAL is intentionally ignored — drive letter persistence
+  # is maintained by the USB gadget device identity, not the FAT serial.
+  local vol_serial
+  vol_serial=$(printf '%04X%04X' "$((RANDOM))" "$((RANDOM))")
+  mkfs_opts=(-F 32 -n "$USB_LABEL" -i "$vol_serial")
   mkfs.vfat "${mkfs_opts[@]}" "$fs_dev"
 
   # Flush page cache of the raw LV — mkfs wrote through the partition

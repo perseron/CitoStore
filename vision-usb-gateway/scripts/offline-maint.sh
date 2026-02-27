@@ -89,15 +89,34 @@ if mount -t vfat -o ro,utf8,shortname=mixed,nodev,nosuid,noexec "$fs_dev" "$PERS
   fi
 fi
 
+# Save partition table before blkdiscard — thin-pool discard returns all
+# blocks (including MBR) to the pool, so reads become zeros.
+pt_dump=""
+if command -v sfdisk >/dev/null 2>&1; then
+  pt_dump=$(sfdisk -d "$dev" 2>/dev/null || true)
+fi
+
 if blkdiscard "$dev" >/dev/null 2>&1; then
   log "blkdiscard done"
 fi
 
-log "reformat FAT32"
-mkfs_opts=(-F 32 -n "$USB_LABEL")
-if [[ -n "${USB_VOLUME_SERIAL:-}" ]]; then
-  mkfs_opts+=(-i "$USB_VOLUME_SERIAL")
+# Restore partition table destroyed by blkdiscard on thin LVs.
+if [[ -n "$pt_dump" && "$pt_dump" == *"label:"* ]]; then
+  echo "$pt_dump" | sfdisk --force "$dev" >/dev/null 2>&1 || true
+  # Unique MBR disk identifier per reformat.
+  disk_id=$(printf '0x%08x' "$(( RANDOM * 65536 + RANDOM ))")
+  sfdisk --disk-id "$dev" "$disk_id" >/dev/null 2>&1 || true
+  if [[ -x /sbin/partx ]]; then
+    /sbin/partx -u "$dev" >/dev/null 2>&1 || true
+  fi
 fi
+
+log "reformat FAT32"
+# Each reformat MUST get a unique FAT volume serial so the host OS
+# (Windows) does not confuse volumes and serve stale cached directory
+# data.  USB_VOLUME_SERIAL is intentionally ignored.
+vol_serial=$(printf '%04X%04X' "$((RANDOM))" "$((RANDOM))")
+mkfs_opts=(-F 32 -n "$USB_LABEL" -i "$vol_serial")
 mkfs.vfat "${mkfs_opts[@]}" "$fs_dev"
 
 if persist_enabled; then

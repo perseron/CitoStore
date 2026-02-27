@@ -76,10 +76,8 @@ for lv in "${USB_LVS[@]}"; do
   if ! lvdisplay "$LVM_VG/$lv" >/dev/null 2>&1; then
     log "creating USB LV $lv"
     lvcreate -V "$USB_LV_SIZE" -T "$LVM_VG/$THINPOOL_LV" -n "$lv"
-    mkfs_opts=(-F 32 -n "$USB_LABEL")
-    if [[ -n "${USB_VOLUME_SERIAL:-}" ]]; then
-      mkfs_opts+=(-i "$USB_VOLUME_SERIAL")
-    fi
+    vol_serial=$(printf '%04X%04X' "$((RANDOM))" "$((RANDOM))")
+    mkfs_opts=(-F 32 -n "$USB_LABEL" -i "$vol_serial")
     mkfs.vfat "${mkfs_opts[@]}" "/dev/$LVM_VG/$lv"
   fi
 done

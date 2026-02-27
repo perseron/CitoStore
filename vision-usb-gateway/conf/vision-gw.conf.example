@@ -18,9 +18,12 @@ USB_LABEL=VISIONUSB
 USB_LV_SIZE=100G
 USB_ACTIVE_PERSIST=/srv/vision_mirror/.state/vision-usb-active
 
-# FAT32 volume serial (hex, 8 chars, no 0x prefix). All USB LVs get the
-# same serial so the host OS keeps the same drive letter after rotation.
-USB_VOLUME_SERIAL=DEADBEEF
+# FAT32 volume serial — DEPRECATED.  Scripts now generate a unique random
+# serial on every mkfs.vfat call so the host OS (Windows) never serves
+# stale cached directory data after LV rotation.  Drive letter persistence
+# is maintained by the USB gadget device identity, not the FAT serial.
+# This value is ignored by clone-usb-format.sh and offline-maint.sh.
+# USB_VOLUME_SERIAL=DEADBEEF
 
 # USB gadget
 USB_GADGET_NAME=vision
