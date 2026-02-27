@@ -113,7 +113,6 @@ for lv in "${USB_LVS[@]}"; do
     echo "$dump_dev" | sfdisk --force --wipe always "$dev" >/dev/null
     # Give each LV a unique MBR disk identifier so the host OS does not
     # confuse volumes when the gadget switches between LVs.
-    local disk_id
     disk_id=$(printf '0x%08x' "$(( RANDOM * 65536 + RANDOM ))")
     sfdisk --disk-id "$dev" "$disk_id" >/dev/null 2>&1 || true
     if [[ -x /sbin/partx ]]; then
@@ -131,7 +130,6 @@ for lv in "${USB_LVS[@]}"; do
   # does not confuse volumes and serve stale cached directory data.
   # USB_VOLUME_SERIAL is intentionally ignored — drive letter persistence
   # is maintained by the USB gadget device identity, not the FAT serial.
-  local vol_serial
   vol_serial=$(printf '%04X%04X' "$((RANDOM))" "$((RANDOM))")
   mkfs_opts=(-F 32 -n "$USB_LABEL" -i "$vol_serial")
   mkfs.vfat "${mkfs_opts[@]}" "$fs_dev"
