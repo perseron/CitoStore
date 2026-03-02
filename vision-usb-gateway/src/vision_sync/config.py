@@ -46,9 +46,9 @@ def _parse_value(value: str):
     return value
 
 
-def load_config(path: str) -> dict:
+def parse_config_text(text: str) -> dict:
     data = {}
-    for raw in Path(path).read_text().splitlines():
+    for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
@@ -57,6 +57,10 @@ def load_config(path: str) -> dict:
             continue
         data[key] = _parse_value(value)
     return data
+
+
+def load_config(path: str) -> dict:
+    return parse_config_text(Path(path).read_text())
 
 
 def get_config(path: str) -> Config:
@@ -73,16 +77,25 @@ def get_config(path: str) -> Config:
     usb_persist_backing = Path(
         data.get("USB_PERSIST_BACKING", str(mirror_mount / ".state" / usb_persist_dir))
     )
-    sync_change_detect = str(data.get("SYNC_CHANGE_DETECT", "false")).lower() in ("1", "true", "yes", "on")
+    _truthy = ("1", "true", "yes", "on")
+    sync_change_detect = (
+        str(data.get("SYNC_CHANGE_DETECT", "false")).lower() in _truthy
+    )
     sync_manifest_path = Path(
         data.get("SYNC_MANIFEST_FILE", str(mirror_mount / ".state" / "usb_sync.manifest"))
     )
-    sync_change_resume_scans = int(data.get("SYNC_CHANGE_RESUME_SCANS", data.get("STABLE_SCAN_REQUIRED", "2")))
+    sync_change_resume_scans = int(
+        data.get("SYNC_CHANGE_RESUME_SCANS", data.get("STABLE_SCAN_REQUIRED", "2"))
+    )
     stable_scans = int(data.get("STABLE_SCAN_REQUIRED", "2"))
     max_file_size = int(data.get("MAX_FILE_SIZE_BYTES", str(4 * 1024 ** 3)))
     copy_chunk = int(data.get("COPY_CHUNK_BYTES", str(8 * 1024 ** 2)))
-    append_always = str(data.get("RAW_APPEND_ALWAYS", "false")).lower() in ("1", "true", "yes", "on")
-    bydate_use_file_time = str(data.get("BYDATE_USE_FILE_TIME", "false")).lower() in ("1", "true", "yes", "on")
+    append_always = (
+        str(data.get("RAW_APPEND_ALWAYS", "false")).lower() in _truthy
+    )
+    bydate_use_file_time = (
+        str(data.get("BYDATE_USE_FILE_TIME", "false")).lower() in _truthy
+    )
     sync_log_every = int(data.get("SYNC_LOG_EVERY", "0"))
     sync_scan_depth = int(data.get("SYNC_SCAN_DEPTH", "1"))
     sync_hot_dirs = int(data.get("SYNC_HOT_DIRS", "1"))

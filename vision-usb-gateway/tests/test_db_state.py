@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from vision_sync.db import init_db, mark_synced, is_already_synced
+from vision_sync.db import init_db, is_already_synced, mark_synced
 
 
 def test_db_state(tmp_path: Path):

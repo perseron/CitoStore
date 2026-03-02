@@ -1,16 +1,13 @@
 import hashlib
 import os
 import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, Tuple
-
-import hashlib
-
 
 SKIP_DIRS = {"System Volume Information", "$RECYCLE.BIN"}
 
 
-def iter_files(root: Path) -> Iterator[Tuple[Path, os.stat_result]]:
+def iter_files(root: Path) -> Iterator[tuple[Path, os.stat_result]]:
     for dirpath, dirnames, filenames in os.walk(root, topdown=True):
         dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
         for name in filenames:
@@ -49,7 +46,7 @@ def compute_manifest(root: Path) -> str:
     return h.hexdigest()
 
 
-def atomic_copy(src: Path, dest_dir: Path, final_name: str, chunk_size: int) -> Tuple[Path, str]:
+def atomic_copy(src: Path, dest_dir: Path, final_name: str, chunk_size: int) -> tuple[Path, str]:
     dest_dir.mkdir(parents=True, exist_ok=True)
     temp = dest_dir / f".{final_name}.{os.getpid()}.{int(time.time())}.tmp"
     h = hashlib.sha256()
