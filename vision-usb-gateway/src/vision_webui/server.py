@@ -10,10 +10,13 @@ import re
 import secrets
 import subprocess
 import time
+from contextlib import contextmanager
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+
+from vision_sync.config import parse_config_text
 
 STATE_DIR = Path("/srv/vision_mirror/.state")
 SHADOW_CONF = STATE_DIR / "vision-gw.conf"
@@ -30,6 +33,7 @@ NAS_CREDS_SHADOW = STATE_DIR / "vision-nas.creds"
 NETWORK_STATE = STATE_DIR / "network.json"
 
 SESSION_TTL_SEC = 8 * 60 * 60
+MAX_BODY_SIZE = 64 * 1024
 
 ALLOWED_CONFIG_KEYS = {
     "NETBIOS_NAME",
@@ -100,8 +104,7 @@ def run_cmd(args, input_text=None, timeout=120):
         args,
         input=input_text,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         timeout=timeout,
         check=False,
     )
@@ -117,16 +120,7 @@ def load_config_text() -> str:
 
 
 def parse_config(text: str) -> dict:
-    cfg = {}
-    for line in text.splitlines():
-        s = line.strip()
-        if not s or s.startswith("#") or "=" not in s:
-            continue
-        key, value = s.split("=", 1)
-        key = key.strip()
-        value = value.strip().strip('"')
-        cfg[key] = value
-    return cfg
+    return parse_config_text(text)
 
 
 def parse_nas_creds(text: str) -> dict:
@@ -227,7 +221,7 @@ def make_session(user: str) -> str:
     nonce = secrets.token_hex(8)
     payload = f"{user}|{expiry}|{nonce}"
     sig = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
-    token = base64.urlsafe_b64encode(f"{payload}|{sig}".encode("utf-8")).decode("ascii")
+    token = base64.urlsafe_b64encode(f"{payload}|{sig}".encode()).decode("ascii")
     return token
 
 
@@ -240,9 +234,7 @@ def validate_session(token: str) -> bool:
         expected = hmac.new(secret, payload.encode("utf-8"), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, expected):
             return False
-        if int(expiry) < int(time.time()):
-            return False
-        return True
+        return int(expiry) >= int(time.time())
     except Exception:
         return False
 
@@ -262,11 +254,15 @@ def get_cookie(headers, name: str) -> str | None:
     return None
 
 
+@contextmanager
 def require_lock():
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     f = LOCK_FILE.open("w")
-    fcntl.flock(f, fcntl.LOCK_EX)
-    return f
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        yield f
+    finally:
+        f.close()
 
 
 def get_service_status() -> dict:
@@ -315,7 +311,7 @@ def get_sync_timer_status() -> dict:
     try:
         if next_mono_raw not in ("n/a", "infinity", ""):
             total_sec = parse_duration_seconds(next_mono_raw)
-            with open("/proc/uptime", "r", encoding="utf-8") as f:
+            with open("/proc/uptime", encoding="utf-8") as f:
                 uptime_sec = float(f.read().split()[0])
             delta = max(0, total_sec - uptime_sec)
             secs = int(delta)
@@ -467,7 +463,10 @@ def get_usb_lv_usage(lv_path: str) -> dict:
         except json.JSONDecodeError:
             pass
     code, out, err = run_cmd(
-        ["lvs", "-a", "--noheadings", "--units", "g", "--nosuffix", "-o", "lv_path,lv_size,data_percent"]
+        [
+            "lvs", "-a", "--noheadings", "--units", "g",
+            "--nosuffix", "-o", "lv_path,lv_size,data_percent",
+        ]
     )
     if code != 0:
         return {"error": err or "failed to read LV usage"}
@@ -587,7 +586,9 @@ def units_to_tb(units) -> float | None:
         return None
 
 
-def apply_network_config(iface: str, method: str, address: str, prefix: str, gateway: str, dns: str):
+def apply_network_config(
+    iface: str, method: str, address: str, prefix: str, gateway: str, dns: str
+):
     conn = get_nm_active_connection(iface)
     if not conn:
         return 1, "", "no active connection for interface"
@@ -653,7 +654,10 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
         iface = updates["SMB_BIND_INTERFACE"]
         if not iface or not all(c.isalnum() or c in "._:-" for c in iface):
             return False, "SMB_BIND_INTERFACE contains invalid characters"
-    for key in ("SYNC_INTERVAL_SEC", "SYNC_ONBOOT_SEC", "SYNC_ONACTIVE_SEC", "SYNC_HI_INTERVAL_SEC"):
+    for key in (
+        "SYNC_INTERVAL_SEC", "SYNC_ONBOOT_SEC",
+        "SYNC_ONACTIVE_SEC", "SYNC_HI_INTERVAL_SEC",
+    ):
         if key in updates:
             val = updates[key]
             if not val or not all(c.isalnum() for c in val):
@@ -683,16 +687,14 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
             c.isalnum() or c in ".:-" for c in bind
         ):
             return False, "WEBUI_BIND contains invalid characters"
-    if "NAS_ENABLED" in updates:
-        if updates["NAS_ENABLED"] not in ("true", "false"):
-            return False, "NAS_ENABLED must be true or false"
+    if "NAS_ENABLED" in updates and updates["NAS_ENABLED"] not in ("true", "false"):
+        return False, "NAS_ENABLED must be true or false"
     for key in ("BYDATE_USE_FILE_TIME", "RAW_APPEND_ALWAYS"):
         if key in updates and updates[key] not in ("true", "false"):
             return False, f"{key} must be true or false"
     for key in ("SWITCH_WINDOW_START", "SWITCH_WINDOW_END"):
-        if key in updates:
-            if not re.match(r"^\d{1,2}:\d{2}$", updates[key]):
-                return False, f"{key} must be HH:MM format"
+        if key in updates and not re.match(r"^\d{1,2}:\d{2}$", updates[key]):
+            return False, f"{key} must be HH:MM format"
     if "SWITCH_DELAY_SEC" in updates:
         try:
             val = float(updates["SWITCH_DELAY_SEC"])
@@ -706,11 +708,20 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
 class WebHandler(BaseHTTPRequestHandler):
     server_version = "VisionWebUI/1.0"
 
+    def _send_security_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header(
+            "Content-Security-Policy",
+            "default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'self'",
+        )
+
     def send_text(self, text: str, status=200, content_type="text/html; charset=utf-8"):
         data = text.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(data)
 
@@ -719,6 +730,8 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(data)
 
@@ -742,11 +755,11 @@ class WebHandler(BaseHTTPRequestHandler):
             return False
         expected = make_csrf(token)
         header = self.headers.get("X-CSRF", "")
-        if header and hmac.compare_digest(header, csrf_cookie) and hmac.compare_digest(
-            header, expected
-        ):
-            return True
-        return False
+        return (
+            bool(header)
+            and hmac.compare_digest(header, csrf_cookie)
+            and hmac.compare_digest(header, expected)
+        )
 
     def do_GET(self):
         if PASS_FILE.exists() is False and self.path not in ("/setup", "/setup/"):
@@ -814,13 +827,21 @@ class WebHandler(BaseHTTPRequestHandler):
                     return self.send_json(json.loads(health.read_text(encoding="utf-8")))
                 except json.JSONDecodeError:
                     log("health.json parse error")
-                    return self.send_json({"status": "unknown", "issues": ["invalid health.json"], "ts": ""})
+                    return self.send_json({
+                        "status": "unknown",
+                        "issues": ["invalid health.json"],
+                        "ts": "",
+                    })
             if fallback.exists():
                 try:
                     return self.send_json(json.loads(fallback.read_text(encoding="utf-8")))
                 except json.JSONDecodeError:
                     log("vision-health.json parse error")
-                    return self.send_json({"status": "unknown", "issues": ["invalid vision-health.json"], "ts": ""})
+                    return self.send_json({
+                        "status": "unknown",
+                        "issues": ["invalid vision-health.json"],
+                        "ts": "",
+                    })
             return self.send_json({"status": "unknown", "issues": [], "ts": ""})
         if self.path.startswith("/api/config"):
             cfg = parse_config(load_config_text())
@@ -839,15 +860,29 @@ class WebHandler(BaseHTTPRequestHandler):
             iface = cfg.get("SMB_BIND_INTERFACE", "eth0")
             return self.send_json(get_network_config(iface))
         if self.path.startswith("/api/me"):
-            return self.send_json({"ok": True})
+            token = get_cookie(self.headers, "session")
+            expiry = None
+            if token:
+                try:
+                    raw = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
+                    _user, exp_str, _nonce, _sig = raw.split("|", 3)
+                    expiry = int(exp_str)
+                except Exception:
+                    pass
+            return self.send_json({"ok": True, "session_expires": expiry})
         if self.path.startswith("/api/time"):
             code, out, err = run_cmd(["/usr/bin/timedatectl", "status"])
             if code != 0:
                 return self.send_json({"status": err or "failed to read time"}, status=500)
-            return self.send_json({"status": out})
+            server_time = time.strftime("%Y-%m-%d %H:%M:%S")
+            return self.send_json({"status": out, "server_time": server_time})
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_BODY_SIZE:
+            self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body too large")
+            return
         if PASS_FILE.exists() is False and self.path not in ("/setup", "/setup/"):
             return self.redirect("/setup")
         if self.path in ("/login", "/login/"):
@@ -897,8 +932,8 @@ class WebHandler(BaseHTTPRequestHandler):
             token = make_session("admin")
             csrf = make_csrf(token)
             self.send_response(HTTPStatus.SEE_OTHER)
-            self.send_header("Set-Cookie", f"session={token}; HttpOnly; Path=/")
-            self.send_header("Set-Cookie", f"csrf={csrf}; Path=/")
+            self.send_header("Set-Cookie", f"session={token}; HttpOnly; Path=/; SameSite=Strict")
+            self.send_header("Set-Cookie", f"csrf={csrf}; Path=/; SameSite=Strict")
             self.send_header("Location", "/")
             self.end_headers()
             log("login success")
@@ -938,16 +973,13 @@ class WebHandler(BaseHTTPRequestHandler):
         return self.send_json({"ok": True})
 
     def handle_apply(self):
-        lock = require_lock()
-        try:
+        with require_lock():
             gh = get_gateway_home()
             code, out, err = run_cmd([f"{gh}/scripts/apply-shadow-config.sh"])
             log(f"apply-config rc={code} out={out} err={err}")
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
             return self.send_json({"ok": True})
-        finally:
-            lock.close()
 
     def handle_webui_password(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -972,7 +1004,10 @@ class WebHandler(BaseHTTPRequestHandler):
         cfg = parse_config(load_config_text())
         smb_user = cfg.get("SMB_USER", "smbuser")
         input_text = f"{password}\n{password}\n"
-        code, out, err = run_cmd(["/usr/bin/smbpasswd", "-s", "-a", smb_user], input_text=input_text)
+        code, out, err = run_cmd(
+            ["/usr/bin/smbpasswd", "-s", "-a", smb_user],
+            input_text=input_text,
+        )
         if code != 0:
             return self.send_json({"ok": False, "error": err or out}, status=500)
         run_cmd(["/usr/bin/smbpasswd", "-e", smb_user])
@@ -989,8 +1024,7 @@ class WebHandler(BaseHTTPRequestHandler):
         prefix = data.get("prefix", "24")
         gateway = data.get("gateway", "")
         dns = data.get("dns", "")
-        lock = require_lock()
-        try:
+        with require_lock():
             code, out, err = apply_network_config(iface, method, address, prefix, gateway, dns)
             log(f"network update iface={iface} rc={code} out={out} err={err}")
             if code != 0:
@@ -1010,8 +1044,6 @@ class WebHandler(BaseHTTPRequestHandler):
             )
             os.chmod(NETWORK_STATE, 0o600)
             return self.send_json({"ok": True})
-        finally:
-            lock.close()
 
     def handle_nas_creds(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -1036,8 +1068,7 @@ class WebHandler(BaseHTTPRequestHandler):
         value = str(data.get("time", "")).strip()
         if not value:
             return self.send_json({"ok": False, "error": "time is required"}, status=400)
-        lock = require_lock()
-        try:
+        with require_lock():
             code, out, err = run_cmd(["/usr/bin/timedatectl", "set-time", value])
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
@@ -1045,15 +1076,12 @@ class WebHandler(BaseHTTPRequestHandler):
             run_cmd([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
             log(f"system time set: {value}")
             return self.send_json({"ok": True})
-        finally:
-            lock.close()
 
     def handle_maintenance(self, action):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         data = json.loads(body or "{}")
-        lock = require_lock()
-        try:
+        with require_lock():
             gh = get_gateway_home()
             if action == ["wipe"]:
                 args = ["/bin/systemctl", "start", "vision-wipe.service"]
@@ -1088,8 +1116,6 @@ class WebHandler(BaseHTTPRequestHandler):
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
             return self.send_json({"ok": True})
-        finally:
-            lock.close()
 
     def serve_static(self, name: str, content_type: str | None = None):
         path = (STATIC_DIR / name).resolve()

@@ -1,7 +1,8 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Vision Web UI</title>
   <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -11,9 +12,9 @@
       <div class="logo"><span class="brand-accent">Cito</span>Store</div>
       <div class="meta">v1.0.0</div>
     </div>
-    <div class="status" id="status-line">Loading...</div>
+    <div class="status" id="status-line" role="status" aria-live="polite">Loading...</div>
   </header>
-  <div id="health-banner" class="banner hidden"></div>
+  <div id="health-banner" class="banner hidden" role="status" aria-live="polite"></div>
 
   <main>
     <section>
@@ -37,6 +38,9 @@
         </label>
         <label>First sync after timer start <input id="SYNC_ONACTIVE_SEC" data-validate="time">
           <span class="hint">e.g. 2min</span>
+        </label>
+        <label>Fast sync interval <input id="SYNC_HI_INTERVAL_SEC" data-validate="time">
+          <span class="hint">e.g. 10s, fast sync when changes detected</span>
         </label>
         <label>Scan depth <input id="SYNC_SCAN_DEPTH" data-validate="int-range:1:16">
           <span class="hint">1 = top-level, 4 = deeper session folders</span>
@@ -227,6 +231,17 @@
     </section>
   </main>
 
+  <div id="modal-overlay" class="modal-overlay hidden" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3 id="modal-title"></h3>
+      <p id="modal-message"></p>
+      <input id="modal-input" class="hidden" autocomplete="off">
+      <div class="modal-actions">
+        <button id="modal-cancel" class="modal-btn">Cancel</button>
+        <button id="modal-confirm" class="modal-btn danger">Confirm</button>
+      </div>
+    </div>
+  </div>
   <script src="/static/app.js"></script>
   <footer>
     © 2026 Citomat Kft. All rights reserved.

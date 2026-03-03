@@ -8,6 +8,12 @@ function getCookie(name) {
   return "";
 }
 
+function isValidIPv4(s) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (!m) return false;
+  return m.slice(1, 5).every(o => { const n = Number(o); return n >= 0 && n <= 255; });
+}
+
 async function api(path, options = {}) {
   const csrf = getCookie("csrf");
   const headers = options.headers || {};
@@ -15,22 +21,36 @@ async function api(path, options = {}) {
   headers["Content-Type"] = "application/json";
   options.headers = headers;
   const res = await fetch(path, options);
+  if (res.status === 401) {
+    setStatus("\u2716 Session expired \u2014 redirecting to login");
+    setTimeout(() => { window.location.href = "/login"; }, 1500);
+    throw new Error("Session expired");
+  }
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(text || res.statusText);
+    let text;
+    try {
+      const json = await res.json();
+      text = json.error || json.message || res.statusText;
+    } catch {
+      text = await res.text() || res.statusText;
+    }
+    throw new Error(text);
   }
   return res.json();
 }
 
 function setStatus(text) {
   const el = document.getElementById("status-line");
-  el.textContent = text;
   el.classList.remove("status-ok", "status-warn", "status-error");
-  if (text.toLowerCase().startsWith("error")) {
+  const lower = text.toLowerCase();
+  if (lower.startsWith("error") || lower.includes("failed")) {
+    el.textContent = "\u2716 " + text;
     el.classList.add("status-error");
-  } else if (text.toLowerCase().includes("warn")) {
+  } else if (lower.includes("warn") || lower.includes("expired")) {
+    el.textContent = "\u26A0 " + text;
     el.classList.add("status-warn");
   } else {
+    el.textContent = "\u2714 " + text;
     el.classList.add("status-ok");
   }
 }
@@ -89,12 +109,12 @@ function validateField(el) {
       setFieldValidity(el, true, "required for static");
       return true;
     }
-    const ok = /^(\d{1,3}\.){3}\d{1,3}$/.test(value);
+    const ok = isValidIPv4(value);
     setFieldValidity(el, ok, ok ? "IPv4" : "invalid IPv4");
     return ok;
   }
   if (rule === "ip-optional") {
-    const ok = value === "" || /^(\d{1,3}\.){3}\d{1,3}$/.test(value);
+    const ok = value === "" || isValidIPv4(value);
     setFieldValidity(el, ok, ok ? "optional" : "invalid IPv4");
     return ok;
   }
@@ -114,7 +134,8 @@ function validateField(el) {
       setFieldValidity(el, true, "optional");
       return true;
     }
-    const ok = value.split(",").every(v => /^(\d{1,3}\.){3}\d{1,3}$/.test(v.trim()));
+    const parts = value.split(",").map(v => v.trim()).filter(v => v !== "");
+    const ok = parts.length > 0 && parts.every(v => isValidIPv4(v));
     setFieldValidity(el, ok, ok ? "comma-separated IPv4" : "invalid DNS list");
     return ok;
   }
@@ -193,6 +214,68 @@ function fillConfig(cfg) {
   }
 }
 
+function withLoading(button, asyncFn) {
+  return async function(...args) {
+    if (button.disabled) return;
+    button.disabled = true;
+    const spinner = document.createElement("span");
+    spinner.className = "spinner";
+    button.prepend(spinner);
+    try {
+      await asyncFn(...args);
+    } catch (err) {
+      setStatus("Error: " + err.message);
+    } finally {
+      button.disabled = false;
+      spinner.remove();
+    }
+  };
+}
+
+function showModal(title, message, confirmText, requireInput) {
+  return new Promise((resolve) => {
+    const overlay = document.getElementById("modal-overlay");
+    document.getElementById("modal-title").textContent = title;
+    document.getElementById("modal-message").textContent = message;
+    const input = document.getElementById("modal-input");
+    const confirmBtn = document.getElementById("modal-confirm");
+    const cancelBtn = document.getElementById("modal-cancel");
+
+    if (requireInput) {
+      input.classList.remove("hidden");
+      input.value = "";
+      input.placeholder = 'Type "' + confirmText + '" to confirm';
+      confirmBtn.disabled = true;
+      const handler = () => {
+        confirmBtn.disabled = input.value !== confirmText;
+      };
+      input.addEventListener("input", handler);
+      input._handler = handler;
+    } else {
+      input.classList.add("hidden");
+      confirmBtn.disabled = false;
+    }
+
+    overlay.classList.remove("hidden");
+    if (requireInput) input.focus();
+
+    function cleanup(result) {
+      overlay.classList.add("hidden");
+      if (input._handler) {
+        input.removeEventListener("input", input._handler);
+        input._handler = null;
+      }
+      confirmBtn.removeEventListener("click", onConfirm);
+      cancelBtn.removeEventListener("click", onCancel);
+      resolve(result);
+    }
+    function onConfirm() { cleanup(true); }
+    function onCancel() { cleanup(false); }
+    confirmBtn.addEventListener("click", onConfirm);
+    cancelBtn.addEventListener("click", onCancel);
+  });
+}
+
 async function loadStatus() {
   const data = await api("/api/status", { method: "GET" });
   const services = data.services || {};
@@ -269,9 +352,9 @@ async function loadStatus() {
   const nvmeEl = document.getElementById("status-nvme");
   nvmeEl.textContent = nvmeLine;
   nvmeEl.classList.remove("status-ok", "status-warn", "status-error");
-  if (nvmeLine.startsWith("NVMe") && nvmeLine.includes("ERROR")) {
+  if (nvmeLine.includes("ERROR")) {
     nvmeEl.classList.add("status-error");
-  } else if (nvmeLine.startsWith("NVMe") && nvmeLine.includes("WARN")) {
+  } else if (nvmeLine.includes("WARN")) {
     nvmeEl.classList.add("status-warn");
   } else if (nvmeLine.startsWith("NVMe")) {
     nvmeEl.classList.add("status-ok");
@@ -344,6 +427,7 @@ async function saveConfig(apply = false) {
     NETBIOS_NAME: document.getElementById("NETBIOS_NAME").value,
     SMB_WORKGROUP: document.getElementById("SMB_WORKGROUP").value,
     SYNC_INTERVAL_SEC: document.getElementById("SYNC_INTERVAL_SEC").value,
+    SYNC_HI_INTERVAL_SEC: document.getElementById("SYNC_HI_INTERVAL_SEC").value,
     SYNC_ONBOOT_SEC: document.getElementById("SYNC_ONBOOT_SEC").value,
     SYNC_ONACTIVE_SEC: document.getElementById("SYNC_ONACTIVE_SEC").value,
     SYNC_SCAN_DEPTH: document.getElementById("SYNC_SCAN_DEPTH").value,
@@ -376,13 +460,15 @@ async function applyNetwork() {
     setStatus("Fix invalid fields before applying network");
     return;
   }
+  const rawDns = document.getElementById("NET_DNS").value;
+  const dns = rawDns.split(",").map(v => v.trim()).filter(v => v).join(",");
   const payload = {
     interface: document.getElementById("NET_IFACE").value,
     method: document.getElementById("NET_METHOD").value,
     address: document.getElementById("NET_ADDR").value,
     prefix: document.getElementById("NET_PREFIX").value,
     gateway: document.getElementById("NET_GW").value,
-    dns: document.getElementById("NET_DNS").value,
+    dns: dns,
   };
   await api("/api/network", { method: "POST", body: JSON.stringify(payload) });
   setStatus("Network updated");
@@ -423,40 +509,32 @@ async function setManualTime() {
   setStatus("Time updated");
 }
 
+const MAINTENANCE_CONFIRMATIONS = {
+  "wipe":             { title: "Wipe All Data", msg: "This will erase all USB and mirror data. Configuration is preserved.", text: "WIPE ALL DATA" },
+  "rebalance":        { title: "Rebalance Storage", msg: "This rebalances thin-pool storage allocation.", text: "REBALANCE" },
+  "resize":           { title: "Resize USB LVs", msg: "This will resize all USB logical volumes.", text: "RESIZE" },
+  "shutdown":         { title: "Safe Shutdown", msg: "The device will power off.", text: "SHUTDOWN" },
+  "restore-defaults": { title: "Restore Defaults", msg: "Configuration will be reset to factory defaults. Data is preserved.", text: "RESTORE DEFAULTS" },
+  "clone-usb-format": { title: "Clone USB Format", msg: "USB LVs will be reformatted.", text: "CLONE USB FORMAT" },
+  "rotate":           { title: "Rotate USB Now", msg: "The active USB LV will switch to the next one.", text: null },
+};
+
 async function maintenance(action) {
   let payload = {};
-  if (action === "wipe") {
-    const ok = prompt('Type "WIPE ALL DATA" to confirm.');
-    if (ok !== "WIPE ALL DATA") return;
-  }
-  if (action === "rebalance") {
-    const ok = prompt('Type "REBALANCE" to confirm.');
-    if (ok !== "REBALANCE") return;
+  const conf = MAINTENANCE_CONFIRMATIONS[action];
+  if (conf) {
+    const ok = conf.text
+      ? await showModal(conf.title, conf.msg, conf.text, true)
+      : await showModal(conf.title, conf.msg, null, false);
+    if (!ok) return;
   }
   if (action === "resize") {
-    const ok = prompt('Type "RESIZE" to confirm.');
-    if (ok !== "RESIZE") return;
     const sizeField = document.getElementById("RESIZE_SIZE");
     if (!validateField(sizeField)) {
       setStatus("Invalid resize size");
       return;
     }
-    payload.size = document.getElementById("RESIZE_SIZE").value;
-  }
-  if (action === "shutdown") {
-    const ok = prompt('Type "SHUTDOWN" to confirm.');
-    if (ok !== "SHUTDOWN") return;
-  }
-  if (action === "restore-defaults") {
-    const ok = prompt('Type "RESTORE DEFAULTS" to confirm.');
-    if (ok !== "RESTORE DEFAULTS") return;
-  }
-  if (action === "clone-usb-format") {
-    const ok = prompt('Type "CLONE USB FORMAT" to confirm.');
-    if (ok !== "CLONE USB FORMAT") return;
-  }
-  if (action === "rotate") {
-    if (!confirm("Rotate USB LV now? The active LV will switch to the next one.")) return;
+    payload.size = sizeField.value;
   }
   await api(`/api/maintenance/${action}`, { method: "POST", body: JSON.stringify(payload) });
   setStatus(`${action} started`);
@@ -465,20 +543,50 @@ async function maintenance(action) {
   }
 }
 
-document.getElementById("save-config").addEventListener("click", () => saveConfig(false));
-document.getElementById("apply-config").addEventListener("click", () => saveConfig(true));
-document.getElementById("apply-network").addEventListener("click", applyNetwork);
-document.getElementById("save-webui-pass").addEventListener("click", changeWebuiPassword);
-document.getElementById("save-smb-pass").addEventListener("click", changeSmbPassword);
-document.getElementById("wipe").addEventListener("click", () => maintenance("wipe"));
-document.getElementById("rebalance").addEventListener("click", () => maintenance("rebalance"));
-document.getElementById("resize-usb").addEventListener("click", () => maintenance("resize"));
-document.getElementById("restore-defaults").addEventListener("click", () => maintenance("restore-defaults"));
-document.getElementById("clone-usb-format").addEventListener("click", () => maintenance("clone-usb-format"));
-document.getElementById("rotate-usb").addEventListener("click", () => maintenance("rotate"));
-document.getElementById("shutdown").addEventListener("click", () => maintenance("shutdown"));
-document.getElementById("set-time").addEventListener("click", setManualTime);
-document.getElementById("refresh-logs").addEventListener("click", refreshLogs);
+document.getElementById("save-config").addEventListener("click",
+  withLoading(document.getElementById("save-config"), () => saveConfig(false)));
+document.getElementById("apply-config").addEventListener("click",
+  withLoading(document.getElementById("apply-config"), () => saveConfig(true)));
+document.getElementById("apply-network").addEventListener("click",
+  withLoading(document.getElementById("apply-network"), applyNetwork));
+document.getElementById("save-webui-pass").addEventListener("click",
+  withLoading(document.getElementById("save-webui-pass"), changeWebuiPassword));
+document.getElementById("save-smb-pass").addEventListener("click",
+  withLoading(document.getElementById("save-smb-pass"), changeSmbPassword));
+document.getElementById("wipe").addEventListener("click",
+  withLoading(document.getElementById("wipe"), () => maintenance("wipe")));
+document.getElementById("rebalance").addEventListener("click",
+  withLoading(document.getElementById("rebalance"), () => maintenance("rebalance")));
+document.getElementById("resize-usb").addEventListener("click",
+  withLoading(document.getElementById("resize-usb"), () => maintenance("resize")));
+document.getElementById("restore-defaults").addEventListener("click",
+  withLoading(document.getElementById("restore-defaults"), () => maintenance("restore-defaults")));
+document.getElementById("clone-usb-format").addEventListener("click",
+  withLoading(document.getElementById("clone-usb-format"), () => maintenance("clone-usb-format")));
+document.getElementById("rotate-usb").addEventListener("click",
+  withLoading(document.getElementById("rotate-usb"), () => maintenance("rotate")));
+document.getElementById("shutdown").addEventListener("click",
+  withLoading(document.getElementById("shutdown"), () => maintenance("shutdown")));
+document.getElementById("set-time").addEventListener("click",
+  withLoading(document.getElementById("set-time"), setManualTime));
+document.getElementById("refresh-logs").addEventListener("click",
+  withLoading(document.getElementById("refresh-logs"), refreshLogs));
+
+async function checkSessionExpiry() {
+  try {
+    const me = await api("/api/me", { method: "GET" });
+    if (me.session_expires) {
+      const remaining = me.session_expires - Math.floor(Date.now() / 1000);
+      const banner = document.getElementById("health-banner");
+      if (remaining < 900 && remaining > 0) {
+        const mins = Math.ceil(remaining / 60);
+        banner.textContent = `Session expires in ${mins} minute${mins === 1 ? "" : "s"}. Save your work.`;
+        banner.classList.remove("hidden");
+        banner.classList.remove("error");
+      }
+    }
+  } catch { /* handled by api() 401 redirect */ }
+}
 
 async function refreshStatus() {
   try {
@@ -498,20 +606,32 @@ async function refreshStatus() {
       banner.textContent = "";
       banner.classList.add("hidden");
     }
+    await checkSessionExpiry();
   } catch (err) {
     setStatus("Error: " + err.message);
   }
 }
 
-function setManualTimeDefaults() {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const clock = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+function setManualTimeDefaults(serverTime) {
   const dateEl = document.getElementById("MANUAL_DATE");
   const timeEl = document.getElementById("MANUAL_CLOCK");
-  if (dateEl && !dateEl.value) dateEl.value = date;
-  if (timeEl && !timeEl.value) timeEl.value = clock;
+  if (serverTime) {
+    const parts = serverTime.split(" ");
+    if (parts.length === 2) {
+      if (dateEl && !dateEl.value) dateEl.value = parts[0];
+      if (timeEl && !timeEl.value) timeEl.value = parts[1];
+    }
+  }
+  if (dateEl && !dateEl.value) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    dateEl.value = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  }
+  if (timeEl && !timeEl.value) {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    timeEl.value = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  }
   if (dateEl) validateField(dateEl);
   if (timeEl) validateField(timeEl);
 }
@@ -519,7 +639,10 @@ function setManualTimeDefaults() {
 refreshStatus()
   .then(loadConfig)
   .then(loadLogServices)
-  .then(setManualTimeDefaults)
+  .then(async () => {
+    const time = await api("/api/time", { method: "GET" });
+    setManualTimeDefaults(time.server_time);
+  })
   .catch(err => setStatus("Error: " + err.message));
 setInterval(refreshStatus, 10000);
 

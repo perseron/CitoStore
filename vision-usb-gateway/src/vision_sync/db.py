@@ -46,15 +46,13 @@ def update_state(conn: sqlite3.Connection, path: str, size: int, mtime: int, now
     if row is None:
         stable = 1
         conn.execute(
-            "INSERT INTO file_state (path, size, mtime, stable_count, last_seen) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO file_state (path, size, mtime, stable_count, last_seen)"
+            " VALUES (?, ?, ?, ?, ?)",
             (path, size, mtime, stable, now),
         )
     else:
         prev_size, prev_mtime, prev_stable = row
-        if prev_size == size and prev_mtime == mtime:
-            stable = prev_stable + 1
-        else:
-            stable = 1
+        stable = prev_stable + 1 if prev_size == size and prev_mtime == mtime else 1
         conn.execute(
             "UPDATE file_state SET size=?, mtime=?, stable_count=?, last_seen=? WHERE path=?",
             (size, mtime, stable, now, path),
@@ -70,8 +68,18 @@ def is_already_synced(conn: sqlite3.Connection, path: str, size: int, mtime: int
     return cur.fetchone() is not None
 
 
-def mark_synced(conn: sqlite3.Connection, source_path: str, size: int, mtime: int, raw_path: str, bydate_path: str, now: int) -> None:
+def mark_synced(
+    conn: sqlite3.Connection,
+    source_path: str,
+    size: int,
+    mtime: int,
+    raw_path: str,
+    bydate_path: str,
+    now: int,
+) -> None:
     conn.execute(
-        "INSERT INTO synced_files (source_path, size, mtime, raw_path, bydate_path, synced_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO synced_files"
+        " (source_path, size, mtime, raw_path, bydate_path, synced_at)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
         (source_path, size, mtime, raw_path, bydate_path, now),
     )

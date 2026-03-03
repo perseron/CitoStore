@@ -1,17 +1,16 @@
 import argparse
+import json
 import os
+import shutil
 import subprocess
 import time
-import shutil
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
-import json
-from typing import Iterator, Tuple
 
 from .config import get_config
-from .db import init_db, update_state, is_already_synced, mark_synced
-from .fsops import iter_files, atomic_copy, safe_join, compute_manifest, SKIP_DIRS
-
+from .db import init_db, is_already_synced, mark_synced, update_state
+from .fsops import SKIP_DIRS, atomic_copy, compute_manifest, iter_files, safe_join
 
 ACTIVE_FILE = "/run/vision-usb-active"
 USB_USAGE_FILE = "/run/vision-usb-usage.json"
@@ -81,7 +80,7 @@ def scan_dirs_at_depth(root: Path, depth: int) -> list[tuple[str, int]]:
     return items
 
 
-def iter_root_files(root: Path) -> Iterator[Tuple[Path, os.stat_result]]:
+def iter_root_files(root: Path) -> Iterator[tuple[Path, os.stat_result]]:
     try:
         for entry in os.scandir(root):
             if not entry.is_file(follow_symlinks=False):
@@ -145,6 +144,14 @@ def select_scan_roots(cfg, mount_root: Path) -> tuple[list[Path], dict]:
     return roots, plan
 
 
+def _find_tool(name: str, search_paths: tuple[str, ...] = ("/sbin", "/usr/sbin")) -> str | None:
+    for prefix in search_paths:
+        candidate = f"{prefix}/{name}"
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
 def run_best_effort(args: list[str]) -> None:
     subprocess.run(args, check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -155,24 +162,22 @@ def read_active() -> str:
     return Path(ACTIVE_FILE).read_text().strip()
 
 
+def _cleanup_lv_mappings(snap_path: str, vg: str, snap_name: str) -> None:
+    kpartx = _find_tool("kpartx")
+    if kpartx:
+        run_best_effort([kpartx, "-d", snap_path])
+    partx = _find_tool("partx")
+    if partx:
+        run_best_effort([partx, "-d", snap_path])
+    dmsetup = _find_tool("dmsetup")
+    if dmsetup:
+        run_best_effort([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"])
+        run_best_effort([dmsetup, "remove", "-f", f"{vg}-{snap_name}"])
+
+
 def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
     snap_path = f"/dev/{vg}/{snap_name}"
-    kpartx = "/sbin/kpartx"
-    if not os.path.exists(kpartx):
-        kpartx = "/usr/sbin/kpartx"
-    if os.path.exists(kpartx):
-        subprocess.run([kpartx, "-d", snap_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    partx = "/sbin/partx"
-    if not os.path.exists(partx):
-        partx = "/usr/sbin/partx"
-    if os.path.exists(partx):
-        subprocess.run([partx, "-d", snap_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    dmsetup = "/sbin/dmsetup"
-    if not os.path.exists(dmsetup):
-        dmsetup = "/usr/sbin/dmsetup"
-    if os.path.exists(dmsetup):
-        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _cleanup_lv_mappings(snap_path, vg, snap_name)
     run_best_effort(["lvremove", "-y", snap_path])
     subprocess.run(["lvcreate", "-s", "-n", snap_name, active_dev], check=True)
     # Ensure the snapshot is activatable and active so a device node appears.
@@ -185,44 +190,32 @@ def lv_snapshot(active_dev: str, vg: str, snap_name: str) -> str:
 
 def lv_remove(snap_name: str, vg: str) -> None:
     snap_path = f"/dev/{vg}/{snap_name}"
-    kpartx = "/sbin/kpartx"
-    if not os.path.exists(kpartx):
-        kpartx = "/usr/sbin/kpartx"
-    if os.path.exists(kpartx):
-        subprocess.run([kpartx, "-d", snap_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    partx = "/sbin/partx"
-    if not os.path.exists(partx):
-        partx = "/usr/sbin/partx"
-    if os.path.exists(partx):
-        subprocess.run([partx, "-d", snap_path], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    dmsetup = "/sbin/dmsetup"
-    if not os.path.exists(dmsetup):
-        dmsetup = "/usr/sbin/dmsetup"
-    if os.path.exists(dmsetup):
-        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}1"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        subprocess.run([dmsetup, "remove", "-f", f"{vg}-{snap_name}"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    _cleanup_lv_mappings(snap_path, vg, snap_name)
     run_best_effort(["lvremove", "-y", snap_path])
 
 
-def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) -> None:
+def _mount_device(
+    dev: str, mount_point: Path, *, readonly: bool = True, offset_override: int | None = None
+) -> None:
     mount_point.mkdir(parents=True, exist_ok=True)
-    opts = "ro,utf8,shortname=mixed,nodev,nosuid,noexec"
+    common = "utf8,shortname=mixed,nodev,nosuid,noexec"
+    base_opts = f"ro,{common}" if readonly else common
     mount_dev = resolve_mount_device(dev)
     if offset_override is not None:
-        offset_opts = f"{opts},loop,offset={offset_override}"
+        offset_opts = f"{base_opts},loop,offset={offset_override}"
         result = subprocess.run(
             ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
             check=False,
         )
         if result.returncode == 0:
             return
-        if os.path.exists(ACTIVE_FILE):
+        if readonly and os.path.exists(ACTIVE_FILE):
             try:
                 alt = get_partition_offset(read_active())
             except Exception:
                 alt = None
             if alt and alt != offset_override:
-                offset_opts = f"{opts},loop,offset={alt}"
+                offset_opts = f"{base_opts},loop,offset={alt}"
                 result = subprocess.run(
                     ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
                     check=False,
@@ -230,7 +223,7 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
                 if result.returncode == 0:
                     return
     result = subprocess.run(
-        ["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)],
+        ["mount", "-t", "vfat", "-o", base_opts, mount_dev, str(mount_point)],
         check=False,
     )
     if result.returncode == 0:
@@ -243,8 +236,12 @@ def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) ->
             offset = None
     if offset is None:
         raise subprocess.CalledProcessError(result.returncode, result.args)
-    offset_opts = f"{opts},loop,offset={offset}"
+    offset_opts = f"{base_opts},loop,offset={offset}"
     subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
+
+
+def mount_ro(dev: str, mount_point: Path, offset_override: int | None = None) -> None:
+    _mount_device(dev, mount_point, readonly=True, offset_override=offset_override)
 
 
 def record_snapshot_usage(mount_point: Path, active_dev: str) -> None:
@@ -252,8 +249,7 @@ def record_snapshot_usage(mount_point: Path, active_dev: str) -> None:
         result = subprocess.run(
             ["df", "-h", "--output=size,used,pcent", str(mount_point)],
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             check=False,
         )
         if result.returncode != 0:
@@ -281,8 +277,8 @@ def wait_for_dev(snap_path: str, vg: str, snap_name: str) -> str:
     mapper_path = f"/dev/mapper/{vg}-{snap_name}"
 
     # Give udev a moment to create nodes after lvcreate.
-    udevadm = "/sbin/udevadm"
-    if os.path.exists(udevadm):
+    udevadm = _find_tool("udevadm")
+    if udevadm:
         subprocess.run([udevadm, "settle"], check=False)
 
     for _ in range(50):  # ~5s total
@@ -293,8 +289,8 @@ def wait_for_dev(snap_path: str, vg: str, snap_name: str) -> str:
         time.sleep(0.1)
 
     # Last attempt to create nodes directly.
-    dmsetup = "/sbin/dmsetup"
-    if os.path.exists(dmsetup):
+    dmsetup = _find_tool("dmsetup")
+    if dmsetup:
         subprocess.run([dmsetup, "mknodes"], check=False)
         if os.path.exists(snap_path):
             return snap_path
@@ -366,7 +362,10 @@ def sync_dir(src: Path, dst: Path) -> None:
     rsync = shutil.which("rsync")
     if rsync:
         subprocess.run(
-            [rsync, "-rlt", "--delete", "--no-owner", "--no-group", "--no-perms", f"{src}/", f"{dst}/"],
+            [
+                rsync, "-rlt", "--delete", "--no-owner",
+                "--no-group", "--no-perms", f"{src}/", f"{dst}/",
+            ],
             check=True,
         )
         return
@@ -376,47 +375,16 @@ def sync_dir(src: Path, dst: Path) -> None:
 
 
 def mount_rw(dev: str, mount_point: Path, offset_override: int | None = None) -> None:
-    mount_point.mkdir(parents=True, exist_ok=True)
-    opts = "utf8,shortname=mixed,nodev,nosuid,noexec"
-    mount_dev = resolve_mount_device(dev)
-    if offset_override is not None:
-        offset_opts = f"{opts},loop,offset={offset_override}"
-        result = subprocess.run(
-            ["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)],
-            check=False,
-        )
-        if result.returncode == 0:
-            return
-    result = subprocess.run(
-        ["mount", "-t", "vfat", "-o", opts, mount_dev, str(mount_point)],
-        check=False,
-    )
-    if result.returncode == 0:
-        return
-    offset = offset_override or get_partition_offset(dev) or get_partition_offset(mount_dev)
-    if offset is None and os.path.exists(ACTIVE_FILE):
-        try:
-            offset = get_partition_offset(read_active())
-        except Exception:
-            offset = None
-    if offset is None:
-        raise subprocess.CalledProcessError(result.returncode, result.args)
-    offset_opts = f"{opts},loop,offset={offset}"
-    subprocess.run(["mount", "-t", "vfat", "-o", offset_opts, dev, str(mount_point)], check=True)
+    _mount_device(dev, mount_point, readonly=False, offset_override=offset_override)
 
 
 def get_partition_offset(dev: str) -> int | None:
     try:
-        sfdisk = "/sbin/sfdisk"
-        if not os.path.exists(sfdisk):
-            sfdisk = "/usr/sbin/sfdisk"
-        if not os.path.exists(sfdisk):
-            sfdisk = "sfdisk"
+        sfdisk = _find_tool("sfdisk") or "sfdisk"
         result = subprocess.run(
             [sfdisk, "-d", dev],
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             check=False,
         )
         if result.returncode == 0:
@@ -432,8 +400,7 @@ def get_partition_offset(dev: str) -> int | None:
         lsblk_res = subprocess.run(
             ["lsblk", "-n", "-o", "START", "-r", dev],
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             check=False,
         )
         if lsblk_res.returncode == 0:
@@ -447,26 +414,22 @@ def get_partition_offset(dev: str) -> int | None:
 
 
 def resolve_mount_device(dev: str) -> str:
-    partx = "/sbin/partx"
-    if not os.path.exists(partx):
-        partx = "/usr/sbin/partx"
-    if os.path.exists(partx):
+    partx = _find_tool("partx")
+    if partx:
         subprocess.run([partx, "-a", dev], check=False)
-    kpartx = "/sbin/kpartx"
-    if not os.path.exists(kpartx):
-        kpartx = "/usr/sbin/kpartx"
-    if os.path.exists(kpartx):
+    kpartx = _find_tool("kpartx")
+    if kpartx:
         subprocess.run([kpartx, "-a", dev], check=False)
         # Try to read the mapping name from kpartx output (e.g. vg0-usb_sync_snap1).
-        kp = subprocess.run([kpartx, "-l", dev], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+        kp = subprocess.run([kpartx, "-l", dev], text=True, capture_output=True, check=False)
         for line in kp.stdout.splitlines():
             name = line.split()[0].strip() if line.split() else ""
             if name:
                 mapper = f"/dev/mapper/{name}"
                 if os.path.exists(mapper):
                     return mapper
-    udevadm = "/sbin/udevadm"
-    if os.path.exists(udevadm):
+    udevadm = _find_tool("udevadm")
+    if udevadm:
         subprocess.run([udevadm, "settle"], check=False)
     base = os.path.basename(dev)
     mapper_name = base
@@ -492,8 +455,7 @@ def resolve_mount_device(dev: str) -> str:
     result = subprocess.run(
         ["lsblk", "-n", "-o", "NAME,TYPE", "-r", dev],
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         check=False,
     )
     for line in result.stdout.splitlines():
@@ -545,14 +507,80 @@ def maybe_compute_sync_manifest(cfg, mount_root: Path) -> tuple[str, int, bool, 
         return new_digest, old_count + 1, True, old_mode
     return new_digest, 0, False, "suspend"
 
+def _process_file(
+    path: Path,
+    st: os.stat_result,
+    mount_root: Path,
+    cfg,
+    conn,
+    raw_dir: Path,
+    bydate_dir: Path,
+    now: int,
+    counters: dict,
+) -> None:
+    counters["scanned"] += 1
+    rel = path.relative_to(mount_root)
+    size = int(st.st_size)
+    mtime = int(st.st_mtime)
+    if size >= cfg.max_file_size:
+        counters["skipped_large"] += 1
+        return
+
+    stable = update_state(conn, str(rel), size, mtime, now)
+    if stable < cfg.stable_scans:
+        return
+
+    if is_already_synced(conn, str(rel), size, mtime):
+        return
+
+    dt = datetime.fromtimestamp(mtime if cfg.bydate_use_file_time else now)
+    date_path = bydate_dir / dt.strftime("%Y/%m/%d")
+
+    raw_subdir = safe_join(raw_dir, rel.parent)
+    name = rel.name
+    stem = Path(name).stem
+    suffix = Path(name).suffix
+    collision = (raw_subdir / name).exists()
+    if cfg.append_always:
+        collision = True
+    final_name = f"{stem}_{mtime}{suffix}" if collision else name
+
+    dest_path, digest = atomic_copy(path, raw_subdir, final_name, cfg.copy_chunk)
+
+    if collision:
+        hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
+        hash_path = raw_subdir / hash_name
+        if hash_path.exists():
+            dest_path.unlink(missing_ok=True)
+            final_path = hash_path
+        else:
+            dest_path.rename(hash_path)
+            final_path = hash_path
+    else:
+        final_path = dest_path
+
+    date_path.mkdir(parents=True, exist_ok=True)
+    link_path = date_path / final_path.name
+    if not link_path.exists():
+        os.link(final_path, link_path)
+
+    mark_synced(conn, str(rel), size, mtime, str(final_path), str(link_path), now)
+    counters["synced"] += 1
+    log_every = counters.get("log_every", 0)
+    if log_every > 0 and counters["synced"] % log_every == 0:
+        log(f"sync progress: synced={counters['synced']} scanned={counters['scanned']}")
+
+
 def stable_and_copy(cfg, mount_root: Path, conn) -> None:
     raw_dir = cfg.mirror_mount / "raw"
     bydate_dir = cfg.mirror_mount / "bydate"
     now = int(time.time())
-    scanned = 0
-    synced = 0
-    skipped_large = 0
-    log_every = max(0, int(getattr(cfg, "sync_log_every", 0)))
+    counters = {
+        "scanned": 0,
+        "synced": 0,
+        "skipped_large": 0,
+        "log_every": max(0, int(getattr(cfg, "sync_log_every", 0))),
+    }
     selected_roots, scan_plan = select_scan_roots(cfg, mount_root)
     if scan_plan["selected"]:
         log(
@@ -563,127 +591,30 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
             f"audit={','.join(scan_plan['audit']) if scan_plan['audit'] else '-'}"
         )
     else:
-        log(f"sync plan: depth={scan_plan['depth']} top_dirs={scan_plan['top_dirs']} root-files-only")
+        log(
+            f"sync plan: depth={scan_plan['depth']}"
+            f" top_dirs={scan_plan['top_dirs']} root-files-only"
+        )
 
     try:
         # Always include files directly in root (non-recursive).
         for path, st in iter_root_files(mount_root):
-            scanned += 1
-            rel = path.relative_to(mount_root)
-            size = int(st.st_size)
-            mtime = int(st.st_mtime)
-            if size >= cfg.max_file_size:
-                skipped_large += 1
-                continue
-
-            stable = update_state(conn, str(rel), size, mtime, now)
-            if stable < cfg.stable_scans:
-                continue
-
-            if is_already_synced(conn, str(rel), size, mtime):
-                continue
-
-            dt = datetime.fromtimestamp(mtime if cfg.bydate_use_file_time else now)
-            date_path = bydate_dir / dt.strftime("%Y/%m/%d")
-
-            raw_subdir = safe_join(raw_dir, rel.parent)
-            name = rel.name
-            stem = Path(name).stem
-            suffix = Path(name).suffix
-            collision = (raw_subdir / name).exists()
-            if cfg.append_always:
-                collision = True
-            if collision:
-                final_name = f"{stem}_{mtime}{suffix}"
-            else:
-                final_name = name
-
-            dest_path, digest = atomic_copy(path, raw_subdir, final_name, cfg.copy_chunk)
-
-            if collision:
-                hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
-                hash_path = raw_subdir / hash_name
-                if hash_path.exists():
-                    dest_path.unlink(missing_ok=True)
-                    final_path = hash_path
-                else:
-                    dest_path.rename(hash_path)
-                    final_path = hash_path
-            else:
-                final_path = dest_path
-
-            date_path.mkdir(parents=True, exist_ok=True)
-            link_path = date_path / final_path.name
-            if not link_path.exists():
-                os.link(final_path, link_path)
-
-            mark_synced(conn, str(rel), size, mtime, str(final_path), str(link_path), now)
-            synced += 1
-            if log_every > 0 and synced % log_every == 0:
-                log(f"sync progress: synced={synced} scanned={scanned}")
+            _process_file(path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now, counters)
 
         for root in selected_roots:
             if not root.exists():
                 continue
             for path, st in iter_files(root):
-                scanned += 1
-                rel = path.relative_to(mount_root)
-                size = int(st.st_size)
-                mtime = int(st.st_mtime)
-                if size >= cfg.max_file_size:
-                    skipped_large += 1
-                    continue
-
-                stable = update_state(conn, str(rel), size, mtime, now)
-                if stable < cfg.stable_scans:
-                    continue
-
-                if is_already_synced(conn, str(rel), size, mtime):
-                    continue
-
-                dt = datetime.fromtimestamp(mtime if cfg.bydate_use_file_time else now)
-                date_path = bydate_dir / dt.strftime("%Y/%m/%d")
-
-                raw_subdir = safe_join(raw_dir, rel.parent)
-                name = rel.name
-                stem = Path(name).stem
-                suffix = Path(name).suffix
-                collision = (raw_subdir / name).exists()
-                if cfg.append_always:
-                    collision = True
-                if collision:
-                    final_name = f"{stem}_{mtime}{suffix}"
-                else:
-                    final_name = name
-
-                dest_path, digest = atomic_copy(path, raw_subdir, final_name, cfg.copy_chunk)
-
-                if collision:
-                    hash_name = f"{Path(final_name).stem}_{digest[:8]}{suffix}"
-                    hash_path = raw_subdir / hash_name
-                    if hash_path.exists():
-                        dest_path.unlink(missing_ok=True)
-                        final_path = hash_path
-                    else:
-                        dest_path.rename(hash_path)
-                        final_path = hash_path
-                else:
-                    final_path = dest_path
-
-                date_path.mkdir(parents=True, exist_ok=True)
-                link_path = date_path / final_path.name
-                if not link_path.exists():
-                    os.link(final_path, link_path)
-
-                mark_synced(conn, str(rel), size, mtime, str(final_path), str(link_path), now)
-                synced += 1
-                if log_every > 0 and synced % log_every == 0:
-                    log(f"sync progress: synced={synced} scanned={scanned}")
+                _process_file(path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now, counters)
         conn.commit()
     except Exception:
         conn.rollback()
         raise
-    log(f"sync summary: scanned={scanned} synced={synced} skipped_large={skipped_large}")
+    log(
+        f"sync summary: scanned={counters['scanned']}"
+        f" synced={counters['synced']}"
+        f" skipped_large={counters['skipped_large']}"
+    )
 
 
 def run(cfg, dev_override: str | None, offline: bool) -> None:
