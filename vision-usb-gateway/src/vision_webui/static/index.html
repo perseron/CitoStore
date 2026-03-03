@@ -24,6 +24,9 @@
       <pre id="status-usb"></pre>
       <pre id="status-sync"></pre>
       <pre id="status-nvme"></pre>
+      <pre id="status-usb-health"></pre>
+      <pre id="status-nas"></pre>
+      <pre id="status-time-sync"></pre>
     </section>
 
     <section>
@@ -88,6 +91,23 @@
         <label>Workgroup <input id="SMB_WORKGROUP" data-validate="netbios">
           <span class="hint">1-15 chars, letters/numbers/_/-</span>
         </label>
+        <label>Bind interface <input id="SMB_BIND_INTERFACE" data-validate="iface">
+          <span class="hint">e.g. eth0</span>
+        </label>
+      </div>
+
+      <h3>WebUI</h3>
+      <div class="grid">
+        <label>Bind address
+          <select id="WEBUI_BIND">
+            <option value="0.0.0.0">0.0.0.0 (all interfaces)</option>
+            <option value="127.0.0.1">127.0.0.1 (localhost only)</option>
+          </select>
+          <span class="hint">requires service restart</span>
+        </label>
+        <label>Port <input id="WEBUI_PORT" data-validate="int-range:1:65535" value="80">
+          <span class="hint">1-65535, requires restart</span>
+        </label>
       </div>
 
       <h3>NAS</h3>
@@ -118,6 +138,9 @@
       <div class="actions">
         <button id="save-config">Save to Shadow</button>
         <button id="apply-config">Save + Apply</button>
+        <button id="export-config">Export Config</button>
+        <button id="import-config">Import Config</button>
+        <input type="file" id="import-config-file" accept=".conf,.txt" class="hidden">
       </div>
     </section>
 
@@ -204,14 +227,28 @@
         </label>
       </div>
       <div class="actions">
+        <button id="trigger-sync">Sync Now</button>
+        <button id="rotate-usb">Rotate USB Now</button>
         <button class="danger" id="resize-usb">Resize USB LVs</button>
         <button class="danger" id="rebalance">Rebalance Storage</button>
         <button class="danger" id="wipe">Wipe All Data</button>
         <button class="danger" id="restore-defaults">Restore Defaults</button>
         <button class="danger" id="clone-usb-format">Clone USB Format</button>
-        <button id="rotate-usb">Rotate USB Now</button>
         <button class="danger" id="shutdown">Safe Shutdown</button>
       </div>
+
+      <h3>Maintenance Mode</h3>
+      <div id="maint-mode-banner" class="banner hidden">Maintenance mode is active. Sync and rotation timers are paused.</div>
+      <div class="actions">
+        <button id="toggle-maint-mode">Enable Maintenance Mode</button>
+      </div>
+
+      <h3>System Update</h3>
+      <div class="actions">
+        <button id="upload-update">Upload Update Package</button>
+        <input type="file" id="update-file" accept=".tar.gz,.tgz" class="hidden">
+      </div>
+      <pre id="update-history">No update history.</pre>
     </section>
 
     <section>

@@ -26,6 +26,8 @@ class Config:
     sync_hot_dirs: int
     sync_cold_audit_dirs_per_run: int
     sync_dir_index_file: Path
+    mirror_free_min_mb: int
+    mirror_retention_trigger_pct: int
 
 
 def _parse_line(line: str):
@@ -103,6 +105,8 @@ def get_config(path: str) -> Config:
     sync_dir_index_file = Path(
         data.get("SYNC_DIR_INDEX_FILE", str(mirror_mount / ".state" / "sync-dir-index.json"))
     )
+    mirror_free_min_mb = int(data.get("MIRROR_FREE_MIN_MB", "500"))
+    mirror_retention_trigger_pct = int(data.get("MIRROR_RETENTION_TRIGGER_PCT", "90"))
     return Config(
         mirror_mount=mirror_mount,
         state_dir=state_dir,
@@ -125,4 +129,6 @@ def get_config(path: str) -> Config:
         sync_hot_dirs=sync_hot_dirs,
         sync_cold_audit_dirs_per_run=sync_cold_audit_dirs_per_run,
         sync_dir_index_file=sync_dir_index_file,
+        mirror_free_min_mb=mirror_free_min_mb,
+        mirror_retention_trigger_pct=mirror_retention_trigger_pct,
     )

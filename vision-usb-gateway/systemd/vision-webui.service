@@ -5,11 +5,12 @@ Wants=network-online.target
 Requires=vision-gw-config.service
 
 [Service]
-Type=simple
+Type=notify
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/usr/bin/python3 -m vision_webui.server
 Restart=on-failure
 RestartSec=5
+WatchdogSec=60
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

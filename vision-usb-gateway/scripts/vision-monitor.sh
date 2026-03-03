@@ -228,4 +228,44 @@ echo "state=$state" > "$STATE_FILE"
 echo "active=$active_dev" >> "$STATE_FILE"
 echo "reason=$reason" >> "$STATE_FILE"
 
+# Write health JSON for WebUI /api/health (refreshed every monitor cycle)
+write_health() {
+  local health_status="ok"
+  local issues=()
+  if [[ "$state" == "panic" ]]; then
+    health_status="error"
+    issues+=("USB usage critical (${usage}%)")
+  elif [[ "$state" == "rotate_pending" ]]; then
+    health_status="warn"
+    issues+=("USB rotation pending (${usage}%)")
+  fi
+  if [[ $meta -ge $META_CRIT ]]; then
+    health_status="error"
+    issues+=("Thinpool metadata critical (${meta}%)")
+  elif [[ $meta -ge $META_HI ]]; then
+    [[ "$health_status" == "ok" ]] && health_status="warn"
+    issues+=("Thinpool metadata high (${meta}%)")
+  fi
+  local out="$1"
+  {
+    echo '{'
+    echo "  \"status\": \"${health_status}\","
+    echo "  \"issues\": ["
+    for i in "${!issues[@]}"; do
+      local sep=","
+      [[ $i -eq $((${#issues[@]}-1)) ]] && sep=""
+      printf '    "%s"%s\n' "${issues[$i]}" "$sep"
+    done
+    echo "  ],"
+    echo "  \"ts\": \"$(date -Is)\""
+    echo '}'
+  } > "$out"
+}
+write_health "/run/vision-health.json"
+# Also persist to mirror if mounted
+if mountpoint -q /srv/vision_mirror 2>/dev/null; then
+  mkdir -p /srv/vision_mirror/.state
+  write_health "/srv/vision_mirror/.state/health.json"
+fi
+
 log "rotate state: $state ($reason)"

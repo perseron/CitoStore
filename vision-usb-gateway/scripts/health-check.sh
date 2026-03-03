@@ -119,6 +119,7 @@ if [[ "$HEALTHCHECK_FSCK_MIRROR" == "true" ]]; then
 fi
 
 # Run fsck on inactive USB LVs (FAT32) if possible.
+FSCK_RESULTS=()
 if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
   if command -v fsck.fat >/dev/null 2>&1; then
     active=""
@@ -128,11 +129,20 @@ if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
     for lv in "${USB_LVS[@]}"; do
       dev="/dev/$VG/$lv"
       if [[ "$dev" == "$active" ]]; then
+        FSCK_RESULTS+=("{\"lv\":\"$lv\",\"status\":\"skipped (active)\"}")
         continue
       fi
       if [[ -e "$dev" ]]; then
         log "fsck.fat on $dev"
-        fsck.fat -a "$dev" || true
+        fsck_out=$(fsck.fat -a "$dev" 2>&1) || true
+        fsck_rc=$?
+        fsck_status="ok"
+        if [[ $fsck_rc -ne 0 ]]; then
+          fsck_status="FAIL (rc=$fsck_rc)"
+          health_warn "fsck.fat failed on $lv"
+        fi
+        fsck_out_escaped=$(echo "$fsck_out" | head -c 200 | tr '"' "'" | tr '\n' ' ')
+        FSCK_RESULTS+=("{\"lv\":\"$lv\",\"status\":\"$fsck_status\",\"output\":\"$fsck_out_escaped\"}")
       fi
     done
   else
@@ -140,6 +150,17 @@ if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
     health_warn "fsck.fat not available; USB fsck skipped"
   fi
 fi
+# Write USB fsck results to JSON
+{
+  echo '{"lvs":['
+  for i in "${!FSCK_RESULTS[@]}"; do
+    sep=","
+    [[ $i -eq $((${#FSCK_RESULTS[@]}-1)) ]] && sep=""
+    echo "  ${FSCK_RESULTS[$i]}${sep}"
+  done
+  echo "],"
+  echo "\"ts\": \"$(date -Is)\"}"
+} > "$STATE_DIR/usb-fsck.json" 2>/dev/null || true
 
 # Validate active USB LV pointer.
 if [[ -n "${ACTIVE_FILE:-}" ]]; then

@@ -8,7 +8,9 @@ import json
 import os
 import re
 import secrets
+import socket
 import subprocess
+import threading
 import time
 from contextlib import contextmanager
 from http import HTTPStatus
@@ -34,6 +36,8 @@ NETWORK_STATE = STATE_DIR / "network.json"
 
 SESSION_TTL_SEC = 8 * 60 * 60
 MAX_BODY_SIZE = 64 * 1024
+MAX_UPDATE_SIZE = 50 * 1024 * 1024  # 50MB for update packages
+MAINT_MODE_FLAG = Path("/run/vision-maintenance-mode")
 
 ALLOWED_CONFIG_KEYS = {
     "NETBIOS_NAME",
@@ -82,6 +86,8 @@ LOG_SERVICES = sorted(
             "vision-sync.timer",
             "vision-monitor.timer",
             "vision-rotator.timer",
+            "vision-log-cleanup.service",
+            "vision-log-cleanup.timer",
         ]
     )
 )
@@ -705,6 +711,11 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
     return True, ""
 
 
+LOGIN_RATE_LIMIT = 5  # max attempts per window
+LOGIN_RATE_WINDOW = 900  # 15 minutes
+_login_attempts: dict[str, list[float]] = {}
+
+
 class WebHandler(BaseHTTPRequestHandler):
     server_version = "VisionWebUI/1.0"
 
@@ -875,12 +886,65 @@ class WebHandler(BaseHTTPRequestHandler):
             if code != 0:
                 return self.send_json({"status": err or "failed to read time"}, status=500)
             server_time = time.strftime("%Y-%m-%d %H:%M:%S")
-            return self.send_json({"status": out, "server_time": server_time})
+            result = {"status": out, "server_time": server_time}
+            code2, out2, _ = run_cmd(["/usr/bin/timedatectl", "show"])
+            if code2 == 0:
+                props = {}
+                for line in out2.splitlines():
+                    if "=" in line:
+                        k, v = line.split("=", 1)
+                        props[k] = v
+                result["ntp_enabled"] = props.get("NTP", "n/a")
+                result["ntp_synced"] = props.get("NTPSynchronized", "n/a")
+                result["timezone"] = props.get("Timezone", "n/a")
+                cfg = parse_config(load_config_text())
+                result["rtc_enabled"] = cfg.get("RTC_ENABLED", "false")
+                result["rtc_device"] = cfg.get("RTC_DEVICE", "/dev/rtc0")
+            return self.send_json(result)
+        if self.path.startswith("/api/usb-health"):
+            health_path = STATE_DIR / "usb-fsck.json"
+            if health_path.exists():
+                try:
+                    return self.send_json(json.loads(health_path.read_text(encoding="utf-8")))
+                except json.JSONDecodeError:
+                    return self.send_json({"error": "invalid usb-fsck.json"})
+            return self.send_json({"lvs": [], "ts": ""})
+        if self.path.startswith("/api/nas-status"):
+            status_path = STATE_DIR / "nas-sync-status.json"
+            if status_path.exists():
+                try:
+                    return self.send_json(json.loads(status_path.read_text(encoding="utf-8")))
+                except json.JSONDecodeError:
+                    return self.send_json({"status": "unknown"})
+            return self.send_json({"status": "no data"})
+        if self.path.startswith("/api/config/export"):
+            config_text = load_config_text()
+            data = config_text.encode("utf-8")
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Disposition", "attachment; filename=vision-gw.conf")
+            self.send_header("Content-Length", str(len(data)))
+            self._send_security_headers()
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if self.path.startswith("/api/maintenance-mode"):
+            return self.send_json({"enabled": MAINT_MODE_FLAG.exists()})
+        if self.path.startswith("/api/update/status"):
+            history_path = STATE_DIR / "update-history.json"
+            history = []
+            if history_path.exists():
+                import contextlib
+
+                with contextlib.suppress(json.JSONDecodeError):
+                    history = json.loads(history_path.read_text(encoding="utf-8"))
+            return self.send_json({"history": history})
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self):
         content_length = int(self.headers.get("Content-Length", 0))
-        if content_length > MAX_BODY_SIZE:
+        max_size = MAX_UPDATE_SIZE if self.path == "/api/update" else MAX_BODY_SIZE
+        if content_length > max_size:
             self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body too large")
             return
         if PASS_FILE.exists() is False and self.path not in ("/setup", "/setup/"):
@@ -917,18 +981,36 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_maintenance(["shutdown"])
         if self.path == "/api/maintenance/rotate":
             return self.handle_maintenance(["rotate"])
+        if self.path == "/api/maintenance/sync":
+            return self.handle_maintenance(["sync"])
         if self.path == "/api/network":
             return self.handle_network()
         if self.path == "/api/time":
             return self.handle_time()
+        if self.path == "/api/config/import":
+            return self.handle_config_import()
+        if self.path == "/api/maintenance-mode":
+            return self.handle_maintenance_mode()
+        if self.path == "/api/update":
+            return self.handle_update()
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def handle_login(self):
+        client_ip = self.client_address[0]
+        now = time.time()
+        attempts = _login_attempts.get(client_ip, [])
+        attempts = [t for t in attempts if now - t < LOGIN_RATE_WINDOW]
+        _login_attempts[client_ip] = attempts
+        if len(attempts) >= LOGIN_RATE_LIMIT:
+            log(f"login rate limited: {client_ip}")
+            self.send_text(self.render_login("Too many attempts. Try again later."), status=429)
+            return
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         params = parse_qs(body)
         password = params.get("password", [""])[0]
         if verify_password(password):
+            _login_attempts.pop(client_ip, None)
             token = make_session("admin")
             csrf = make_csrf(token)
             self.send_response(HTTPStatus.SEE_OTHER)
@@ -938,7 +1020,8 @@ class WebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             log("login success")
         else:
-            log("login failed")
+            attempts.append(now)
+            log(f"login failed ({len(attempts)}/{LOGIN_RATE_LIMIT})")
             self.send_text(self.render_login("Invalid password"), status=401)
 
     def handle_setup(self):
@@ -1109,6 +1192,8 @@ class WebHandler(BaseHTTPRequestHandler):
                     "state=panic\nreason=webui\n", encoding="utf-8"
                 )
                 args = ["/bin/systemctl", "start", "vision-rotator.service"]
+            elif action == ["sync"]:
+                args = ["/bin/systemctl", "start", "vision-sync.service"]
             else:
                 return self.send_json({"ok": False, "error": "unknown action"}, status=400)
             code, out, err = run_cmd(args, timeout=3600)
@@ -1116,6 +1201,81 @@ class WebHandler(BaseHTTPRequestHandler):
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
             return self.send_json({"ok": True})
+
+    def handle_update(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_UPDATE_SIZE:
+            return self.send_json(
+                {"ok": False, "error": "update too large"},
+                status=413,
+            )
+        body = self.rfile.read(content_length)
+        staging = STATE_DIR / "update-staging"
+        if staging.exists():
+            import shutil
+
+            shutil.rmtree(staging)
+        staging.mkdir(parents=True, exist_ok=True)
+        archive = staging / "update.tar.gz"
+        archive.write_bytes(body)
+        code, out, err = run_cmd(["tar", "xzf", str(archive), "-C", str(staging)])
+        archive.unlink(missing_ok=True)
+        if code != 0:
+            return self.send_json({"ok": False, "error": f"extraction failed: {err}"}, status=400)
+        manifest = staging / "manifest.json"
+        if not manifest.exists():
+            return self.send_json({"ok": False, "error": "missing manifest.json"}, status=400)
+        install_sh = staging / "install.sh"
+        if not install_sh.exists():
+            return self.send_json({"ok": False, "error": "missing install.sh"}, status=400)
+        try:
+            meta = json.loads(manifest.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return self.send_json({"ok": False, "error": "invalid manifest.json"}, status=400)
+        version = meta.get("version", "unknown")
+        code, _, err = run_cmd(["/bin/systemctl", "start", "vision-update.service"])
+        if code != 0:
+            msg = err or "failed to start update"
+            return self.send_json({"ok": False, "error": msg}, status=500)
+        log(f"update {version} staged and applied")
+        return self.send_json({"ok": True, "version": version})
+
+    def handle_config_import(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        data = json.loads(body or "{}")
+        config_text = data.get("config", "")
+        if not config_text.strip():
+            return self.send_json({"ok": False, "error": "empty config"}, status=400)
+        parsed = parse_config_text(config_text)
+        if not parsed:
+            msg = "no valid config entries found"
+            return self.send_json({"ok": False, "error": msg}, status=400)
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        SHADOW_CONF.write_text(config_text, encoding="utf-8")
+        last_good = STATE_DIR / "vision-gw.conf.last-good"
+        last_good.write_text(config_text, encoding="utf-8")
+        log(f"config imported ({len(parsed)} keys)")
+        return self.send_json({"ok": True})
+
+    def handle_maintenance_mode(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        data = json.loads(body or "{}")
+        enabled = data.get("enabled", False)
+        timers = ["vision-sync.timer", "vision-monitor.timer", "vision-rotator.timer"]
+        with require_lock():
+            if enabled:
+                MAINT_MODE_FLAG.write_text("1", encoding="utf-8")
+                for t in timers:
+                    run_cmd(["/bin/systemctl", "stop", t])
+                log("maintenance mode enabled")
+            else:
+                MAINT_MODE_FLAG.unlink(missing_ok=True)
+                for t in timers:
+                    run_cmd(["/bin/systemctl", "start", t])
+                log("maintenance mode disabled")
+        return self.send_json({"ok": True, "enabled": enabled})
 
     def serve_static(self, name: str, content_type: str | None = None):
         path = (STATIC_DIR / name).resolve()
@@ -1188,12 +1348,38 @@ class WebHandler(BaseHTTPRequestHandler):
 """
 
 
+def sd_notify(msg: str) -> None:
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    if addr.startswith("@"):
+        addr = "\0" + addr[1:]
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock.sendto(msg.encode(), addr)
+        sock.close()
+    except OSError:
+        pass
+
+
+def _watchdog_thread(interval: float) -> None:
+    while True:
+        sd_notify("WATCHDOG=1")
+        time.sleep(interval)
+
+
 def main():
     cfg = parse_config(load_config_text())
     host = cfg.get("WEBUI_BIND", "0.0.0.0")
     port = int(cfg.get("WEBUI_PORT", "80"))
     server = HTTPServer((host, port), WebHandler)
     log(f"webui started on {host}:{port}")
+    sd_notify("READY=1")
+    watchdog_usec = os.environ.get("WATCHDOG_USEC")
+    if watchdog_usec:
+        interval = int(watchdog_usec) / 1_000_000 / 2
+        t = threading.Thread(target=_watchdog_thread, args=(interval,), daemon=True)
+        t.start()
     server.serve_forever()
 
 

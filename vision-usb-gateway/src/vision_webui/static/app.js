@@ -426,6 +426,7 @@ async function saveConfig(apply = false) {
   const payload = {
     NETBIOS_NAME: document.getElementById("NETBIOS_NAME").value,
     SMB_WORKGROUP: document.getElementById("SMB_WORKGROUP").value,
+    SMB_BIND_INTERFACE: document.getElementById("SMB_BIND_INTERFACE").value,
     SYNC_INTERVAL_SEC: document.getElementById("SYNC_INTERVAL_SEC").value,
     SYNC_HI_INTERVAL_SEC: document.getElementById("SYNC_HI_INTERVAL_SEC").value,
     SYNC_ONBOOT_SEC: document.getElementById("SYNC_ONBOOT_SEC").value,
@@ -438,6 +439,8 @@ async function saveConfig(apply = false) {
     NAS_ENABLED: document.getElementById("NAS_ENABLED").value,
     NAS_REMOTE: document.getElementById("NAS_REMOTE").value,
     NAS_MOUNT: document.getElementById("NAS_MOUNT").value,
+    WEBUI_BIND: document.getElementById("WEBUI_BIND").value,
+    WEBUI_PORT: document.getElementById("WEBUI_PORT").value,
     SWITCH_WINDOW_START: document.getElementById("SWITCH_WINDOW_START").value,
     SWITCH_WINDOW_END: document.getElementById("SWITCH_WINDOW_END").value,
     SWITCH_DELAY_SEC: document.getElementById("SWITCH_DELAY_SEC").value,
@@ -517,6 +520,7 @@ const MAINTENANCE_CONFIRMATIONS = {
   "restore-defaults": { title: "Restore Defaults", msg: "Configuration will be reset to factory defaults. Data is preserved.", text: "RESTORE DEFAULTS" },
   "clone-usb-format": { title: "Clone USB Format", msg: "USB LVs will be reformatted.", text: "CLONE USB FORMAT" },
   "rotate":           { title: "Rotate USB Now", msg: "The active USB LV will switch to the next one.", text: null },
+  "sync":             { title: "Sync Now", msg: "Trigger a manual sync cycle.", text: null },
 };
 
 async function maintenance(action) {
@@ -567,10 +571,123 @@ document.getElementById("rotate-usb").addEventListener("click",
   withLoading(document.getElementById("rotate-usb"), () => maintenance("rotate")));
 document.getElementById("shutdown").addEventListener("click",
   withLoading(document.getElementById("shutdown"), () => maintenance("shutdown")));
+document.getElementById("trigger-sync").addEventListener("click",
+  withLoading(document.getElementById("trigger-sync"), () => maintenance("sync")));
 document.getElementById("set-time").addEventListener("click",
   withLoading(document.getElementById("set-time"), setManualTime));
 document.getElementById("refresh-logs").addEventListener("click",
   withLoading(document.getElementById("refresh-logs"), refreshLogs));
+
+// Config export
+document.getElementById("export-config").addEventListener("click",
+  withLoading(document.getElementById("export-config"), async () => {
+    const res = await fetch("/api/config/export", {
+      headers: { "X-CSRF": getCookie("csrf") },
+    });
+    if (!res.ok) throw new Error("Export failed");
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "vision-gw.conf";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setStatus("Config exported");
+  }));
+
+// Config import
+document.getElementById("import-config").addEventListener("click", () => {
+  document.getElementById("import-config-file").click();
+});
+document.getElementById("import-config-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const ok = await showModal("Import Config", "This will overwrite the current shadow config.", null, false);
+  if (!ok) { e.target.value = ""; return; }
+  const text = await file.text();
+  await api("/api/config/import", { method: "POST", body: JSON.stringify({ config: text }) });
+  e.target.value = "";
+  setStatus("Config imported");
+  await loadConfig();
+});
+
+// Maintenance mode
+async function loadMaintenanceMode() {
+  try {
+    const data = await api("/api/maintenance-mode", { method: "GET" });
+    const btn = document.getElementById("toggle-maint-mode");
+    const banner = document.getElementById("maint-mode-banner");
+    if (data.enabled) {
+      btn.textContent = "Disable Maintenance Mode";
+      btn.classList.add("danger");
+      banner.classList.remove("hidden");
+    } else {
+      btn.textContent = "Enable Maintenance Mode";
+      btn.classList.remove("danger");
+      banner.classList.add("hidden");
+    }
+  } catch { /* ignore */ }
+}
+document.getElementById("toggle-maint-mode").addEventListener("click",
+  withLoading(document.getElementById("toggle-maint-mode"), async () => {
+    const data = await api("/api/maintenance-mode", { method: "GET" });
+    const enabling = !data.enabled;
+    if (enabling) {
+      const ok = await showModal("Enable Maintenance Mode", "Sync and rotation timers will be paused.", null, false);
+      if (!ok) return;
+    }
+    await api("/api/maintenance-mode", { method: "POST", body: JSON.stringify({ enabled: enabling }) });
+    setStatus(enabling ? "Maintenance mode enabled" : "Maintenance mode disabled");
+    await loadMaintenanceMode();
+  }));
+
+// Update system
+document.getElementById("upload-update").addEventListener("click", () => {
+  document.getElementById("update-file").click();
+});
+document.getElementById("update-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const ok = await showModal("Upload Update", `Apply update package "${file.name}"?`, null, false);
+  if (!ok) { e.target.value = ""; return; }
+  const btn = document.getElementById("upload-update");
+  btn.disabled = true;
+  try {
+    const buf = await file.arrayBuffer();
+    const csrf = getCookie("csrf");
+    const res = await fetch("/api/update", {
+      method: "POST",
+      headers: { "X-CSRF": csrf, "Content-Type": "application/octet-stream" },
+      body: buf,
+    });
+    const json = await res.json();
+    if (json.ok) {
+      setStatus(`Update ${json.version || ""} applied`);
+    } else {
+      setStatus("Error: " + (json.error || "update failed"));
+    }
+  } catch (err) {
+    setStatus("Error: " + err.message);
+  } finally {
+    btn.disabled = false;
+    e.target.value = "";
+    await loadUpdateHistory();
+  }
+});
+
+async function loadUpdateHistory() {
+  try {
+    const data = await api("/api/update/status", { method: "GET" });
+    const el = document.getElementById("update-history");
+    if (data.history && data.history.length > 0) {
+      const lines = data.history.slice(-5).reverse().map(h =>
+        `${h.ts || "?"}: v${h.version || "?"} - ${h.status || "?"}`
+      );
+      el.textContent = "Update history:\n" + lines.join("\n");
+    } else {
+      el.textContent = "No update history.";
+    }
+  } catch { /* ignore */ }
+}
 
 async function checkSessionExpiry() {
   try {
@@ -588,6 +705,75 @@ async function checkSessionExpiry() {
   } catch { /* handled by api() 401 redirect */ }
 }
 
+async function loadUsbHealth() {
+  try {
+    const data = await api("/api/usb-health", { method: "GET" });
+    const el = document.getElementById("status-usb-health");
+    if (data.error) {
+      el.textContent = `USB Health: ${data.error}`;
+      el.classList.remove("status-ok", "status-warn", "status-error");
+    } else if (data.lvs && data.lvs.length > 0) {
+      const lines = data.lvs.map(lv => {
+        const status = lv.status || "n/a";
+        return `${lv.lv}: fsck ${status}${lv.output ? " - " + lv.output : ""}`;
+      });
+      el.textContent = "USB LV Health:\n" + lines.join("\n");
+      el.classList.remove("status-ok", "status-warn", "status-error");
+      if (lines.some(l => l.includes("FAIL") || l.includes("error"))) {
+        el.classList.add("status-error");
+      } else {
+        el.classList.add("status-ok");
+      }
+    } else {
+      el.textContent = "USB Health: no data";
+    }
+  } catch { document.getElementById("status-usb-health").textContent = "USB Health: n/a"; }
+}
+
+async function loadNasStatus() {
+  try {
+    const data = await api("/api/nas-status", { method: "GET" });
+    const el = document.getElementById("status-nas");
+    if (data.status === "ok") {
+      el.textContent = `NAS: OK (last sync: ${data.last_success_ts || "n/a"})`;
+      el.classList.remove("status-warn", "status-error");
+      el.classList.add("status-ok");
+    } else if (data.status === "failed") {
+      el.textContent = `NAS: FAILED after ${data.attempts || "?"} attempts. ${data.last_error || ""}`;
+      el.classList.remove("status-ok", "status-warn");
+      el.classList.add("status-error");
+    } else {
+      el.textContent = `NAS: ${data.status || "unknown"}`;
+      el.classList.remove("status-ok", "status-warn", "status-error");
+    }
+  } catch { document.getElementById("status-nas").textContent = "NAS: n/a"; }
+}
+
+function displayTimeSyncStatus(timeData) {
+  const el = document.getElementById("status-time-sync");
+  if (!timeData || !timeData.ntp_enabled) {
+    el.textContent = "Time sync: n/a";
+    el.classList.remove("status-ok", "status-warn", "status-error");
+    return;
+  }
+  let line = "";
+  el.classList.remove("status-ok", "status-warn", "status-error");
+  if (timeData.ntp_synced === "yes") {
+    line = `NTP: synced | TZ: ${timeData.timezone || "n/a"}`;
+    el.classList.add("status-ok");
+  } else if (timeData.ntp_enabled === "yes") {
+    line = `NTP: enabled but not synced`;
+    if (timeData.rtc_enabled === "yes") line += ` | RTC fallback active (${timeData.rtc_device || "/dev/rtc0"})`;
+    el.classList.add("status-warn");
+  } else {
+    line = `NTP: disabled`;
+    if (timeData.rtc_enabled === "yes") line += ` | RTC active (${timeData.rtc_device || "/dev/rtc0"})`;
+    else line += " | no time sync source";
+    el.classList.add("status-warn");
+  }
+  el.textContent = line;
+}
+
 async function refreshStatus() {
   try {
     await loadStatus();
@@ -595,6 +781,7 @@ async function refreshStatus() {
     if (time && time.status) {
       document.getElementById("time-status").textContent = time.status;
     }
+    displayTimeSyncStatus(time);
     const health = await api("/api/health", { method: "GET" });
     const banner = document.getElementById("health-banner");
     if (health.status && health.status !== "ok") {
@@ -606,6 +793,10 @@ async function refreshStatus() {
       banner.textContent = "";
       banner.classList.add("hidden");
     }
+    await loadUsbHealth();
+    await loadNasStatus();
+    await loadMaintenanceMode();
+    await loadUpdateHistory();
     await checkSessionExpiry();
   } catch (err) {
     setStatus("Error: " + err.message);
