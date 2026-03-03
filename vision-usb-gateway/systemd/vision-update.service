@@ -6,4 +6,4 @@ After=vision-gw-config.service
 Type=oneshot
 Environment=GATEWAY_HOME=/opt/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
-ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/apply-update.sh
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/apply-update.sh apply

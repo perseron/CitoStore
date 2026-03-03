@@ -1219,8 +1219,8 @@ class WebHandler(BaseHTTPRequestHandler):
         archive = staging / "update.tar.gz"
         archive.write_bytes(body)
         code, out, err = run_cmd(["tar", "xzf", str(archive), "-C", str(staging)])
-        archive.unlink(missing_ok=True)
         if code != 0:
+            archive.unlink(missing_ok=True)
             return self.send_json({"ok": False, "error": f"extraction failed: {err}"}, status=400)
         manifest = staging / "manifest.json"
         if not manifest.exists():

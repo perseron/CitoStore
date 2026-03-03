@@ -1,0 +1,14 @@
+[Unit]
+Description=Vision Update Reapply (overlay mode)
+After=local-fs.target
+Before=vision-gw-config.service usb-gadget.service vision-sync.service vision-webui.service
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/apply-update.sh reapply
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

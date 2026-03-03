@@ -115,6 +115,7 @@ systemctl enable vision-snapshot-cleanup.timer
 systemctl enable vision-nvme-health.timer
 systemctl enable vision-log-cleanup.timer
 systemctl enable vision-persist-boot-log.service
+systemctl enable vision-update-reapply.service
 
 if [[ "${NAS_ENABLED:-false}" == "true" ]]; then
   systemctl enable mnt-nas.automount nas-sync.timer
