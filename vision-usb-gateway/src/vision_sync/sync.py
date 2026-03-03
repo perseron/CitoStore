@@ -571,7 +571,29 @@ def _process_file(
         log(f"sync progress: synced={counters['synced']} scanned={counters['scanned']}")
 
 
+def check_mirror_free_space(cfg) -> bool:
+    try:
+        usage = shutil.disk_usage(str(cfg.mirror_mount))
+        free_mb = usage.free // (1024 * 1024)
+        used_pct = int(usage.used * 100 / usage.total) if usage.total > 0 else 0
+        if free_mb < cfg.mirror_free_min_mb:
+            log(f"mirror free space low: {free_mb}MB < {cfg.mirror_free_min_mb}MB, skipping sync")
+            return False
+        if used_pct >= cfg.mirror_retention_trigger_pct:
+            threshold = cfg.mirror_retention_trigger_pct
+            log(f"mirror usage {used_pct}% >= {threshold}%, triggering retention")
+            subprocess.run(
+                ["/bin/systemctl", "start", "mirror-retention.service"],
+                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
+    except OSError as exc:
+        log(f"mirror free space check failed: {exc}")
+    return True
+
+
 def stable_and_copy(cfg, mount_root: Path, conn) -> None:
+    if not check_mirror_free_space(cfg):
+        return
     raw_dir = cfg.mirror_mount / "raw"
     bydate_dir = cfg.mirror_mount / "bydate"
     now = int(time.time())

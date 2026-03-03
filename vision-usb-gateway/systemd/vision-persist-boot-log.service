@@ -1,0 +1,12 @@
+[Unit]
+Description=Vision Boot Log Persistence
+After=vision-gw-health.service local-fs.target
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/persist-boot-log.sh
+
+[Install]
+WantedBy=multi-user.target
