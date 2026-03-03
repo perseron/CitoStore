@@ -133,3 +133,70 @@ pre.status-warn {
 pre.status-error {
   color: #fca5a5;
 }
+/* Loading spinner */
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+button .spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+/* Modal overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-overlay.hidden { display: none; }
+.modal {
+  background: #fff;
+  padding: 24px;
+  border-radius: 8px;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+}
+.modal h3 { margin: 0 0 8px 0; color: #b91c1c; }
+.modal p { margin: 0 0 8px 0; color: #374151; }
+.modal-actions { margin-top: 16px; display: flex; gap: 8px; justify-content: flex-end; }
+.modal-btn { padding: 8px 16px; border: 1px solid #cbd5e1; border-radius: 4px; background: #fff; color: #222; cursor: pointer; font-size: 14px; }
+.modal-btn.danger { background: #b91c1c; color: #fff; border-color: #b91c1c; }
+.modal-btn.danger:disabled { opacity: 0.5; cursor: not-allowed; }
+#modal-input { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 4px; margin-top: 8px; box-sizing: border-box; }
+/* Focus styles */
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+/* Responsive */
+@media (max-width: 600px) {
+  header { padding: 12px 16px; }
+  main { padding: 12px 16px; }
+  .grid { grid-template-columns: 1fr; }
+  label { font-size: 14px; }
+  .hint { font-size: 12px; }
+  .actions { flex-wrap: wrap; }
+  button { flex: 1 1 auto; min-width: 120px; }
+  pre { font-size: 11px; word-break: break-all; }
+  .logo { font-size: 18px; }
+  .modal { width: 95%; padding: 16px; }
+}
+@media (max-width: 380px) {
+  .actions { flex-direction: column; }
+  button { width: 100%; }
+}

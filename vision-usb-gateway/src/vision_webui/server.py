@@ -860,12 +860,22 @@ class WebHandler(BaseHTTPRequestHandler):
             iface = cfg.get("SMB_BIND_INTERFACE", "eth0")
             return self.send_json(get_network_config(iface))
         if self.path.startswith("/api/me"):
-            return self.send_json({"ok": True})
+            token = get_cookie(self.headers, "session")
+            expiry = None
+            if token:
+                try:
+                    raw = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
+                    _user, exp_str, _nonce, _sig = raw.split("|", 3)
+                    expiry = int(exp_str)
+                except Exception:
+                    pass
+            return self.send_json({"ok": True, "session_expires": expiry})
         if self.path.startswith("/api/time"):
             code, out, err = run_cmd(["/usr/bin/timedatectl", "status"])
             if code != 0:
                 return self.send_json({"status": err or "failed to read time"}, status=500)
-            return self.send_json({"status": out})
+            server_time = time.strftime("%Y-%m-%d %H:%M:%S")
+            return self.send_json({"status": out, "server_time": server_time})
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self):
