@@ -52,10 +52,17 @@ def save_dir_index(path: Path, state: dict) -> None:
         return
 
 
-def scan_dirs_at_depth(root: Path, depth: int) -> list[tuple[str, int]]:
-    items: list[tuple[str, int]] = []
+def scan_dirs_by_depth(root: Path, depth: int) -> tuple[list[tuple[str, int]], list[str]]:
+    """Split the directories exactly at `depth` from those above it.
+
+    Returns (dirs_at_depth, dirs_above_depth). The first list drives recursive
+    hot/cold scanning; the second must still be scanned non-recursively so files
+    parked at an intermediate level are never missed when SYNC_SCAN_DEPTH>1.
+    """
+    at_depth: list[tuple[str, int]] = []
+    above: list[str] = []
     if depth <= 0:
-        return items
+        return at_depth, above
     try:
         for dirpath, dirnames, _ in os.walk(root, topdown=True):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
@@ -68,16 +75,23 @@ def scan_dirs_at_depth(root: Path, depth: int) -> list[tuple[str, int]]:
                         st = current.stat()
                     except FileNotFoundError:
                         continue
-                    items.append((rel.as_posix(), int(st.st_mtime)))
+                    at_depth.append((rel.as_posix(), int(st.st_mtime)))
                 dirnames[:] = []
                 continue
             if rel_depth > depth:
                 dirnames[:] = []
                 continue
+            if rel_depth > 0:
+                above.append(rel.as_posix())
     except FileNotFoundError:
-        return []
-    items.sort(key=lambda x: (x[1], x[0]), reverse=True)
-    return items
+        return [], []
+    at_depth.sort(key=lambda x: (x[1], x[0]), reverse=True)
+    above.sort()
+    return at_depth, above
+
+
+def scan_dirs_at_depth(root: Path, depth: int) -> list[tuple[str, int]]:
+    return scan_dirs_by_depth(root, depth)[0]
 
 
 def iter_root_files(root: Path) -> Iterator[tuple[Path, os.stat_result]]:
@@ -99,10 +113,10 @@ def iter_root_files(root: Path) -> Iterator[tuple[Path, os.stat_result]]:
 
 def select_scan_roots(cfg, mount_root: Path) -> tuple[list[Path], dict]:
     scan_depth = max(1, int(getattr(cfg, "sync_scan_depth", 1)))
-    dirs = scan_dirs_at_depth(mount_root, scan_depth)
+    dirs, shallow = scan_dirs_by_depth(mount_root, scan_depth)
     if not dirs and scan_depth > 1:
         # Safety fallback for shallower layouts.
-        dirs = scan_dirs_at_depth(mount_root, 1)
+        dirs, shallow = scan_dirs_by_depth(mount_root, 1)
         scan_depth = 1
     dir_names = [name for name, _ in dirs]
     hot_n = max(0, int(getattr(cfg, "sync_hot_dirs", 1)))
@@ -140,6 +154,7 @@ def select_scan_roots(cfg, mount_root: Path) -> tuple[list[Path], dict]:
         "hot": hot_names,
         "audit": audit_names,
         "selected": selected_names,
+        "shallow": shallow,
     }
     return roots, plan
 
@@ -618,10 +633,15 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
             f" top_dirs={scan_plan['top_dirs']} root-files-only"
         )
 
+    # Files parked above SYNC_SCAN_DEPTH (snapshot root included) never appear
+    # under a selected root, so scan those levels non-recursively every run.
+    shallow_roots = [mount_root] + [mount_root / name for name in scan_plan["shallow"]]
+
     try:
-        # Always include files directly in root (non-recursive).
-        for path, st in iter_root_files(mount_root):
-            _process_file(path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now, counters)
+        # Every level from the root down to SYNC_SCAN_DEPTH, non-recursive.
+        for shallow in shallow_roots:
+            for path, st in iter_root_files(shallow):
+                _process_file(path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now, counters)
 
         for root in selected_roots:
             if not root.exists():
