@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Per-unit first-boot personalisation for cloned units. Invoked once by
+# vision-firstboot.service, before the read-only overlay is active. It:
+#   - regenerates machine-id, SSH host keys, and a unique hostname
+#   - initialises this unit's own (empty) NVMe if needed
+#   - seeds .state with the shared WebUI password and a FRESH session secret
+#   - optionally re-enables the read-only overlay, then reboots
+# It writes /etc/citostore-firstboot-done and disables itself so it never
+# runs twice.
+
+# shellcheck source=/dev/null
+source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
+
+require_root
+
+DONE_FLAG=/etc/citostore-firstboot-done
+SEED_DIR=/etc/citostore-seed
+STATE_DIR=/srv/vision_mirror/.state
+
+if [[ -f "$DONE_FLAG" ]]; then
+  log "first-boot already done; nothing to do"
+  exit 0
+fi
+
+load_config
+GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
+: "${LVM_VG:=vg0}"
+: "${MIRROR_LV:=mirror}"
+
+# 1) Unique machine-id (systemd regenerates from the emptied file, but ensure).
+log "regenerating machine-id"
+rm -f /etc/machine-id /var/lib/dbus/machine-id
+systemd-machine-id-setup >/dev/null 2>&1 || true
+if command -v dbus-uuidgen >/dev/null 2>&1; then
+  dbus-uuidgen --ensure >/dev/null 2>&1 || true
+fi
+
+# 2) Fresh SSH host keys.
+log "regenerating SSH host keys"
+ssh-keygen -A >/dev/null 2>&1 || true
+systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+
+# 3) Unique hostname derived from the CM5 serial.
+suffix=$(awk '/Serial/ { s=$3 } END { if (s) print substr(s, length(s)-5) }' /proc/cpuinfo 2>/dev/null || true)
+[[ -z "$suffix" ]] && suffix=$(head -c3 /dev/urandom | od -An -tx1 | tr -d ' \n')
+newhost="citostore-$suffix"
+log "setting hostname $newhost"
+hostnamectl set-hostname "$newhost" 2>/dev/null || echo "$newhost" > /etc/hostname
+if grep -q "127.0.1.1" /etc/hosts; then
+  sed -i "s/^127.0.1.1.*/127.0.1.1\t$newhost/" /etc/hosts
+else
+  echo -e "127.0.1.1\t$newhost" >> /etc/hosts
+fi
+
+# 4) Initialise this unit's own empty NVMe if the mirror LV is absent.
+if ! lvdisplay "$LVM_VG/$MIRROR_LV" >/dev/null 2>&1; then
+  log "initialising empty NVMe (LVM)"
+  "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
+fi
+mountpoint -q /srv/vision_mirror || mount /srv/vision_mirror 2>/dev/null || mount -a || true
+safe_mkdir "$STATE_DIR"
+
+# 5) Seed the shared WebUI password (from the eMMC), generate a fresh secret.
+if [[ ! -f "$STATE_DIR/webui.passwd" && -f "$SEED_DIR/webui.passwd" ]]; then
+  cp "$SEED_DIR/webui.passwd" "$STATE_DIR/webui.passwd"
+  chmod 0600 "$STATE_DIR/webui.passwd"
+  log "seeded shared WebUI password"
+fi
+head -c 32 /dev/urandom > "$STATE_DIR/webui.secret"
+chmod 0600 "$STATE_DIR/webui.secret"
+log "generated fresh WebUI session secret"
+
+# 6) Apply config + start the stack.
+"$GATEWAY_HOME/scripts/apply-shadow-config.sh" 2>/dev/null || true
+systemctl start usb-gadget.service 2>/dev/null || true
+systemctl start vision-sync.timer 2>/dev/null || true
+
+# 7) Mark done BEFORE any overlay flip, so the flag lands on the real disk.
+touch "$DONE_FLAG"
+systemctl disable vision-firstboot.service 2>/dev/null || true
+log "first-boot personalisation complete: $newhost"
+
+# 8) Optionally re-enable the read-only overlay for the fleet, then reboot.
+if [[ -f "$SEED_DIR/enable-overlay" ]]; then
+  log "enabling read-only overlay and rebooting"
+  "$GATEWAY_HOME/install/20_enable_readonly_overlay.sh" || true
+  systemctl reboot
+fi

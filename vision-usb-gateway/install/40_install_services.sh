@@ -117,6 +117,10 @@ systemctl enable vision-log-cleanup.timer
 systemctl enable vision-persist-boot-log.service
 systemctl enable vision-update-reapply.service
 
+# vision-firstboot.service is installed but only enabled by
+# prepare-golden-image.sh (it must run on clones, not on a normal install).
+systemctl disable vision-firstboot.service >/dev/null 2>&1 || true
+
 if [[ "${NAS_ENABLED:-false}" == "true" ]]; then
   systemctl enable mnt-nas.automount nas-sync.timer
 fi
