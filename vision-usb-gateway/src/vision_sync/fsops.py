@@ -4,9 +4,6 @@ import time
 from pathlib import Path
 from typing import Iterator, Tuple
 
-import hashlib
-
-
 SKIP_DIRS = {"System Volume Information", "$RECYCLE.BIN"}
 
 

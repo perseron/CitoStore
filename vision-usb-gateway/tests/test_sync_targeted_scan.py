@@ -2,7 +2,8 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
-from vision_sync.sync import select_scan_roots
+from vision_sync.db import init_db
+from vision_sync.sync import select_scan_roots, stable_and_copy
 
 
 def _touch_dir(path: Path, ts: int) -> None:
@@ -57,3 +58,86 @@ def test_select_scan_roots_uses_depth_and_skips_system_dirs(tmp_path: Path):
         (root / "cv-x/image/SD1_000/session_new").as_posix(),
         (root / "cv-x/image/SD1_000/session_old").as_posix(),
     ]
+    # Every level above SYNC_SCAN_DEPTH must still be scanned non-recursively.
+    assert plan["shallow"] == ["cv-x", "cv-x/image", "cv-x/image/SD1_000"]
+
+
+def _sync_cfg(mirror: Path, tmp_path: Path, depth: int) -> SimpleNamespace:
+    return SimpleNamespace(
+        mirror_mount=mirror,
+        state_dir=mirror / ".state",
+        max_file_size=4 * 1024**3,
+        stable_scans=1,
+        copy_chunk=1 << 20,
+        append_always=False,
+        bydate_use_file_time=False,
+        sync_log_every=0,
+        sync_scan_depth=depth,
+        sync_hot_dirs=8,
+        sync_cold_audit_dirs_per_run=8,
+        sync_dir_index_file=tmp_path / "idx.json",
+    )
+
+
+def test_files_above_scan_depth_are_not_skipped(tmp_path: Path):
+    """Regression: with SYNC_SCAN_DEPTH>1 intermediate files were silently lost."""
+    root = tmp_path / "snap"
+    session = root / "cv-x" / "image" / "SD1_000" / "session_new"
+    session.mkdir(parents=True)
+
+    (root / "rootfile.jpg").write_bytes(b"a")
+    (root / "cv-x" / "top.jpg").write_bytes(b"b")
+    (root / "cv-x" / "image" / "SD1_000" / "mid.jpg").write_bytes(b"c")
+    (session / "deep.jpg").write_bytes(b"d")
+
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    try:
+        stable_and_copy(_sync_cfg(mirror, tmp_path, depth=4), root, conn)
+        rows = conn.execute("SELECT source_path FROM synced_files").fetchall()
+    finally:
+        conn.close()
+
+    got = sorted(Path(r[0]).as_posix() for r in rows)
+    assert got == [
+        "cv-x/image/SD1_000/mid.jpg",
+        "cv-x/image/SD1_000/session_new/deep.jpg",
+        "cv-x/top.jpg",
+        "rootfile.jpg",
+    ]
+
+
+def test_depth_one_still_covers_whole_tree(tmp_path: Path):
+    root = tmp_path / "snap"
+    (root / "a" / "b").mkdir(parents=True)
+    (root / "top.jpg").write_bytes(b"a")
+    (root / "a" / "one.jpg").write_bytes(b"b")
+    (root / "a" / "b" / "two.jpg").write_bytes(b"c")
+
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    try:
+        stable_and_copy(_sync_cfg(mirror, tmp_path, depth=1), root, conn)
+        rows = conn.execute("SELECT source_path FROM synced_files").fetchall()
+    finally:
+        conn.close()
+
+    assert len(rows) == 3
+
+
+def test_sync_is_idempotent_across_runs(tmp_path: Path):
+    root = tmp_path / "snap"
+    root.mkdir()
+    (root / "top.jpg").write_bytes(b"a")
+
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    cfg = _sync_cfg(mirror, tmp_path, depth=1)
+    try:
+        stable_and_copy(cfg, root, conn)
+        stable_and_copy(cfg, root, conn)
+        count = conn.execute("SELECT COUNT(*) FROM synced_files").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert count == 1

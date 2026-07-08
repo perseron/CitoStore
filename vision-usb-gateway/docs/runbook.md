@@ -128,7 +128,7 @@ Operational flow (detailed, step-by-step)
    - `vision-sync` creates a thin snapshot (`SYNC_SNAPSHOT_NAME`) of the active LV.
    - Mounts the snapshot read-only at `SYNC_MOUNT`.
    - Scans files using a targeted strategy:
-     - files directly under snapshot root are scanned every run
+     - files at every level from the snapshot root down to `SYNC_SCAN_DEPTH` are scanned non-recursively every run (nothing parked at an intermediate level is missed)
      - newest `SYNC_HOT_DIRS` folders at depth `SYNC_SCAN_DEPTH` are scanned recursively every run
      - plus `SYNC_COLD_AUDIT_DIRS_PER_RUN` older folders at that depth (round-robin) each run
    - This keeps scan cost bounded while still covering the full tree over time.

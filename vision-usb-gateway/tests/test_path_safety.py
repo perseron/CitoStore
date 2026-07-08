@@ -1,4 +1,5 @@
 from pathlib import Path
+
 import pytest
 
 from vision_sync.fsops import safe_join
