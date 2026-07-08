@@ -131,6 +131,26 @@ def test_depth_one_still_covers_whole_tree(tmp_path: Path):
     assert count == 3
 
 
+def test_offline_force_stable_copies_on_first_pass(tmp_path: Path):
+    """offline-maint runs force_stable=True so files written just before a
+    rotation are captured in the single offline pass instead of being wiped."""
+    root = tmp_path / "snap"
+    root.mkdir()
+    (root / "fresh.jpg").write_bytes(b"x")
+
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    cfg = _sync_cfg(mirror, tmp_path, depth=1)
+    cfg.stable_scans = 2  # normal path needs two stable scans
+    try:
+        stable_and_copy(cfg, root, conn)  # one normal pass: not yet stable
+        assert conn.execute("SELECT COUNT(*) FROM synced_files").fetchone()[0] == 0
+        stable_and_copy(cfg, root, conn, force_stable=True)  # offline: copy now
+        assert conn.execute("SELECT COUNT(*) FROM synced_files").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
 def test_sync_is_idempotent_across_runs(tmp_path: Path):
     root = tmp_path / "snap"
     root.mkdir()

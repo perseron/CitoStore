@@ -17,6 +17,10 @@ fi
 : "${RETENTION_LO:=85}"
 : "${DB_MAINT_INTERVAL_SEC:=86400}"
 : "${FILE_STATE_PRUNE_DAYS:=30}"
+# Keep the synced_files identity row this long after its mirror copy is
+# reclaimed, so a file still on the active USB LV is not re-copied (NVMe churn).
+# Must exceed the worst-case USB LV residency; prune only bounds the DB.
+: "${RETENTION_ROW_TTL_DAYS:=90}"
 
 usage=$(df -P "$MIRROR_MOUNT" | awk 'NR==2 {print int($5)}' | tr -d '%')
 if [[ $usage -lt $RETENTION_HI ]]; then
@@ -24,6 +28,7 @@ if [[ $usage -lt $RETENTION_HI ]]; then
 fi
 
 export MIRROR_MOUNT RETENTION_HI RETENTION_LO DRY_RUN DB_MAINT_INTERVAL_SEC FILE_STATE_PRUNE_DAYS
+export RETENTION_ROW_TTL_DAYS
 
 python3 - <<'PY'
 import os
@@ -37,6 +42,7 @@ ret_lo = int(os.environ.get("RETENTION_LO", "85"))
 dry = os.environ.get("DRY_RUN", "false") == "true"
 db_maint_interval = int(os.environ.get("DB_MAINT_INTERVAL_SEC", "86400"))
 file_state_prune_days = int(os.environ.get("FILE_STATE_PRUNE_DAYS", "30"))
+row_ttl_days = int(os.environ.get("RETENTION_ROW_TTL_DAYS", "90"))
 now = int(__import__("time").time())
 
 state_db = Path(mirror) / ".state" / "vision.db"
@@ -126,30 +132,27 @@ conn = sqlite3.connect(str(state_db))
 conn.row_factory = sqlite3.Row
 
 if not dry:
-    # Remove rows where both paths are already gone.
-    cur = conn.execute("SELECT id, raw_path, bydate_path FROM synced_files")
-    stale_ids = []
-    for row in cur.fetchall():
-        raw = Path(row["raw_path"]) if row["raw_path"] else None
-        bydate = Path(row["bydate_path"]) if row["bydate_path"] else None
-        raw_exists = bool(raw and raw.exists())
-        bydate_exists = bool(bydate and bydate.exists())
-        if not raw_exists and not bydate_exists:
-            stale_ids.append(row["id"])
-    if stale_ids:
-        conn.executemany("DELETE FROM synced_files WHERE id=?", [(i,) for i in stale_ids])
-        conn.commit()
+    # Prune synced_files rows by age (bounds the DB). Rows are intentionally
+    # kept even after their mirror copy is reclaimed below, so a file still on
+    # the active USB LV is not re-copied (is_already_synced stays true). A row
+    # older than the TTL has surely rotated away, so dropping it is safe.
+    row_ttl = max(1, row_ttl_days) * 86400
+    conn.execute("DELETE FROM synced_files WHERE synced_at < ?", (now - row_ttl,))
+    conn.commit()
 
     # Prune old file_state entries to keep DB bounded.
     ttl = max(1, file_state_prune_days) * 86400
-    cutoff = now - ttl
-    conn.execute("DELETE FROM file_state WHERE last_seen < ?", (cutoff,))
+    conn.execute("DELETE FROM file_state WHERE last_seen < ?", (now - ttl,))
     conn.commit()
 
 progress_failures = 0
 while usage_pct() >= ret_hi:
     before = usage_pct()
-    cur = conn.execute("SELECT id, raw_path, bydate_path FROM synced_files ORDER BY synced_at ASC LIMIT 1")
+    cur = conn.execute(
+        "SELECT id, raw_path, bydate_path FROM synced_files "
+        "WHERE raw_path != '' OR bydate_path != '' "
+        "ORDER BY synced_at ASC LIMIT 1"
+    )
     row = cur.fetchone()
     if row is None:
         if not file_fallback_delete_one():
@@ -172,7 +175,13 @@ while usage_pct() >= ret_hi:
                 p.unlink(missing_ok=True)
             except OSError:
                 pass
-        conn.execute("DELETE FROM synced_files WHERE id=?", (row["id"],))
+        # Keep the identity row (blank its paths) so the same file still on the
+        # active USB LV is not re-synced back into the mirror; age-prune clears
+        # it later. This is what stops the retention<->sync re-copy churn.
+        conn.execute(
+            "UPDATE synced_files SET raw_path='', bydate_path='' WHERE id=?",
+            (row["id"],),
+        )
         conn.commit()
         if bydate is not None:
             remove_empty_ancestors(bydate, Path(mirror) / "bydate")

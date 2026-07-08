@@ -532,6 +532,7 @@ def _process_file(
     bydate_dir: Path,
     now: int,
     counters: dict,
+    force_stable: bool = False,
 ) -> None:
     counters["scanned"] += 1
     rel = path.relative_to(mount_root)
@@ -541,8 +542,11 @@ def _process_file(
         counters["skipped_large"] += 1
         return
 
+    # Offline processing of a detached LV (offline-maint before wipe): the host
+    # is no longer writing, so every file is final. Bypass the stability gate so
+    # files written just before rotation are captured instead of being wiped.
     stable = update_state(conn, str(rel), size, mtime, now)
-    if stable < cfg.stable_scans:
+    if not force_stable and stable < cfg.stable_scans:
         return
 
     if is_already_synced(conn, str(rel), size, mtime):
@@ -606,7 +610,7 @@ def check_mirror_free_space(cfg) -> bool:
     return True
 
 
-def stable_and_copy(cfg, mount_root: Path, conn) -> None:
+def stable_and_copy(cfg, mount_root: Path, conn, force_stable: bool = False) -> None:
     if not check_mirror_free_space(cfg):
         return
     raw_dir = cfg.mirror_mount / "raw"
@@ -641,13 +645,19 @@ def stable_and_copy(cfg, mount_root: Path, conn) -> None:
         # Every level from the root down to SYNC_SCAN_DEPTH, non-recursive.
         for shallow in shallow_roots:
             for path, st in iter_root_files(shallow):
-                _process_file(path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now, counters)
+                _process_file(
+                    path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now,
+                    counters, force_stable,
+                )
 
         for root in selected_roots:
             if not root.exists():
                 continue
             for path, st in iter_files(root):
-                _process_file(path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now, counters)
+                _process_file(
+                    path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now,
+                    counters, force_stable,
+                )
         conn.commit()
     except Exception:
         conn.rollback()
@@ -671,7 +681,9 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
         mount_ro(dev, cfg.snapshot_mount, active_offset)
         try:
             record_snapshot_usage(cfg.snapshot_mount, dev)
-            stable_and_copy(cfg, cfg.snapshot_mount, conn)
+            # Detached LV (offline-maint before wipe): copy every file, no
+            # stability gate, so nothing written just before rotation is lost.
+            stable_and_copy(cfg, cfg.snapshot_mount, conn, force_stable=True)
         finally:
             umount(cfg.snapshot_mount)
         return

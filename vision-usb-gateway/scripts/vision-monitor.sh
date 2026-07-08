@@ -17,6 +17,9 @@ load_config "${CONF_FILE:-}"
 : "${FAST_SYNC_MIN_ON_SCANS:=3}"
 : "${FAST_SYNC_COOLDOWN_SCANS:=2}"
 : "${FAST_SYNC_EXIT_DELTA:=5}"
+# Discard the sync-written USB usage reading if older than this (sync stalled);
+# fall back to live lvs data_percent so rotation still triggers.
+: "${USB_USAGE_STALE_SEC:=180}"
 
 ACTIVE_FILE=/run/vision-usb-active
 STATE_FILE=/run/vision-rotate.state
@@ -42,16 +45,26 @@ to_int_percent() {
 cached_usage_percent() {
   local active="$1"
   [[ -f "$USB_USAGE_FILE" ]] || { echo ""; return; }
-  python3 - "$USB_USAGE_FILE" "$active" <<'PY'
+  python3 - "$USB_USAGE_FILE" "$active" "$USB_USAGE_STALE_SEC" <<'PY'
 import json
+import os
 import sys
+import time
 from pathlib import Path
 
 path = Path(sys.argv[1])
 active = sys.argv[2]
+stale = int(sys.argv[3])
 try:
+    age = time.time() - os.path.getmtime(path)
     payload = json.loads(path.read_text(encoding="utf-8"))
 except Exception:
+    print("")
+    raise SystemExit(0)
+# If sync stopped refreshing this file (e.g. sync is failing) the reading is
+# frozen and would hide a filling LV. Discard it so the caller falls back to
+# the live lvs data_percent and rotation still triggers.
+if age > stale:
     print("")
     raise SystemExit(0)
 if payload.get("lv") != active:
