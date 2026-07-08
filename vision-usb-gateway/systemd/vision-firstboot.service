@@ -1,0 +1,17 @@
+[Unit]
+Description=CitoStore first-boot personalisation (cloned units)
+# Run once on a freshly imaged clone, before the vision stack and before the
+# read-only overlay is (re-)enabled. Self-disables via the done flag.
+ConditionPathExists=!/etc/citostore-firstboot-done
+After=local-fs.target network-pre.target
+Before=vision-gw-config.service usb-gadget.service vision-sync.timer smbd.service
+DefaultDependencies=yes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash -c '"${GATEWAY_HOME:-/opt/vision-usb-gateway}"/scripts/firstboot-personalize.sh'
+
+[Install]
+WantedBy=multi-user.target
