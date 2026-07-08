@@ -82,4 +82,19 @@ for lv in "${USB_LVS[@]}"; do
   fi
 done
 
+# The snapshot-based sync (lvcreate -s) needs dm_snapshot; thin volumes need
+# dm_thin_pool. Ensure both load at boot so vision-sync.service (which runs
+# sandboxed and cannot modprobe) can create snapshots.
+cat > /etc/modules-load.d/vision-dm.conf <<'EOF'
+dm_snapshot
+dm_thin_pool
+EOF
+
+# vision-sync.service runs with ProtectSystem=strict (and root is read-only in
+# overlay mode), so LVM cannot write metadata backups/archives under /etc/lvm.
+# Disable them; the layout is static and does not need metadata history.
+if [[ -f /etc/lvm/lvm.conf ]]; then
+  sed -i 's/^\(\s*\)#\? *backup = 1/\1backup = 0/; s/^\(\s*\)#\? *archive = 1/\1archive = 0/' /etc/lvm/lvm.conf
+fi
+
 log "NVMe LVM setup complete"
