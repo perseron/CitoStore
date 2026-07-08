@@ -246,6 +246,13 @@ write_health() {
     [[ "$health_status" == "ok" ]] && health_status="warn"
     issues+=("Thinpool metadata high (${meta}%)")
   fi
+  # A failed sync cycle ($SERVICE_RESULT is set by systemd for ExecStopPost)
+  # must surface as an error; otherwise a broken sync leaves stale "ok" health
+  # while the device has silently stopped backing up.
+  if [[ -n "${SERVICE_RESULT:-}" && "${SERVICE_RESULT}" != "success" ]]; then
+    health_status="error"
+    issues+=("sync cycle failed: ${SERVICE_RESULT}")
+  fi
   local out="$1"
   {
     echo '{'

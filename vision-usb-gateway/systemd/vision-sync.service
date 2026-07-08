@@ -8,8 +8,12 @@ Type=oneshot
 Environment=GATEWAY_HOME=/opt/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/usr/bin/python3 -m vision_sync.sync --config /etc/vision-gw.conf
-ExecStartPost=-/bin/bash ${GATEWAY_HOME}/scripts/vision-monitor.sh
-ExecStartPost=-/bin/bash ${GATEWAY_HOME}/scripts/vision-rotator.sh
+# ExecStopPost (not ExecStartPost) so the saturation monitor and rotator run
+# after EVERY sync cycle, including failed ones. Otherwise a broken sync would
+# silently disable rotation and let the active USB LV fill up. systemd exposes
+# $SERVICE_RESULT here so the monitor can surface the sync failure in health.
+ExecStopPost=-/bin/bash ${GATEWAY_HOME}/scripts/vision-monitor.sh
+ExecStopPost=-/bin/bash ${GATEWAY_HOME}/scripts/vision-rotator.sh
 ProtectSystem=strict
 PrivateTmp=true
 ReadWritePaths=/srv/vision_mirror /run /mnt
