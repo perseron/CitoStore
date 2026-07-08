@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import base64
-import fcntl
 import hashlib
 import hmac
 import ipaddress
@@ -158,12 +157,25 @@ def render_nas_creds(creds: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+# /etc/vision-gw.conf is `source`d by root shell scripts (scripts/common.sh),
+# so any value we write there is shell code. No WebUI-writable key legitimately
+# needs a character outside this set.
+SAFE_VALUE_CHARS = set(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" "._:/@+-"
+)
+MAX_VALUE_LEN = 255
+
+
+def is_safe_value(value: str) -> bool:
+    return len(value) <= MAX_VALUE_LEN and all(c in SAFE_VALUE_CHARS for c in value)
+
+
 def format_value(value: str) -> str:
     if value == "":
         return '""'
-    if any(c.isspace() for c in value) or '"' in value or "#" in value:
-        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-        return f'"{escaped}"'
+    if not is_safe_value(value):
+        # Defense in depth: validate_config_updates must have rejected this.
+        raise ValueError("unsafe config value")
     return value
 
 
@@ -262,6 +274,8 @@ def get_cookie(headers, name: str) -> str | None:
 
 @contextmanager
 def require_lock():
+    import fcntl
+
     LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     f = LOCK_FILE.open("w")
     try:
@@ -648,6 +662,22 @@ def apply_network_config(
 
 
 def validate_config_updates(updates: dict) -> tuple[bool, str]:
+    for key, value in updates.items():
+        if not is_safe_value(value):
+            return False, f"{key} contains unsafe characters"
+    if "NAS_REMOTE" in updates:
+        remote = updates["NAS_REMOTE"]
+        if remote and not remote.startswith("//"):
+            return False, "NAS_REMOTE must look like //server/share"
+    for key in ("NAS_MOUNT", "NAS_REMOTE"):
+        if key in updates and ".." in updates[key]:
+            return False, f"{key} must not contain '..'"
+    if "NAS_MOUNT" in updates and not updates["NAS_MOUNT"].startswith("/"):
+        return False, "NAS_MOUNT must be an absolute path"
+    if "USB_LV_SIZE" in updates:
+        size = updates["USB_LV_SIZE"]
+        if not size or not size[:-1].isdigit() or size[-1] not in "KMGTkmgt":
+            return False, "USB_LV_SIZE must look like 100G"
     if "NETBIOS_NAME" in updates:
         name = updates["NETBIOS_NAME"]
         if not name or len(name) > 15 or not name.replace("-", "").replace("_", "").isalnum():
@@ -709,6 +739,11 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
         except ValueError:
             return False, "SWITCH_DELAY_SEC must be a number"
     return True, ""
+
+
+def setup_allowed() -> bool:
+    """First-run setup is only reachable until a password exists."""
+    return not PASS_FILE.exists()
 
 
 LOGIN_RATE_LIMIT = 5  # max attempts per window
@@ -773,11 +808,13 @@ class WebHandler(BaseHTTPRequestHandler):
         )
 
     def do_GET(self):
-        if PASS_FILE.exists() is False and self.path not in ("/setup", "/setup/"):
+        if setup_allowed() and self.path not in ("/setup", "/setup/"):
             return self.redirect("/setup")
         if self.path in ("/login", "/login/"):
             return self.send_text(self.render_login())
         if self.path in ("/setup", "/setup/"):
+            if not setup_allowed():
+                return self.redirect("/login")
             return self.send_text(self.render_setup())
         if self.path.startswith("/static/"):
             return self.serve_static(self.path[len("/static/") :])
@@ -947,11 +984,15 @@ class WebHandler(BaseHTTPRequestHandler):
         if content_length > max_size:
             self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body too large")
             return
-        if PASS_FILE.exists() is False and self.path not in ("/setup", "/setup/"):
+        if setup_allowed() and self.path not in ("/setup", "/setup/"):
             return self.redirect("/setup")
         if self.path in ("/login", "/login/"):
             return self.handle_login()
         if self.path in ("/setup", "/setup/"):
+            if not setup_allowed():
+                # Never allow an unauthenticated password reset once configured.
+                log("rejected /setup POST: password already configured")
+                return self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return self.handle_setup()
         if not self.is_authenticated():
             return self.send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
@@ -1025,6 +1066,8 @@ class WebHandler(BaseHTTPRequestHandler):
             self.send_text(self.render_login("Invalid password"), status=401)
 
     def handle_setup(self):
+        if not setup_allowed():
+            return self.send_error(HTTPStatus.NOT_FOUND, "Not found")
         length = int(self.headers.get("Content-Length", 0))
         if length == 0:
             return self.send_text(self.render_setup())

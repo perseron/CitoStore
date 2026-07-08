@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 # Ensure the webui module can be imported even without its runtime dependencies
 # by making vision_sync available via PYTHONPATH.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
@@ -173,10 +175,17 @@ def test_update_config_file_preserves_comments():
     assert "# important comment" in result
 
 
-def test_update_config_file_quotes_spaces():
+def test_update_config_file_round_trip_safe_value():
     base = "KEY=old\n"
-    result = update_config_file(base, {"KEY": "hello world"})
-    assert 'KEY="hello world"' in result
+    result = update_config_file(base, {"KEY": "100G"})
+    assert "KEY=100G" in result
+
+
+def test_update_config_file_rejects_unsafe_value():
+    # /etc/vision-gw.conf is sourced by root shell scripts, so an unsafe value
+    # must never be written; format_value raises as a last line of defense.
+    with pytest.raises(ValueError):
+        update_config_file("KEY=old\n", {"KEY": "hello world"})
 
 
 # --- format_value ---
@@ -190,10 +199,19 @@ def test_format_value_empty():
     assert format_value("") == '""'
 
 
-def test_format_value_with_spaces():
-    assert format_value("hello world") == '"hello world"'
+def test_format_value_rejects_spaces():
+    # Spaces enable shell word-splitting in the sourced config; no writable key
+    # legitimately needs them.
+    with pytest.raises(ValueError):
+        format_value("hello world")
 
 
-def test_format_value_with_hash():
-    result = format_value("value#comment")
-    assert result.startswith('"')
+def test_format_value_rejects_hash():
+    with pytest.raises(ValueError):
+        format_value("value#comment")
+
+
+def test_format_value_rejects_shell_metachars():
+    for evil in ("$(id)", "`id`", "a;b", "a|b", "a&b", 'a"b'):
+        with pytest.raises(ValueError):
+            format_value(evil)
