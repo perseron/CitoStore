@@ -1,0 +1,19 @@
+[Unit]
+Description=Bind Samba state onto NVMe (overlay-safe persistence)
+Documentation=man:smbd(8)
+# Samba's writable databases (passdb.tdb = SMB users/passwords, secrets.tdb)
+# live under /var/lib/samba, which is on the read-only root under the overlay.
+# Bind it to the NVMe mirror so SMB passwords survive reboots.
+Requires=srv-vision_mirror.mount
+After=srv-vision_mirror.mount
+Before=smbd.service nmbd.service
+ConditionPathIsDirectory=/srv/vision_mirror/.state/samba
+
+[Mount]
+What=/srv/vision_mirror/.state/samba
+Where=/var/lib/samba
+Type=none
+Options=bind
+
+[Install]
+WantedBy=multi-user.target

@@ -18,6 +18,35 @@ SMB_USER=${SMB_USER:-smbuser}
 SMB_PASS=${SMB_PASS:-}
 NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
 SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
+MIRROR_MOUNT=${MIRROR_MOUNT:-/srv/vision_mirror}
+SAMBA_LIB=/var/lib/samba
+SAMBA_PERSIST="$MIRROR_MOUNT/.state/samba"
+
+# Overlay-safe Samba persistence: bind /var/lib/samba (passdb.tdb = SMB
+# users/passwords, secrets.tdb) onto the NVMe mirror. Without this the SMB
+# password lives on the read-only overlay root and is lost on every reboot.
+setup_samba_persist() {
+  if mountpoint -q "$SAMBA_LIB"; then
+    log "samba state already bind-mounted to persistent storage"
+    return 0
+  fi
+  if ! mountpoint -q "$MIRROR_MOUNT"; then
+    log "mirror not mounted; skipping samba persistence bind (will bind on boot)"
+  fi
+  safe_mkdir "$SAMBA_PERSIST"
+  # Seed once from the package's initial state so tdb databases exist.
+  if [[ -z "$(ls -A "$SAMBA_PERSIST" 2>/dev/null)" ]]; then
+    cp -a "$SAMBA_LIB/." "$SAMBA_PERSIST/" 2>/dev/null || true
+  fi
+  install -m 0644 "$SCRIPT_DIR/../systemd/var-lib-samba.mount" \
+    /etc/systemd/system/var-lib-samba.mount
+  systemctl daemon-reload
+  systemctl enable var-lib-samba.mount >/dev/null 2>&1 || true
+  # Activate now so the smbpasswd below writes to the persistent copy.
+  systemctl start var-lib-samba.mount || mount --bind "$SAMBA_PERSIST" "$SAMBA_LIB"
+  log "samba state bound to $SAMBA_PERSIST (overlay-safe)"
+}
+setup_samba_persist
 
 sed -e "s/{{SMB_BIND_INTERFACE}}/$SMB_BIND_INTERFACE/" \
   -e "s/{{SMB_USER}}/$SMB_USER/" \
@@ -48,6 +77,9 @@ cat > "$SMBD_OVERRIDE_FILE" <<'EOF'
 [Unit]
 Wants=network-online.target
 After=network-online.target
+# Ensure the overlay-safe Samba state bind mount is in place before smbd,
+# so passdb.tdb (SMB passwords) is read/written on the persistent NVMe copy.
+RequiresMountsFor=/var/lib/samba
 
 [Service]
 Restart=on-failure
