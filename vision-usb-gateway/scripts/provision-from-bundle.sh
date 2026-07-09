@@ -159,7 +159,7 @@ systemctl stop smbd nmbd usb-gadget.service 2>/dev/null || true
 # The WebUI holds .state open; stop it so the mirror can unmount. It is
 # restarted at the end (or on the next boot).
 systemctl stop vision-webui.service 2>/dev/null || true
-"$GATEWAY_HOME/scripts/usb-gadget.sh" stop 2>/dev/null || true
+bash "$GATEWAY_HOME/scripts/usb-gadget.sh" stop 2>/dev/null || true
 umount /var/lib/samba 2>/dev/null || true
 umount "$SYNC_MOUNT" 2>/dev/null || true
 umount "$MIRROR_MOUNT" 2>/dev/null || true
@@ -167,7 +167,7 @@ lvchange -an "$LVM_VG" 2>/dev/null || true
 vgchange -an "$LVM_VG" 2>/dev/null || true
 
 # 3) Wipe + partition the NVMe with the adapted layout.
-"$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
+bash "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
 
 # 3) Ensure the mirror is mounted and .state exists.
 mountpoint -q "$MIRROR_MOUNT" || mount "$MIRROR_MOUNT" || mount -a
@@ -193,7 +193,7 @@ if [[ -d "$STAGE/state/aoi_settings" ]]; then
 fi
 
 # 6) Apply config (promotes shadow, configures Samba incl. the persist bind mount).
-"$GATEWAY_HOME/scripts/apply-shadow-config.sh"
+bash "$GATEWAY_HOME/scripts/apply-shadow-config.sh"
 
 # 7) Restore the Samba passdb onto the now-bind-mounted persistent location so
 #    the SMB users/passwords come across (Samba was just seeded with defaults).
