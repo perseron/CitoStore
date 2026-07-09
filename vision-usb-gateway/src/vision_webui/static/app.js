@@ -444,6 +444,14 @@ async function saveConfig(apply = false) {
     SWITCH_WINDOW_START: document.getElementById("SWITCH_WINDOW_START").value,
     SWITCH_WINDOW_END: document.getElementById("SWITCH_WINDOW_END").value,
     SWITCH_DELAY_SEC: document.getElementById("SWITCH_DELAY_SEC").value,
+    ETH1_ENABLED: document.getElementById("ETH1_ENABLED").value,
+    ETH1_ADDRESS: document.getElementById("ETH1_ADDRESS").value,
+    ETH1_PREFIX: document.getElementById("ETH1_PREFIX").value,
+    ETH1_GATEWAY: document.getElementById("ETH1_GATEWAY").value,
+    INGEST_ENABLED: document.getElementById("INGEST_ENABLED").value,
+    FTP_ENABLED: document.getElementById("FTP_ENABLED").value,
+    SFTP_ENABLED: document.getElementById("SFTP_ENABLED").value,
+    FTP_USER: document.getElementById("FTP_USER").value,
   };
   await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
   await api("/api/nas-creds", {
@@ -498,6 +506,21 @@ async function changeSmbPassword() {
   await api("/api/password/smb", { method: "POST", body: JSON.stringify({ password, confirm }) });
   setStatus("SMB password updated");
 }
+
+async function setFtpPassword() {
+  const password = document.getElementById("FTP_PASSWORD").value;
+  const confirm = document.getElementById("FTP_PASSWORD_CONFIRM").value;
+  if (!password || password !== confirm) {
+    setStatus("FTP passwords do not match");
+    return;
+  }
+  await api("/api/password/ftp", { method: "POST", body: JSON.stringify({ password, confirm }) });
+  document.getElementById("FTP_PASSWORD").value = "";
+  document.getElementById("FTP_PASSWORD_CONFIRM").value = "";
+  setStatus("Ingest (FTP/SFTP) password updated");
+}
+document.getElementById("set-ftp-password").addEventListener("click",
+  withLoading(document.getElementById("set-ftp-password"), setFtpPassword));
 
 async function setManualTime() {
   const dateEl = document.getElementById("MANUAL_DATE");

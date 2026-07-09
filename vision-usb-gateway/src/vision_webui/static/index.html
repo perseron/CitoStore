@@ -209,6 +209,41 @@
     </section>
 
     <section>
+      <h2>Ethernet AOI (FTP/SFTP ingest)</h2>
+      <p class="hint">
+        Second Ethernet (eth1) for an isolated network AOI that pushes files
+        directly via FTP/SFTP onto the NVMe (NAS-like; served under the SMB
+        share and covered by retention).
+      </p>
+      <div class="grid">
+        <label>eth1 enabled
+          <select id="ETH1_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        </label>
+        <label>eth1 address <input id="ETH1_ADDRESS" placeholder="192.168.100.1" data-validate="ip-optional"></label>
+        <label>eth1 prefix <input id="ETH1_PREFIX" placeholder="24" data-validate="prefix"></label>
+        <label>eth1 gateway <input id="ETH1_GATEWAY" placeholder="(empty when isolated)" data-validate="ip-optional"></label>
+        <label>Ingest enabled
+          <select id="INGEST_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        </label>
+        <label>FTP enabled
+          <select id="FTP_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        </label>
+        <label>SFTP enabled
+          <select id="SFTP_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        </label>
+        <label>FTP/SFTP user <input id="FTP_USER" placeholder="aoiftp"></label>
+      </div>
+      <p class="hint">Settings save with the main "Save + Apply" above. Set the ingest password here:</p>
+      <div class="grid">
+        <label>FTP/SFTP password <input id="FTP_PASSWORD" type="password"></label>
+        <label>Confirm <input id="FTP_PASSWORD_CONFIRM" type="password"></label>
+      </div>
+      <div class="actions">
+        <button id="set-ftp-password">Set Ingest Password</button>
+      </div>
+    </section>
+
+    <section>
       <h2>Security</h2>
       <div class="grid">
         <label>New Web UI Password <input id="WEBUI_PASS" type="password" data-validate="password">

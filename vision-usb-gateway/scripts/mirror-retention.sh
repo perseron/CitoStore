@@ -17,6 +17,8 @@ fi
 : "${RETENTION_LO:=85}"
 : "${DB_MAINT_INTERVAL_SEC:=86400}"
 : "${FILE_STATE_PRUNE_DAYS:=30}"
+# FTP/SFTP ingest data (not DB-tracked) is retained by oldest-file deletion too.
+: "${INGEST_DIR:=$MIRROR_MOUNT/ingest}"
 # Keep the synced_files identity row this long after its mirror copy is
 # reclaimed, so a file still on the active USB LV is not re-copied (NVMe churn).
 # Must exceed the worst-case USB LV residency; prune only bounds the DB.
@@ -28,7 +30,7 @@ if [[ $usage -lt $RETENTION_HI ]]; then
 fi
 
 export MIRROR_MOUNT RETENTION_HI RETENTION_LO DRY_RUN DB_MAINT_INTERVAL_SEC FILE_STATE_PRUNE_DAYS
-export RETENTION_ROW_TTL_DAYS
+export RETENTION_ROW_TTL_DAYS INGEST_DIR
 
 python3 - <<'PY'
 import os
@@ -85,7 +87,10 @@ def save_maint_state(data: dict) -> None:
 def file_fallback_delete_one() -> bool:
     raw_root = Path(mirror) / "raw"
     bydate_root = Path(mirror) / "bydate"
-    if not raw_root.exists():
+    # FTP/SFTP ingest data lives here and is not tracked in the DB.
+    ingest_data = Path(os.environ.get("INGEST_DIR", str(Path(mirror) / "ingest"))) / "data"
+    prune_roots = [r for r in (raw_root, ingest_data) if r.exists()]
+    if not prune_roots:
         return False
 
     inode_links: dict[tuple[int, int], list[Path]] = {}
@@ -100,17 +105,18 @@ def file_fallback_delete_one() -> bool:
             inode_links.setdefault((st.st_dev, st.st_ino), []).append(p)
 
     candidates: list[tuple[float, Path, tuple[int, int]]] = []
-    for p in raw_root.rglob("*"):
-        if not p.is_file():
-            continue
-        try:
-            st = p.stat()
-        except OSError:
-            continue
-        candidates.append((st.st_mtime, p, (st.st_dev, st.st_ino)))
+    for root in prune_roots:
+        for p in root.rglob("*"):
+            if not p.is_file():
+                continue
+            try:
+                st = p.stat()
+            except OSError:
+                continue
+            candidates.append((st.st_mtime, p, (st.st_dev, st.st_ino), root))
     candidates.sort(key=lambda x: x[0])
 
-    for _, raw_path, inode in candidates:
+    for _, raw_path, inode, root in candidates:
         if dry:
             print(f"DRY fallback delete: {raw_path}")
             return True
@@ -124,7 +130,7 @@ def file_fallback_delete_one() -> bool:
             except OSError:
                 pass
             remove_empty_ancestors(link, bydate_root)
-        remove_empty_ancestors(raw_path, raw_root)
+        remove_empty_ancestors(raw_path, root)
         return True
     return False
 

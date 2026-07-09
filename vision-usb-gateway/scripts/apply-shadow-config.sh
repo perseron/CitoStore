@@ -7,7 +7,9 @@ source "$SCRIPT_DIR/common.sh"
 
 require_root
 
-GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
+# Prefer an explicit GATEWAY_HOME (from vision-gw.env), else derive it from this
+# script's own location so a standalone invocation still resolves the real repo.
+GATEWAY_HOME=${GATEWAY_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}
 SHADOW_CONF=/srv/vision_mirror/.state/vision-gw.conf
 DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
 
@@ -44,5 +46,8 @@ if grep -q '^NAS_ENABLED=true' /etc/vision-gw.conf 2>/dev/null; then
 else
   systemctl disable --now mnt-nas.automount nas-sync.timer || true
 fi
+
+# eth1 + FTP/SFTP ingest (overlay-safe: re-applied from config on every boot).
+"$GATEWAY_HOME/install/70_configure_ingest.sh" || true
 
 systemctl restart vision-webui.service || true
