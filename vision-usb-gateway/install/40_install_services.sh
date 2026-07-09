@@ -41,6 +41,14 @@ if [[ -d "$SCRIPT_DIR/../systemd/nmbd.service.d" ]]; then
   mkdir -p /etc/systemd/system/nmbd.service.d
   install -m 0644 "$SCRIPT_DIR/../systemd/nmbd.service.d/"*.conf /etc/systemd/system/nmbd.service.d/
 fi
+
+# Stamp the real repo path into each unit's GATEWAY_HOME fallback. The
+# EnvironmentFile overrides this at runtime, but the fallback is what systemd
+# uses to expand ${GATEWAY_HOME} in ExecStart if the env file is ever missing,
+# so it must point at wherever this repo is actually installed.
+grep -rl '^Environment=GATEWAY_HOME=' /etc/systemd/system/ 2>/dev/null | while read -r unit; do
+  sed -i "s#^Environment=GATEWAY_HOME=.*#Environment=GATEWAY_HOME=$GATEWAY_HOME#" "$unit"
+done
 # Must land on the persistent root: vsftpd starts before anything re-applies
 # config at boot, so generating this drop-in later would always be too late.
 if [[ -d "$SCRIPT_DIR/../systemd/vsftpd.service.d" ]]; then

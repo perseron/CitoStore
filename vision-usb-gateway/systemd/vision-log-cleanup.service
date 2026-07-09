@@ -4,6 +4,6 @@ After=vision-gw-config.service
 
 [Service]
 Type=oneshot
-Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/log-cleanup.sh

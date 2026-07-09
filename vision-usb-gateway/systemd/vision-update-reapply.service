@@ -5,7 +5,7 @@ Before=vision-gw-config.service usb-gadget.service vision-sync.service vision-we
 
 [Service]
 Type=oneshot
-Environment=GATEWAY_HOME=/opt/vision-usb-gateway
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/apply-update.sh reapply
 RemainAfterExit=yes
