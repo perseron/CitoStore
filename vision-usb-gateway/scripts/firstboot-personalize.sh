@@ -62,6 +62,17 @@ fi
 mountpoint -q /srv/vision_mirror || mount /srv/vision_mirror 2>/dev/null || mount -a || true
 safe_mkdir "$STATE_DIR"
 
+# 4b) Seed the shadow config from the golden /etc copy (promoted by
+#     prepare-golden-image) BEFORE apply-shadow-config runs. Without this, the
+#     fresh NVMe has no shadow, so restore_shadow_conf falls back to the packaged
+#     example and the clone loses the tuned config (eth1/ingest disabled, wrong
+#     SMB/NetBIOS names).
+if [[ ! -f "$STATE_DIR/vision-gw.conf" && -f /etc/vision-gw.conf ]]; then
+  cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
+  cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf.last-good"
+  log "seeded shadow config from golden /etc"
+fi
+
 # 5) Seed the shared WebUI password (from the eMMC), generate a fresh secret.
 if [[ ! -f "$STATE_DIR/webui.passwd" && -f "$SEED_DIR/webui.passwd" ]]; then
   cp "$SEED_DIR/webui.passwd" "$STATE_DIR/webui.passwd"

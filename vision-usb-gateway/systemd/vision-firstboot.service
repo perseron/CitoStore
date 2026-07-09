@@ -11,7 +11,7 @@ DefaultDependencies=yes
 Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=-/etc/vision-gw.env
-ExecStart=/bin/bash -c '"${GATEWAY_HOME:-/opt/vision-usb-gateway}"/scripts/firstboot-personalize.sh'
+ExecStart=/bin/bash -c '"${GATEWAY_HOME:-/opt/CitoStore/vision-usb-gateway}"/scripts/firstboot-personalize.sh'
 
 [Install]
 WantedBy=multi-user.target
