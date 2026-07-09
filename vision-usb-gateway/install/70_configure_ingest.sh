@@ -50,7 +50,10 @@ configure_eth1() {
     ipv4.gateway "${ETH1_GATEWAY:-}" \
     ipv4.never-default yes \
     ipv6.method ignore >/dev/null 2>&1 || true
-  nmcli connection up "$con" >/dev/null 2>&1 || \
+  # Bounded activation (-w 8): eth1 is a point-to-point link to the AOI which may
+  # have no carrier at boot; without a wait cap `nmcli up` blocks ~90s. NM keeps
+  # autoconnect, so it still comes up on its own when carrier appears.
+  nmcli -w 8 connection up "$con" >/dev/null 2>&1 || \
     log "$ETH1_INTERFACE configured ($ETH1_ADDRESS/$ETH1_PREFIX); will activate on carrier"
 }
 

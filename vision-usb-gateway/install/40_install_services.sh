@@ -55,6 +55,13 @@ if [[ -d "$SCRIPT_DIR/../systemd/vsftpd.service.d" ]]; then
   mkdir -p /etc/systemd/system/vsftpd.service.d
   install -m 0644 "$SCRIPT_DIR/../systemd/vsftpd.service.d/"*.conf /etc/systemd/system/vsftpd.service.d/
 fi
+# Cap NetworkManager-wait-online (boots must not stall on a carrier-less eth1).
+# Baked here so it applies from the very first boot, before wait-online runs.
+if [[ -d "$SCRIPT_DIR/../systemd/NetworkManager-wait-online.service.d" ]]; then
+  mkdir -p /etc/systemd/system/NetworkManager-wait-online.service.d
+  install -m 0644 "$SCRIPT_DIR/../systemd/NetworkManager-wait-online.service.d/"*.conf \
+    /etc/systemd/system/NetworkManager-wait-online.service.d/
+fi
 
 log "configuring vision-sync.timer override"
 SYNC_TIMER_DIR=/etc/systemd/system/vision-sync.timer.d
