@@ -192,6 +192,18 @@ def format_value(value: str) -> str:
     return value
 
 
+# Passwords are fed to chpasswd/smbpasswd on stdin as line-oriented records, so
+# a control character -- a newline above all -- lets a second record be smuggled
+# in: an FTP password of "x\nroot:pw" makes chpasswd also reset root's password.
+# Reject anything non-printable (str.isprintable() is False for control and
+# separator chars, but True for a plain space) and cap the length.
+MAX_PASSWORD_LEN = 128
+
+
+def is_valid_password(password: str) -> bool:
+    return 0 < len(password) <= MAX_PASSWORD_LEN and password.isprintable()
+
+
 def update_config_file(base_text: str, updates: dict) -> str:
     lines = base_text.splitlines()
     seen = set()
@@ -1161,6 +1173,8 @@ class WebHandler(BaseHTTPRequestHandler):
         confirm = data.get("confirm", "")
         if not password or password != confirm:
             return self.send_json({"ok": False, "error": "passwords do not match"}, status=400)
+        if not is_valid_password(password):
+            return self.send_json({"ok": False, "error": "invalid password"}, status=400)
         store_password(password)
         log("webui password changed")
         return self.send_json({"ok": True})
@@ -1173,6 +1187,8 @@ class WebHandler(BaseHTTPRequestHandler):
         confirm = data.get("confirm", "")
         if not password or password != confirm:
             return self.send_json({"ok": False, "error": "passwords do not match"}, status=400)
+        if not is_valid_password(password):
+            return self.send_json({"ok": False, "error": "invalid password"}, status=400)
         cfg = parse_config(load_config_text())
         smb_user = cfg.get("SMB_USER", "smbuser")
         input_text = f"{password}\n{password}\n"
@@ -1194,6 +1210,8 @@ class WebHandler(BaseHTTPRequestHandler):
         confirm = data.get("confirm", "")
         if not password or password != confirm:
             return self.send_json({"ok": False, "error": "passwords do not match"}, status=400)
+        if not is_valid_password(password):
+            return self.send_json({"ok": False, "error": "invalid password"}, status=400)
         cfg = parse_config(load_config_text())
         ftp_user = cfg.get("FTP_USER", "aoiftp")
         # Persist on the NVMe (overlay-safe; re-applied on boot by 70_configure_ingest).
@@ -1247,6 +1265,11 @@ class WebHandler(BaseHTTPRequestHandler):
         }
         if creds["username"] == "" and creds["password"] == "" and creds["domain"] == "":
             return self.send_json({"ok": True})
+        # These become username=/password=/domain= lines in a mount.cifs
+        # credentials file; a control char (newline) would inject extra lines.
+        for field in creds.values():
+            if field and not (len(field) <= MAX_PASSWORD_LEN and field.isprintable()):
+                return self.send_json({"ok": False, "error": "invalid NAS credentials"}, status=400)
         NAS_CREDS_SHADOW.write_text(render_nas_creds(creds), encoding="utf-8")
         os.chmod(NAS_CREDS_SHADOW, 0o600)
         log("nas creds updated (shadow)")
