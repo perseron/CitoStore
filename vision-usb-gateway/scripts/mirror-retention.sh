@@ -24,7 +24,11 @@ fi
 # Must exceed the worst-case USB LV residency; prune only bounds the DB.
 : "${RETENTION_ROW_TTL_DAYS:=90}"
 
-usage=$(df -P "$MIRROR_MOUNT" | awk 'NR==2 {print int($5)}' | tr -d '%')
+# Gate on the SAME used/total ratio the Python delete-loop below uses
+# (shutil.disk_usage). df -P's Use% excludes the ext4 root-reserved blocks, so
+# it reads ~5% higher than shutil; using it here let retention "trigger" in a
+# 90–95% band where the loop's shutil check was still < HI and deleted nothing.
+usage=$(python3 -c "import shutil; t,u,_=shutil.disk_usage('$MIRROR_MOUNT'); print(int(u*100/t))")
 if [[ $usage -lt $RETENTION_HI ]]; then
   exit 0
 fi
