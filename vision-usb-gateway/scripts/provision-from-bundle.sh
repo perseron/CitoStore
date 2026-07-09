@@ -160,11 +160,16 @@ systemctl stop smbd nmbd usb-gadget.service 2>/dev/null || true
 # restarted at the end (or on the next boot).
 systemctl stop vision-webui.service 2>/dev/null || true
 bash "$GATEWAY_HOME/scripts/usb-gadget.sh" stop 2>/dev/null || true
-umount /var/lib/samba 2>/dev/null || true
-umount "$SYNC_MOUNT" 2>/dev/null || true
-umount "$MIRROR_MOUNT" 2>/dev/null || true
+for mp in /var/lib/samba "$SYNC_MOUNT" "$MIRROR_MOUNT"; do
+  umount "$mp" 2>/dev/null || umount -l "$mp" 2>/dev/null || true
+done
+sleep 1
 lvchange -an "$LVM_VG" 2>/dev/null || true
 vgchange -an "$LVM_VG" 2>/dev/null || true
+# Fallback: force-remove any lingering mappings for this VG so the PV frees up.
+for d in $(dmsetup ls 2>/dev/null | awk -v vg="$LVM_VG" '$1 ~ "^"vg"-" {print $1}'); do
+  dmsetup remove -f "$d" 2>/dev/null || true
+done
 
 # 3) Wipe + partition the NVMe with the adapted layout.
 bash "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
