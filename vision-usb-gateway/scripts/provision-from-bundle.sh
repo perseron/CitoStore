@@ -38,6 +38,9 @@ if [[ -z "$BUNDLE" || ! -f "$BUNDLE" ]]; then
   exit 1
 fi
 
+# Exported so the install/helper scripts we invoke resolve the real repo path
+# instead of their /opt/vision-usb-gateway default.
+export GATEWAY_HOME
 GATEWAY_HOME=$(cd "$SCRIPT_DIR/.." && pwd)
 MIN_MIRROR_GIB=20
 
