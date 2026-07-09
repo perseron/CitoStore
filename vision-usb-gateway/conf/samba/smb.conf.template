@@ -23,3 +23,8 @@
   valid users = {{SMB_USER}}
   force user = {{SMB_USER}}
   force group = nogroup
+  # .state (under the shared mirror root) holds secrets: FTP/NAS creds, the
+  # WebUI secret, and the Samba passdb. Veto hides AND denies access to it over
+  # SMB, independent of on-disk permissions.
+  veto files = /.state/
+  delete veto files = no

@@ -68,9 +68,21 @@ fi
 chown root:root /srv/vision_mirror
 chmod 0755 /srv/vision_mirror
 chown -R root:root /srv/vision_mirror/.state /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
-chmod 0755 /srv/vision_mirror/.state /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
-find /srv/vision_mirror/.state -type d -exec chmod 0755 {} \; 2>/dev/null || true
-find /srv/vision_mirror/.state -type f -exec chmod 0644 {} \; 2>/dev/null || true
+chmod 0755 /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
+# .state holds secrets (ftp.creds, webui.secret/passwd, vision-nas.creds, the
+# Samba passdb/secrets tdbs) right under the SMB-shared mirror root. It must NOT
+# be world-readable: the share forces access as SMB_USER, so 0700 root on .state
+# stops that user traversing into it (belt-and-suspenders with `veto files` in
+# smb.conf). A previous blanket `find .state -exec chmod 0644` re-published every
+# secret on each boot; do NOT reintroduce it.
+chmod 0700 /srv/vision_mirror/.state 2>/dev/null || true
+for secret in ftp.creds webui.secret webui.passwd vision-nas.creds network.json; do
+  [[ -f "/srv/vision_mirror/.state/$secret" ]] && chmod 0600 "/srv/vision_mirror/.state/$secret"
+done
+if [[ -d /srv/vision_mirror/.state/samba/private ]]; then
+  chmod 0700 /srv/vision_mirror/.state/samba/private
+  find /srv/vision_mirror/.state/samba/private -type f -exec chmod 0600 {} \; 2>/dev/null || true
+fi
 
 mkdir -p "$SMBD_OVERRIDE_DIR"
 cat > "$SMBD_OVERRIDE_FILE" <<'EOF'
