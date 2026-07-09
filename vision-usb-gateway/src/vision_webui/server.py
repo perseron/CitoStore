@@ -896,7 +896,7 @@ class WebHandler(BaseHTTPRequestHandler):
                         "ts": "",
                     })
             return self.send_json({"status": "unknown", "issues": [], "ts": ""})
-        if self.path.startswith("/api/config"):
+        if self.path == "/api/config":
             cfg = parse_config(load_config_text())
             payload = {k: cfg.get(k, "") for k in ALLOWED_CONFIG_KEYS}
             return self.send_json(payload)
