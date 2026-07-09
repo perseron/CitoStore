@@ -1322,7 +1322,7 @@ class WebHandler(BaseHTTPRequestHandler):
         # aoi_settings, as a single .citostore file (a tar.gz under the hood).
         gh = get_gateway_home()
         out = Path("/run/citostore-config.citostore")
-        code, _, err = run_cmd([f"{gh}/scripts/export-config-bundle.sh", str(out)])
+        code, _, err = run_cmd(["/bin/bash", f"{gh}/scripts/export-config-bundle.sh", str(out)])
         if code != 0 or not out.exists():
             return self.send_json({"ok": False, "error": err or "export failed"}, status=500)
         data = out.read_bytes()
@@ -1346,7 +1346,7 @@ class WebHandler(BaseHTTPRequestHandler):
         BUNDLE_STAGED.write_bytes(body)
         gh = get_gateway_home()
         code, out, err = run_cmd(
-            [f"{gh}/scripts/provision-from-bundle.sh", str(BUNDLE_STAGED), "--plan"]
+            ["/bin/bash", f"{gh}/scripts/provision-from-bundle.sh", str(BUNDLE_STAGED), "--plan"]
         )
         if code != 0:
             return self.send_json(
