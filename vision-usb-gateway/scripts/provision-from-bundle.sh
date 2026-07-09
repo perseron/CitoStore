@@ -156,6 +156,9 @@ log "tearing down existing setup"
 systemctl stop vision-sync.timer vision-sync-fast.timer vision-monitor.timer \
   vision-rotator.timer mirror-retention.timer 2>/dev/null || true
 systemctl stop smbd nmbd usb-gadget.service 2>/dev/null || true
+# The WebUI holds .state open; stop it so the mirror can unmount. It is
+# restarted at the end (or on the next boot).
+systemctl stop vision-webui.service 2>/dev/null || true
 "$GATEWAY_HOME/scripts/usb-gadget.sh" stop 2>/dev/null || true
 umount /var/lib/samba 2>/dev/null || true
 umount "$SYNC_MOUNT" 2>/dev/null || true
