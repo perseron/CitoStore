@@ -23,12 +23,9 @@ if [[ ! -f /etc/vision-nas.creds ]]; then
   log "created /etc/vision-nas.creds (edit credentials)"
 fi
 
-cat > /etc/vision-gw.env <<EOF
-GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
-NAS_REMOTE=${NAS_REMOTE:-//nas/vision}
-NAS_MOUNT=${NAS_MOUNT:-/mnt/nas}
-NAS_CREDENTIALS=${NAS_CREDENTIALS:-/etc/vision-nas.creds}
-EOF
+# Rewrite the full env file (never a NAS-only subset -- that dropped the
+# SMB/WebUI/RTC/sync keys other units read).
+write_gateway_env
 
 systemctl daemon-reload
 systemctl enable mnt-nas.automount nas-sync.timer

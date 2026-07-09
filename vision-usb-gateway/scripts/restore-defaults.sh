@@ -7,7 +7,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 require_root
 load_config
 
-GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
+# GATEWAY_HOME comes from common.sh (env override or self-derived).
 DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
 STATE_DIR=/srv/vision_mirror/.state
 

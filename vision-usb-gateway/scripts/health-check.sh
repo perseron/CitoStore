@@ -18,7 +18,7 @@ health_warn() {
   log "health: $1"
 }
 
-GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
+# GATEWAY_HOME comes from common.sh (env override or self-derived).
 MIRROR_MOUNT=${MIRROR_MOUNT:-/srv/vision_mirror}
 STATE_DIR="$MIRROR_MOUNT/.state"
 HEALTH_STATE="$STATE_DIR/health.json"

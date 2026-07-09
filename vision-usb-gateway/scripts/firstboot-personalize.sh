@@ -25,7 +25,7 @@ if [[ -f "$DONE_FLAG" ]]; then
 fi
 
 load_config
-GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
+# GATEWAY_HOME comes from common.sh (env override or self-derived).
 : "${LVM_VG:=vg0}"
 : "${MIRROR_LV:=mirror}"
 

@@ -6,10 +6,9 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 source "$SCRIPT_DIR/common.sh"
 
 require_root
-SHADOW_CONF=/srv/vision_mirror/.state/vision-gw.conf
-if [[ -f "$SHADOW_CONF" ]]; then
-  cp "$SHADOW_CONF" /etc/vision-gw.conf
-fi
+
+# Repopulate the live config + NAS creds from the authoritative NVMe shadow copy.
+restore_shadow_conf
 
 SHADOW_CREDS=/srv/vision_mirror/.state/vision-nas.creds
 if [[ -f "$SHADOW_CREDS" ]]; then
@@ -22,31 +21,13 @@ fi
 
 load_config
 
-GATEWAY_HOME=${GATEWAY_HOME:-/opt/vision-usb-gateway}
-
 : "${SYNC_ONBOOT_SEC:=2min}"
 : "${SYNC_ONACTIVE_SEC:=2min}"
 : "${SYNC_INTERVAL_SEC:=2min}"
 : "${SYNC_HI_INTERVAL_SEC:=10s}"
 : "${RTC_SYNC_INTERVAL:=1h}"
 
-# Write systemd-safe env file (no arrays).
-cat > /etc/vision-gw.env <<EOF
-GATEWAY_HOME=$GATEWAY_HOME
-NAS_REMOTE=${NAS_REMOTE:-//nas/vision}
-NAS_MOUNT=${NAS_MOUNT:-/mnt/nas}
-NAS_CREDENTIALS=${NAS_CREDENTIALS:-/etc/vision-nas.creds}
-SMB_BIND_INTERFACE=${SMB_BIND_INTERFACE:-eth0}
-SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
-NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
-WEBUI_BIND=${WEBUI_BIND:-0.0.0.0}
-WEBUI_PORT=${WEBUI_PORT:-80}
-RTC_ENABLED=${RTC_ENABLED:-false}
-RTC_DEVICE=${RTC_DEVICE:-/dev/rtc0}
-RTC_UTC=${RTC_UTC:-true}
-RTC_SYNC_INTERVAL=${RTC_SYNC_INTERVAL:-1h}
-SYNC_HI_INTERVAL_SEC=${SYNC_HI_INTERVAL_SEC:-10s}
-EOF
+write_gateway_env
 
 # Update timer override from config.
 SYNC_TIMER_DIR=/etc/systemd/system/vision-sync.timer.d

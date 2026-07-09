@@ -38,8 +38,8 @@ if [[ -z "$BUNDLE" || ! -f "$BUNDLE" ]]; then
   exit 1
 fi
 
-# Exported so the install/helper scripts we invoke resolve the real repo path
-# instead of their /opt/vision-usb-gateway default.
+# Exported so the install/helper scripts we invoke (as separate processes)
+# resolve this repo path rather than re-deriving from their own location.
 export GATEWAY_HOME
 GATEWAY_HOME=$(cd "$SCRIPT_DIR/.." && pwd)
 MIN_MIRROR_GIB=20
@@ -149,9 +149,7 @@ sed -i \
   -e "s/^THINPOOL_SIZE=.*/THINPOOL_SIZE=${USBPOOL_GIB}G/" \
   -e "s/^THINPOOL_META_SIZE=.*/THINPOOL_META_SIZE=${META_GIB}G/" \
   /etc/vision-gw.conf
-if grep -q '^GATEWAY_HOME=' /etc/vision-gw.conf; then
-  sed -i "s#^GATEWAY_HOME=.*#GATEWAY_HOME=$GATEWAY_HOME#" /etc/vision-gw.conf
-fi
+ensure_gateway_home_in_conf
 
 # 2) Tear down any existing setup so the NVMe can be repartitioned. On a blank
 #    replacement unit these are no-ops; on a re-provision they free the device.

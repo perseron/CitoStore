@@ -7,15 +7,9 @@ source "$SCRIPT_DIR/../scripts/common.sh"
 
 require_root
 
-GATEWAY_HOME=$(cd "$SCRIPT_DIR/.." && pwd)
-
-if [[ -f /etc/vision-gw.conf ]]; then
-  if grep -q '^GATEWAY_HOME=' /etc/vision-gw.conf; then
-    sed -i "s#^GATEWAY_HOME=.*#GATEWAY_HOME=$GATEWAY_HOME#" /etc/vision-gw.conf
-  else
-    echo "GATEWAY_HOME=$GATEWAY_HOME" >> /etc/vision-gw.conf
-  fi
-fi
+# GATEWAY_HOME is set by common.sh (derived from its own location). Record it in
+# the config so health-check's validity marker is present.
+ensure_gateway_home_in_conf
 
 load_config
 
@@ -26,23 +20,7 @@ load_config
 : "${SYNC_HI_INTERVAL_SEC:=10s}"
 : "${RTC_SYNC_INTERVAL:=1h}"
 
-# Write systemd-safe env file (no arrays)
-cat > /etc/vision-gw.env <<EOF
-GATEWAY_HOME=$GATEWAY_HOME
-NAS_REMOTE=${NAS_REMOTE:-//nas/vision}
-NAS_MOUNT=${NAS_MOUNT:-/mnt/nas}
-NAS_CREDENTIALS=${NAS_CREDENTIALS:-/etc/vision-nas.creds}
-SMB_BIND_INTERFACE=${SMB_BIND_INTERFACE:-eth0}
-SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
-NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
-WEBUI_BIND=${WEBUI_BIND:-0.0.0.0}
-WEBUI_PORT=${WEBUI_PORT:-80}
-RTC_ENABLED=${RTC_ENABLED:-false}
-RTC_DEVICE=${RTC_DEVICE:-/dev/rtc0}
-RTC_UTC=${RTC_UTC:-true}
-RTC_SYNC_INTERVAL=${RTC_SYNC_INTERVAL:-1h}
-SYNC_HI_INTERVAL_SEC=${SYNC_HI_INTERVAL_SEC:-10s}
-EOF
+write_gateway_env
 
 log "installing python package"
 python3 -m pip install --break-system-packages -e "$GATEWAY_HOME"
