@@ -65,6 +65,14 @@ ALLOWED_CONFIG_KEYS = {
     "SWITCH_WINDOW_START",
     "SWITCH_WINDOW_END",
     "SWITCH_DELAY_SEC",
+    "ETH1_ENABLED",
+    "ETH1_ADDRESS",
+    "ETH1_PREFIX",
+    "ETH1_GATEWAY",
+    "INGEST_ENABLED",
+    "FTP_ENABLED",
+    "SFTP_ENABLED",
+    "FTP_USER",
 }
 
 SERVICES = [
@@ -743,6 +751,26 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
                 return False, "SWITCH_DELAY_SEC out of range (0-10)"
         except ValueError:
             return False, "SWITCH_DELAY_SEC must be a number"
+    for key in ("ETH1_ENABLED", "INGEST_ENABLED", "FTP_ENABLED", "SFTP_ENABLED"):
+        if key in updates and updates[key] not in ("true", "false"):
+            return False, f"{key} must be true or false"
+    for key in ("ETH1_ADDRESS", "ETH1_GATEWAY"):
+        if key in updates and updates[key]:
+            try:
+                ipaddress.ip_address(updates[key])
+            except ValueError:
+                return False, f"{key} must be a valid IP address"
+    if "ETH1_PREFIX" in updates:
+        try:
+            p = int(updates["ETH1_PREFIX"])
+            if p < 1 or p > 32:
+                return False, "ETH1_PREFIX out of range (1-32)"
+        except ValueError:
+            return False, "ETH1_PREFIX must be a number"
+    if "FTP_USER" in updates:
+        u = updates["FTP_USER"]
+        if not u or not all(c.isalnum() or c in "_-" for c in u):
+            return False, "FTP_USER must be alphanumeric"
     return True, ""
 
 
@@ -1020,6 +1048,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_webui_password()
         if self.path == "/api/password/smb":
             return self.handle_smb_password()
+        if self.path == "/api/password/ftp":
+            return self.handle_ftp_password()
         if self.path == "/api/maintenance/wipe":
             return self.handle_maintenance(["wipe"])
         if self.path == "/api/maintenance/rebalance":
@@ -1154,6 +1184,25 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_json({"ok": False, "error": err or out}, status=500)
         run_cmd(["/usr/bin/smbpasswd", "-e", smb_user])
         log(f"smb password changed for {smb_user}")
+        return self.send_json({"ok": True})
+
+    def handle_ftp_password(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        data = json.loads(body or "{}")
+        password = data.get("password", "")
+        confirm = data.get("confirm", "")
+        if not password or password != confirm:
+            return self.send_json({"ok": False, "error": "passwords do not match"}, status=400)
+        cfg = parse_config(load_config_text())
+        ftp_user = cfg.get("FTP_USER", "aoiftp")
+        # Persist on the NVMe (overlay-safe; re-applied on boot by 70_configure_ingest).
+        creds = STATE_DIR / "ftp.creds"
+        creds.write_text(f"password={password}\n", encoding="utf-8")
+        os.chmod(creds, 0o600)
+        # Apply now if the ingest user already exists.
+        run_cmd(["/usr/sbin/chpasswd"], input_text=f"{ftp_user}:{password}\n")
+        log(f"ftp password changed for {ftp_user}")
         return self.send_json({"ok": True})
 
     def handle_network(self):
