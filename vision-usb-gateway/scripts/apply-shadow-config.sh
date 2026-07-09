@@ -45,4 +45,7 @@ else
   systemctl disable --now mnt-nas.automount nas-sync.timer || true
 fi
 
+# eth1 + FTP/SFTP ingest (overlay-safe: re-applied from config on every boot).
+"$GATEWAY_HOME/install/70_configure_ingest.sh" || true
+
 systemctl restart vision-webui.service || true

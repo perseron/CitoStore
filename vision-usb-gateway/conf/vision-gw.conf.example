@@ -113,3 +113,24 @@ WEBUI_BIND=0.0.0.0
 WEBUI_PORT=80
 # SMB_PASS is required to create the Samba user non-interactively.
 # SMB_PASS=change-me
+
+# Second Ethernet (eth1): isolated network for an Ethernet AOI that pushes
+# files directly via FTP/SFTP. Static IP; leave the gateway empty when isolated.
+ETH1_ENABLED=false
+ETH1_INTERFACE=eth1
+ETH1_ADDRESS=192.168.100.1
+ETH1_PREFIX=24
+ETH1_GATEWAY=
+
+# Direct ingest from an Ethernet AOI (NAS-like: files are stored as they arrive
+# under INGEST_DIR/data, served over SMB, and covered by mirror retention).
+INGEST_ENABLED=false
+INGEST_DIR=/srv/vision_mirror/ingest
+FTP_ENABLED=false
+SFTP_ENABLED=false
+FTP_USER=aoiftp
+# FTP/SFTP bind to eth1 only. The password is NOT stored here (shell-sourced);
+# it lives in the shadow secret file and is applied on boot.
+FTP_BIND_INTERFACE=eth1
+FTP_PASV_MIN_PORT=30000
+FTP_PASV_MAX_PORT=30020
