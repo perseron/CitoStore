@@ -60,6 +60,7 @@ read_conf_vars() {
     echo "NVME_DEVICE=${NVME_DEVICE:-/dev/nvme0n1}"
     echo "LVM_VG=${LVM_VG:-vg0}"
     echo "MIRROR_MOUNT=${MIRROR_MOUNT:-/srv/vision_mirror}"
+    echo "SYNC_MOUNT=${SYNC_MOUNT:-/mnt/vision_snap}"
     echo "USB_LV_SIZE=${USB_LV_SIZE:-16G}"
     echo "USB_LV_COUNT=${#USB_LVS[@]}"
   )
@@ -149,7 +150,20 @@ if grep -q '^GATEWAY_HOME=' /etc/vision-gw.conf; then
   sed -i "s#^GATEWAY_HOME=.*#GATEWAY_HOME=$GATEWAY_HOME#" /etc/vision-gw.conf
 fi
 
-# 2) Wipe + partition the NVMe with the adapted layout.
+# 2) Tear down any existing setup so the NVMe can be repartitioned. On a blank
+#    replacement unit these are no-ops; on a re-provision they free the device.
+log "tearing down existing setup"
+systemctl stop vision-sync.timer vision-sync-fast.timer vision-monitor.timer \
+  vision-rotator.timer mirror-retention.timer 2>/dev/null || true
+systemctl stop smbd nmbd usb-gadget.service 2>/dev/null || true
+"$GATEWAY_HOME/scripts/usb-gadget.sh" stop 2>/dev/null || true
+umount /var/lib/samba 2>/dev/null || true
+umount "$SYNC_MOUNT" 2>/dev/null || true
+umount "$MIRROR_MOUNT" 2>/dev/null || true
+lvchange -an "$LVM_VG" 2>/dev/null || true
+vgchange -an "$LVM_VG" 2>/dev/null || true
+
+# 3) Wipe + partition the NVMe with the adapted layout.
 "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
 
 # 3) Ensure the mirror is mounted and .state exists.
