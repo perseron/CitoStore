@@ -93,6 +93,9 @@ configure_ftp() {
     DEBIAN_FRONTEND=noninteractive apt-get install -y vsftpd >/dev/null 2>&1 || {
       log "vsftpd install failed"; return 0; }
   fi
+  # vsftpd's pam_shells rejects users whose login shell is not in /etc/shells;
+  # the ingest user intentionally uses nologin.
+  grep -qxF /usr/sbin/nologin /etc/shells 2>/dev/null || echo /usr/sbin/nologin >> /etc/shells
   local bind_ip
   bind_ip=$(iface_ipv4 "$FTP_BIND_INTERFACE")
   bind_ip=${bind_ip:-$ETH1_ADDRESS}
