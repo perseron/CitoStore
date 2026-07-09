@@ -36,7 +36,12 @@ NETWORK_STATE = STATE_DIR / "network.json"
 SESSION_TTL_SEC = 8 * 60 * 60
 MAX_BODY_SIZE = 64 * 1024
 MAX_UPDATE_SIZE = 50 * 1024 * 1024  # 50MB for update packages
+MAX_BUNDLE_SIZE = 64 * 1024 * 1024  # config bundle (.citostore): config + secrets + passdb
 MAINT_MODE_FLAG = Path("/run/vision-maintenance-mode")
+
+# Config bundle provisioning: staged on tmpfs so it survives the NVMe wipe.
+PROVISION_STAGE = Path("/run/vision-provision")
+BUNDLE_STAGED = PROVISION_STAGE / "bundle.citostore"
 
 ALLOWED_CONFIG_KEYS = {
     "NETBIOS_NAME",
@@ -891,7 +896,7 @@ class WebHandler(BaseHTTPRequestHandler):
                         "ts": "",
                     })
             return self.send_json({"status": "unknown", "issues": [], "ts": ""})
-        if self.path.startswith("/api/config"):
+        if self.path == "/api/config":
             cfg = parse_config(load_config_text())
             payload = {k: cfg.get(k, "") for k in ALLOWED_CONFIG_KEYS}
             return self.send_json(payload)
@@ -965,6 +970,8 @@ class WebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if self.path.startswith("/api/config/bundle"):
+            return self.handle_bundle_export()
         if self.path.startswith("/api/maintenance-mode"):
             return self.send_json({"enabled": MAINT_MODE_FLAG.exists()})
         if self.path.startswith("/api/update/status"):
@@ -980,7 +987,12 @@ class WebHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         content_length = int(self.headers.get("Content-Length", 0))
-        max_size = MAX_UPDATE_SIZE if self.path == "/api/update" else MAX_BODY_SIZE
+        if self.path == "/api/update":
+            max_size = MAX_UPDATE_SIZE
+        elif self.path == "/api/config/bundle/plan":
+            max_size = MAX_BUNDLE_SIZE
+        else:
+            max_size = MAX_BODY_SIZE
         if content_length > max_size:
             self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body too large")
             return
@@ -1034,6 +1046,10 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_maintenance_mode()
         if self.path == "/api/update":
             return self.handle_update()
+        if self.path == "/api/config/bundle/plan":
+            return self.handle_bundle_plan()
+        if self.path == "/api/config/bundle/provision":
+            return self.handle_bundle_provision()
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def handle_login(self):
@@ -1300,6 +1316,75 @@ class WebHandler(BaseHTTPRequestHandler):
         last_good.write_text(config_text, encoding="utf-8")
         log(f"config imported ({len(parsed)} keys)")
         return self.send_json({"ok": True})
+
+    def handle_bundle_export(self):
+        # Full portable unit definition: config + secrets + Samba passdb +
+        # aoi_settings, as a single .citostore file (a tar.gz under the hood).
+        gh = get_gateway_home()
+        out = Path("/run/citostore-config.citostore")
+        code, _, err = run_cmd(["/bin/bash", f"{gh}/scripts/export-config-bundle.sh", str(out)])
+        if code != 0 or not out.exists():
+            return self.send_json({"ok": False, "error": err or "export failed"}, status=500)
+        data = out.read_bytes()
+        out.unlink(missing_ok=True)
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header(
+            "Content-Disposition", "attachment; filename=citostore-config.citostore"
+        )
+        self.send_header("Content-Length", str(len(data)))
+        self._send_security_headers()
+        self.end_headers()
+        self.wfile.write(data)
+
+    def handle_bundle_plan(self):
+        length = int(self.headers.get("Content-Length", 0))
+        if length <= 0:
+            return self.send_json({"ok": False, "error": "empty bundle"}, status=400)
+        body = self.rfile.read(length)
+        PROVISION_STAGE.mkdir(parents=True, exist_ok=True)
+        BUNDLE_STAGED.write_bytes(body)
+        gh = get_gateway_home()
+        code, out, err = run_cmd(
+            ["/bin/bash", f"{gh}/scripts/provision-from-bundle.sh", str(BUNDLE_STAGED), "--plan"]
+        )
+        if code != 0:
+            return self.send_json(
+                {"ok": False, "error": err or out or "invalid bundle"}, status=400
+            )
+        try:
+            plan = json.loads(out)
+        except json.JSONDecodeError:
+            return self.send_json({"ok": False, "error": "plan parse error"}, status=500)
+        log("config bundle uploaded and planned")
+        return self.send_json({"ok": True, "plan": plan})
+
+    def handle_bundle_provision(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8") if length else ""
+        data = json.loads(body or "{}")
+        if not data.get("confirm"):
+            return self.send_json({"ok": False, "error": "confirmation required"}, status=400)
+        if not BUNDLE_STAGED.exists():
+            return self.send_json(
+                {"ok": False, "error": "no staged bundle; upload and review the plan first"},
+                status=400,
+            )
+        code, _, err = run_cmd(
+            ["/bin/systemctl", "start", "--no-block", "vision-provision.service"]
+        )
+        if code != 0:
+            return self.send_json(
+                {"ok": False, "error": err or "failed to start provisioning"}, status=500
+            )
+        log("provisioning started from staged bundle (DESTRUCTIVE)")
+        return self.send_json(
+            {
+                "ok": True,
+                "message": "Provisioning started. The NVMe is being wiped and "
+                "reconfigured; the WebUI will restart in ~1 minute.",
+            }
+        )
 
     def handle_maintenance_mode(self):
         length = int(self.headers.get("Content-Length", 0))
