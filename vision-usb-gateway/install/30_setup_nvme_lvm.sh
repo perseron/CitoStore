@@ -40,6 +40,14 @@ PART=${NVME_DEVICE}p1
 if $WIPE; then
   log "wipe enabled: partitioning $NVME_DEVICE"
   require_cmd parted
+  # Destroy any prior LVM/filesystem signatures first. mklabel only rewrites the
+  # partition table, so an old PV left inside the partition would be re-scanned
+  # and auto-activated by udev, holding the device busy during pvcreate.
+  vgchange -an >/dev/null 2>&1 || true
+  for _p in "${NVME_DEVICE}"p*; do
+    [[ -b "$_p" ]] && wipefs -a "$_p" >/dev/null 2>&1 || true
+  done
+  wipefs -a "$NVME_DEVICE" >/dev/null 2>&1 || true
   parted -s "$NVME_DEVICE" mklabel gpt
   parted -s "$NVME_DEVICE" mkpart primary 1MiB 100%
   partprobe "$NVME_DEVICE"
