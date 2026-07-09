@@ -83,10 +83,14 @@ head -c 32 /dev/urandom > "$STATE_DIR/webui.secret"
 chmod 0600 "$STATE_DIR/webui.secret"
 log "generated fresh WebUI session secret"
 
-# 6) Apply config + start the stack.
-"$GATEWAY_HOME/scripts/apply-shadow-config.sh" 2>/dev/null || true
-systemctl start usb-gadget.service 2>/dev/null || true
-systemctl start vision-sync.timer 2>/dev/null || true
+# 6) Do NOT apply config or start the stack from here. vision-firstboot.service
+#    is ordered Before= vision-gw-config, usb-gadget, vision-sync.timer and smbd,
+#    so calling apply-shadow-config (which restarts those) or `systemctl start`
+#    on them DEADLOCKS: the (re)start job blocks until firstboot's ordering
+#    releases, and firstboot blocks waiting for that job. The normal boot units
+#    (vision-gw-config, vision-shadow-config) apply the config, and the enabled
+#    services start on their own, once firstboot completes — or after the
+#    overlay-enable reboot below.
 
 # 7) Mark done BEFORE any overlay flip, so the flag lands on the real disk.
 touch "$DONE_FLAG"
