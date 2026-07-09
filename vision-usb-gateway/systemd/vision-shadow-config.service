@@ -1,0 +1,22 @@
+[Unit]
+Description=Re-apply shadow config (samba + eth1/ingest) from the NVMe on boot
+Documentation=file:///opt/CitoStore/vision-usb-gateway/docs/ethernet-aoi-ingest.md
+# The shadow config and its secrets live on the NVMe; the appliers write into
+# /etc, which is a tmpfs upper under the read-only overlay. Without this unit
+# nothing re-applies them after a reboot: a WebUI password change lands in
+# .state/ftp.creds but /etc/shadow reverts to the eMMC baseline, so the AOI's
+# ingest login silently breaks on the next boot.
+After=network-online.target srv-vision_mirror.mount var-lib-samba.mount vision-gw-config.service
+Requires=srv-vision_mirror.mount
+Wants=network-online.target
+ConditionPathExists=/srv/vision_mirror/.state/vision-gw.conf
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/apply-shadow-config.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

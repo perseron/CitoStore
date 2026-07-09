@@ -63,6 +63,12 @@ if [[ -d "$SCRIPT_DIR/../systemd/nmbd.service.d" ]]; then
   mkdir -p /etc/systemd/system/nmbd.service.d
   install -m 0644 "$SCRIPT_DIR/../systemd/nmbd.service.d/"*.conf /etc/systemd/system/nmbd.service.d/
 fi
+# Must land on the persistent root: vsftpd starts before anything re-applies
+# config at boot, so generating this drop-in later would always be too late.
+if [[ -d "$SCRIPT_DIR/../systemd/vsftpd.service.d" ]]; then
+  mkdir -p /etc/systemd/system/vsftpd.service.d
+  install -m 0644 "$SCRIPT_DIR/../systemd/vsftpd.service.d/"*.conf /etc/systemd/system/vsftpd.service.d/
+fi
 
 log "configuring vision-sync.timer override"
 SYNC_TIMER_DIR=/etc/systemd/system/vision-sync.timer.d
@@ -109,6 +115,7 @@ systemctl disable vision-sync-fast.timer >/dev/null 2>&1 || true
 systemctl stop vision-sync-fast.timer >/dev/null 2>&1 || true
 systemctl disable vision-monitor.timer vision-rotator.timer >/dev/null 2>&1 || true
 systemctl enable vision-webui.service
+systemctl enable vision-shadow-config.service
 systemctl enable vision-rtc-boot.service
 systemctl enable vision-rtc-sync.timer
 systemctl enable vision-snapshot-cleanup.timer

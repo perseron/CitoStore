@@ -52,10 +52,15 @@ normalize_overlayroot_cmdline() {
 }
 
 maybe_recover_previous_failed_enable() {
-  local current_root cmdline_count
+  local current_root cmdline_has_arg=false
   current_root=$(findmnt -no FSTYPE / 2>/dev/null || true)
-  cmdline_count=$(grep -o 'overlayroot=tmpfs:recurse=0' /proc/cmdline 2>/dev/null | wc -l | xargs || echo 0)
-  if [[ "$current_root" != "overlay" && "$cmdline_count" -gt 0 ]]; then
+  # Plain grep -q: under `set -o pipefail` a non-matching grep in a pipeline
+  # fails the pipeline, so a `... | wc -l || echo 0` fallback would emit two
+  # lines ("0\n0") and make the [[ -gt ]] test below a syntax error.
+  if grep -q 'overlayroot=tmpfs:recurse=0' /proc/cmdline 2>/dev/null; then
+    cmdline_has_arg=true
+  fi
+  if [[ "$current_root" != "overlay" && "$cmdline_has_arg" == true ]]; then
     log "detected previous overlay enable attempt (kernel arg present, root=$current_root)"
     if command -v raspi-config >/dev/null 2>&1; then
       log "attempting overlayfs recovery toggle via raspi-config"
