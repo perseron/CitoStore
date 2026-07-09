@@ -610,6 +610,65 @@ document.getElementById("import-config-file").addEventListener("change", async (
   await loadConfig();
 });
 
+// Config bundle (replacement unit)
+document.getElementById("export-bundle").addEventListener("click",
+  withLoading(document.getElementById("export-bundle"), async () => {
+    const res = await fetch("/api/config/bundle", {
+      headers: { "X-CSRF": getCookie("csrf") },
+    });
+    if (!res.ok) throw new Error("Bundle export failed");
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "citostore-config.citostore";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    setStatus("Config bundle downloaded");
+  }));
+
+document.getElementById("provision-bundle").addEventListener("click", () => {
+  document.getElementById("provision-bundle-file").click();
+});
+document.getElementById("provision-bundle-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = "";
+  const csrf = getCookie("csrf");
+  setStatus("Uploading bundle…");
+  const buf = await file.arrayBuffer();
+  const planRes = await fetch("/api/config/bundle/plan", {
+    method: "POST",
+    headers: { "X-CSRF": csrf, "Content-Type": "application/octet-stream" },
+    body: buf,
+  });
+  const planJson = await planRes.json();
+  if (!planJson.ok) { setStatus("Error: " + (planJson.error || "invalid bundle")); return; }
+  const p = planJson.plan;
+  if (!p.ok) {
+    await showModal("NVMe too small",
+      `This NVMe (${p.nvme_total_gib}G) is too small for the bundle's USB layout ` +
+      `(${p.usb_lv_count} × ${p.usb_lv_size_gib}G). Reduce USB_LV_SIZE and retry.`,
+      "OK", false);
+    return;
+  }
+  const msg =
+    `Wipes this NVMe (${p.nvme_total_gib}G) and applies the bundle. ` +
+    `New layout: mirror ${p.mirror_gib}G, USB pool ${p.usbpool_gib}G, ` +
+    `${p.usb_lv_count} × ${p.usb_lv_size_gib}G FAT32 drives. ` +
+    `Type PROVISION to confirm.`;
+  const ok = await showModal("Provision from Bundle (DESTRUCTIVE)", msg, "PROVISION", true);
+  if (!ok) return;
+  const provRes = await fetch("/api/config/bundle/provision", {
+    method: "POST",
+    headers: { "X-CSRF": csrf, "Content-Type": "application/json" },
+    body: JSON.stringify({ confirm: true }),
+  });
+  const provJson = await provRes.json();
+  setStatus(provJson.ok
+    ? (provJson.message || "Provisioning started")
+    : "Error: " + (provJson.error || "provisioning failed"));
+});
+
 // Maintenance mode
 async function loadMaintenanceMode() {
   try {
