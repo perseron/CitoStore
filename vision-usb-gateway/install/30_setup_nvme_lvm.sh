@@ -66,7 +66,7 @@ fi
 
 if ! lvdisplay "$LVM_VG/$MIRROR_LV" >/dev/null 2>&1; then
   log "creating mirror LV $MIRROR_LV"
-  lvcreate -L "$MIRROR_SIZE" -n "$MIRROR_LV" "$LVM_VG"
+  lvcreate -Wy -y -L "$MIRROR_SIZE" -n "$MIRROR_LV" "$LVM_VG"
   mkfs.ext4 -F "/dev/$LVM_VG/$MIRROR_LV"
 fi
 
@@ -83,7 +83,7 @@ fi
 for lv in "${USB_LVS[@]}"; do
   if ! lvdisplay "$LVM_VG/$lv" >/dev/null 2>&1; then
     log "creating USB LV $lv"
-    lvcreate -V "$USB_LV_SIZE" -T "$LVM_VG/$THINPOOL_LV" -n "$lv"
+    lvcreate -Wy -y -V "$USB_LV_SIZE" -T "$LVM_VG/$THINPOOL_LV" -n "$lv"
     vol_serial=$(printf '%04X%04X' "$((RANDOM))" "$((RANDOM))")
     mkfs_opts=(-F 32 -n "$USB_LABEL" -i "$vol_serial")
     mkfs.vfat "${mkfs_opts[@]}" "/dev/$LVM_VG/$lv"
