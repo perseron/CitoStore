@@ -177,16 +177,16 @@ done
 # 3) Wipe + partition the NVMe with the adapted layout.
 bash "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
 
-# 3) Ensure the mirror is mounted and .state exists.
+# 4) Ensure the mirror is mounted and .state exists.
 mountpoint -q "$MIRROR_MOUNT" || mount "$MIRROR_MOUNT" || mount -a
 STATE_DIR="$MIRROR_MOUNT/.state"
 safe_mkdir "$STATE_DIR"
 
-# 4) Config becomes the authoritative shadow copy.
+# 5) Config becomes the authoritative shadow copy.
 cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
 cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf.last-good"
 
-# 5) Restore secrets + AOI settings from the bundle.
+# 6) Restore secrets + AOI settings from the bundle.
 for f in webui.passwd webui.secret vision-nas.creds; do
   if [[ -f "$STAGE/state/$f" ]]; then
     install -m 0600 "$STAGE/state/$f" "$STATE_DIR/$f"
@@ -200,10 +200,10 @@ if [[ -d "$STAGE/state/aoi_settings" ]]; then
   log "restored aoi_settings"
 fi
 
-# 6) Apply config (promotes shadow, configures Samba incl. the persist bind mount).
+# 7) Apply config (promotes shadow, configures Samba incl. the persist bind mount).
 bash "$GATEWAY_HOME/scripts/apply-shadow-config.sh"
 
-# 7) Restore the Samba passdb onto the now-bind-mounted persistent location so
+# 8) Restore the Samba passdb onto the now-bind-mounted persistent location so
 #    the SMB users/passwords come across (Samba was just seeded with defaults).
 if [[ -f "$STAGE/samba/passdb.tdb" ]] && mountpoint -q /var/lib/samba; then
   install -m 0600 "$STAGE/samba/passdb.tdb" /var/lib/samba/private/passdb.tdb
@@ -213,7 +213,7 @@ if [[ -f "$STAGE/samba/passdb.tdb" ]] && mountpoint -q /var/lib/samba; then
   log "restored Samba passdb (SMB users/passwords carried over)"
 fi
 
-# 8) Bring the stack up.
+# 9) Bring the stack up.
 systemctl start usb-gadget.service 2>/dev/null || true
 systemctl start vision-sync.timer 2>/dev/null || true
 systemctl restart vision-webui.service 2>/dev/null || true
