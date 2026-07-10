@@ -418,53 +418,8 @@ async function refreshLogs() {
   document.getElementById("log-output").textContent = out || "(no output)";
 }
 
-async function saveConfig(apply = false) {
-  if (!validateAll()) {
-    setStatus("Fix invalid fields before saving");
-    return;
-  }
-  const payload = {
-    NETBIOS_NAME: document.getElementById("NETBIOS_NAME").value,
-    SMB_WORKGROUP: document.getElementById("SMB_WORKGROUP").value,
-    SMB_BIND_INTERFACE: document.getElementById("SMB_BIND_INTERFACE").value,
-    SYNC_INTERVAL_SEC: document.getElementById("SYNC_INTERVAL_SEC").value,
-    SYNC_HI_INTERVAL_SEC: document.getElementById("SYNC_HI_INTERVAL_SEC").value,
-    SYNC_ONBOOT_SEC: document.getElementById("SYNC_ONBOOT_SEC").value,
-    SYNC_ONACTIVE_SEC: document.getElementById("SYNC_ONACTIVE_SEC").value,
-    SYNC_SCAN_DEPTH: document.getElementById("SYNC_SCAN_DEPTH").value,
-    SYNC_HOT_DIRS: document.getElementById("SYNC_HOT_DIRS").value,
-    SYNC_COLD_AUDIT_DIRS_PER_RUN: document.getElementById("SYNC_COLD_AUDIT_DIRS_PER_RUN").value,
-    BYDATE_USE_FILE_TIME: document.getElementById("BYDATE_USE_FILE_TIME").value,
-    RAW_APPEND_ALWAYS: document.getElementById("RAW_APPEND_ALWAYS").value,
-    NAS_ENABLED: document.getElementById("NAS_ENABLED").value,
-    NAS_REMOTE: document.getElementById("NAS_REMOTE").value,
-    NAS_MOUNT: document.getElementById("NAS_MOUNT").value,
-    WEBUI_BIND: document.getElementById("WEBUI_BIND").value,
-    WEBUI_PORT: document.getElementById("WEBUI_PORT").value,
-    SWITCH_WINDOW_START: document.getElementById("SWITCH_WINDOW_START").value,
-    SWITCH_WINDOW_END: document.getElementById("SWITCH_WINDOW_END").value,
-    SWITCH_DELAY_SEC: document.getElementById("SWITCH_DELAY_SEC").value,
-    ETH1_ENABLED: document.getElementById("ETH1_ENABLED").value,
-    ETH1_ADDRESS: document.getElementById("ETH1_ADDRESS").value,
-    ETH1_PREFIX: document.getElementById("ETH1_PREFIX").value,
-    ETH1_GATEWAY: document.getElementById("ETH1_GATEWAY").value,
-    INGEST_ENABLED: document.getElementById("INGEST_ENABLED").value,
-    FTP_ENABLED: document.getElementById("FTP_ENABLED").value,
-    SFTP_ENABLED: document.getElementById("SFTP_ENABLED").value,
-    FTP_USER: document.getElementById("FTP_USER").value,
-  };
-  await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
-  await api("/api/nas-creds", {
-    method: "POST",
-    body: JSON.stringify({
-      username: document.getElementById("NAS_USERNAME").value,
-      password: document.getElementById("NAS_PASSWORD").value,
-      domain: document.getElementById("NAS_DOMAIN").value,
-    }),
-  });
-  if (apply) await api("/api/apply", { method: "POST", body: "{}" });
-  setStatus("Config saved" + (apply ? " and applied" : ""));
-}
+// Config save is per-section now (saveAndApply / saveNas, wired near the bottom):
+// each feature section writes only its own keys to the shadow, then applies.
 
 async function applyNetwork() {
   if (!validateAll()) {
@@ -570,10 +525,54 @@ async function maintenance(action) {
   }
 }
 
-document.getElementById("save-config").addEventListener("click",
-  withLoading(document.getElementById("save-config"), () => saveConfig(false)));
-document.getElementById("apply-config").addEventListener("click",
-  withLoading(document.getElementById("apply-config"), () => saveConfig(true)));
+// --- Per-section Save + Apply (each section scopes to its own config keys) ---
+function validateFields(ids) {
+  let ok = true;
+  ids.forEach(id => { const el = document.getElementById(id); if (el && !validateField(el)) ok = false; });
+  return ok;
+}
+async function saveAndApply(keys, label) {
+  if (!validateFields(keys)) { setStatus("Fix invalid fields in " + label); return; }
+  const payload = {};
+  keys.forEach(k => { const el = document.getElementById(k); if (el) payload[k] = el.value; });
+  await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
+  await api("/api/apply", { method: "POST", body: "{}" });
+  setStatus(label + " saved and applied");
+}
+const USB_KEYS = ["SYNC_INTERVAL_SEC", "SYNC_ONBOOT_SEC", "SYNC_ONACTIVE_SEC",
+  "SYNC_HI_INTERVAL_SEC", "SYNC_SCAN_DEPTH", "SYNC_HOT_DIRS",
+  "SYNC_COLD_AUDIT_DIRS_PER_RUN", "BYDATE_USE_FILE_TIME", "RAW_APPEND_ALWAYS",
+  "SWITCH_WINDOW_START", "SWITCH_WINDOW_END", "SWITCH_DELAY_SEC"];
+const ETH_AOI_KEYS = ["ETH1_ENABLED", "ETH1_ADDRESS", "ETH1_PREFIX", "ETH1_GATEWAY",
+  "INGEST_ENABLED", "FTP_ENABLED", "SFTP_ENABLED", "FTP_USER"];
+const SMB_KEYS = ["NETBIOS_NAME", "SMB_WORKGROUP", "SMB_BIND_INTERFACE"];
+const SYSTEM_KEYS = ["WEBUI_BIND", "WEBUI_PORT"];
+async function saveNas() {
+  const cfgKeys = ["NAS_ENABLED", "NAS_REMOTE", "NAS_MOUNT"];
+  if (!validateFields([...cfgKeys, "NAS_USERNAME", "NAS_PASSWORD", "NAS_DOMAIN"])) {
+    setStatus("Fix invalid NAS fields");
+    return;
+  }
+  const payload = {};
+  cfgKeys.forEach(k => { payload[k] = document.getElementById(k).value; });
+  await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
+  await api("/api/nas-creds", { method: "POST", body: JSON.stringify({
+    username: document.getElementById("NAS_USERNAME").value,
+    password: document.getElementById("NAS_PASSWORD").value,
+    domain: document.getElementById("NAS_DOMAIN").value,
+  }) });
+  await api("/api/apply", { method: "POST", body: "{}" });
+  setStatus("NAS settings saved and applied");
+}
+function wire(id, fn) {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("click", withLoading(el, fn));
+}
+wire("save-usb", () => saveAndApply(USB_KEYS, "USB AOI settings"));
+wire("save-eth-aoi", () => saveAndApply(ETH_AOI_KEYS, "Ethernet AOI settings"));
+wire("save-smb", () => saveAndApply(SMB_KEYS, "SMB settings"));
+wire("save-nas", saveNas);
+wire("save-system", () => saveAndApply(SYSTEM_KEYS, "System settings"));
 document.getElementById("apply-network").addEventListener("click",
   withLoading(document.getElementById("apply-network"), applyNetwork));
 document.getElementById("save-webui-pass").addEventListener("click",

@@ -30,7 +30,12 @@
     </section>
 
     <section>
-      <h2>Configuration</h2>
+      <h2>USB AOI (Win98 / OTG storage)</h2>
+      <p class="hint">
+        The USB gadget the AOI writes to, its rotation between the LVs, and how it
+        is synced to the NVMe mirror. "Save + Apply" writes these settings and
+        re-applies them now.
+      </p>
       <h3>Sync</h3>
       <div class="grid">
         <label>Sync interval <input id="SYNC_INTERVAL_SEC" data-validate="time">
@@ -70,7 +75,7 @@
         </label>
       </div>
 
-      <h3>USB Rotation</h3>
+      <h3>USB rotation</h3>
       <div class="grid">
         <label>Switch window start <input id="SWITCH_WINDOW_START" data-validate="hhmm">
           <span class="hint">HH:MM (e.g. 00:00)</span>
@@ -79,11 +84,62 @@
           <span class="hint">HH:MM (e.g. 23:59)</span>
         </label>
         <label>Switch delay (sec) <input id="SWITCH_DELAY_SEC" data-validate="float-range:0:10">
-          <span class="hint">0 = silent, 1-2 = Windows gap</span>
+          <span class="hint">0 = imperceptible to the AOI; 1-2 lets a host notice</span>
         </label>
       </div>
 
-      <h3>Samba</h3>
+      <div class="actions">
+        <button id="save-usb">Save + Apply</button>
+        <button id="trigger-sync">Sync Now</button>
+        <button id="rotate-usb">Rotate USB Now</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Ethernet AOI (FTP/SFTP ingest)</h2>
+      <p class="hint">
+        Second Ethernet (eth1) for an isolated network AOI that pushes files
+        directly via FTP/SFTP onto the NVMe (served under the SMB share, covered
+        by retention). Everything for this feature is here: "Save + Apply" writes
+        the network + ingest settings; the password has its own button below.
+      </p>
+      <div class="grid">
+        <label>eth1 enabled
+          <select id="ETH1_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        </label>
+        <label>eth1 address <input id="ETH1_ADDRESS" placeholder="192.168.100.1" data-validate="ip-optional"></label>
+        <label>eth1 prefix <input id="ETH1_PREFIX" placeholder="24" data-validate="prefix"></label>
+        <label>eth1 gateway <input id="ETH1_GATEWAY" placeholder="(empty when isolated)" data-validate="ip-optional"></label>
+        <label>Ingest enabled
+          <select id="INGEST_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        </label>
+        <label>FTP enabled
+          <select id="FTP_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        </label>
+        <label>SFTP enabled
+          <select id="SFTP_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        </label>
+        <label>FTP/SFTP user <input id="FTP_USER" placeholder="aoiftp"></label>
+      </div>
+      <div class="actions">
+        <button id="save-eth-aoi">Save + Apply</button>
+      </div>
+      <h3>Ingest password</h3>
+      <div class="grid">
+        <label>FTP/SFTP password <input id="FTP_PASSWORD" type="password"></label>
+        <label>Confirm <input id="FTP_PASSWORD_CONFIRM" type="password"></label>
+      </div>
+      <div class="actions">
+        <button id="set-ftp-password">Set Ingest Password</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>SMB share</h2>
+      <p class="hint">
+        The read-only SMB share of the mirror (browsed by the operator). Name,
+        workgroup and which interface it binds to, plus the share user's password.
+      </p>
       <div class="grid">
         <label>NetBIOS name <input id="NETBIOS_NAME" data-validate="netbios">
           <span class="hint">1-15 chars, letters/numbers/_/-</span>
@@ -92,25 +148,32 @@
           <span class="hint">1-15 chars, letters/numbers/_/-</span>
         </label>
         <label>Bind interface <input id="SMB_BIND_INTERFACE" data-validate="iface">
-          <span class="hint">e.g. eth0</span>
+          <span class="hint">e.g. eth0 (SMB only on this NIC)</span>
         </label>
       </div>
-
-      <h3>WebUI</h3>
+      <div class="actions">
+        <button id="save-smb">Save + Apply</button>
+      </div>
+      <h3>SMB password</h3>
       <div class="grid">
-        <label>Bind address
-          <select id="WEBUI_BIND">
-            <option value="0.0.0.0">0.0.0.0 (all interfaces)</option>
-            <option value="127.0.0.1">127.0.0.1 (localhost only)</option>
-          </select>
-          <span class="hint">requires service restart</span>
+        <label>New SMB Password <input id="SMB_PASS" type="password" data-validate="password">
+          <span class="hint">min 6 chars</span>
         </label>
-        <label>Port <input id="WEBUI_PORT" data-validate="int-range:1:65535" value="80">
-          <span class="hint">1-65535, requires restart</span>
+        <label>Confirm SMB Password <input id="SMB_PASS2" type="password" data-validate="match:SMB_PASS">
+          <span class="hint">must match</span>
         </label>
       </div>
+      <div class="actions">
+        <button id="save-smb-pass">Change SMB Password</button>
+      </div>
+    </section>
 
-      <h3>NAS</h3>
+    <section>
+      <h2>NAS backup (optional)</h2>
+      <p class="hint">
+        Optionally mirror to an external SMB/CIFS NAS. "Save + Apply" writes the
+        settings and credentials and applies them.
+      </p>
       <div class="grid">
         <label>Enable NAS sync
           <select id="NAS_ENABLED">
@@ -134,52 +197,19 @@
           <span class="hint">optional</span>
         </label>
       </div>
-
       <div class="actions">
-        <button id="save-config">Save to Shadow</button>
-        <button id="apply-config">Save + Apply</button>
-        <button id="export-config">Export Config</button>
-        <button id="import-config">Import Config</button>
-        <input type="file" id="import-config-file" accept=".conf,.txt" class="hidden">
+        <button id="save-nas">Save + Apply</button>
       </div>
     </section>
 
     <section>
-      <h2>Config Bundle (Replacement Unit)</h2>
+      <h2>Base network (management)</h2>
       <p class="hint">
-        Download a full unit backup (settings + WebUI/SMB/NAS passwords + AOI
-        settings). To turn a blank replacement unit into a drop-in, provision it
-        from that bundle here &mdash; the NVMe is wiped and re-partitioned to fit
-        this unit's disk, so a different NVMe size still works.
+        The primary interface (usually eth0) used for the SMB share and this Web
+        UI. "Apply Network" changes the LIVE IP immediately via NetworkManager
+        &mdash; distinct from the eth1 ingest link above, which is set under
+        "Ethernet AOI".
       </p>
-      <div class="actions">
-        <button id="export-bundle">Download Config Bundle</button>
-        <button id="provision-bundle" class="danger">Provision from Bundle&hellip;</button>
-        <input type="file" id="provision-bundle-file" accept=".citostore" class="hidden">
-      </div>
-    </section>
-
-    <section>
-      <h2>Time</h2>
-      <h3>Time status</h3>
-      <pre id="time-status">Loading...</pre>
-
-      <h3>Manual time set (fallback)</h3>
-      <div class="grid">
-        <label>Date <input id="MANUAL_DATE" data-validate="date">
-          <span class="hint">YYYY-MM-DD</span>
-        </label>
-        <label>Time <input id="MANUAL_CLOCK" data-validate="clock">
-          <span class="hint">HH:MM:SS</span>
-        </label>
-      </div>
-      <div class="actions">
-        <button id="set-time">Set Time Now</button>
-      </div>
-    </section>
-
-    <section>
-      <h2>Network (NetworkManager)</h2>
       <div class="grid">
         <label>Interface <input id="NET_IFACE" value="eth0" data-validate="iface">
           <span class="hint">e.g. eth0</span>
@@ -204,47 +234,29 @@
         </label>
       </div>
       <div class="actions">
-        <button id="apply-network">Apply Network</button>
+        <button id="apply-network">Apply Network (live)</button>
       </div>
     </section>
 
     <section>
-      <h2>Ethernet AOI (FTP/SFTP ingest)</h2>
-      <p class="hint">
-        Second Ethernet (eth1) for an isolated network AOI that pushes files
-        directly via FTP/SFTP onto the NVMe (NAS-like; served under the SMB
-        share and covered by retention).
-      </p>
+      <h2>System</h2>
+      <h3>Web UI</h3>
       <div class="grid">
-        <label>eth1 enabled
-          <select id="ETH1_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        <label>Bind address
+          <select id="WEBUI_BIND">
+            <option value="0.0.0.0">0.0.0.0 (all interfaces)</option>
+            <option value="127.0.0.1">127.0.0.1 (localhost only)</option>
+          </select>
+          <span class="hint">requires service restart</span>
         </label>
-        <label>eth1 address <input id="ETH1_ADDRESS" placeholder="192.168.100.1" data-validate="ip-optional"></label>
-        <label>eth1 prefix <input id="ETH1_PREFIX" placeholder="24" data-validate="prefix"></label>
-        <label>eth1 gateway <input id="ETH1_GATEWAY" placeholder="(empty when isolated)" data-validate="ip-optional"></label>
-        <label>Ingest enabled
-          <select id="INGEST_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
+        <label>Port <input id="WEBUI_PORT" data-validate="int-range:1:65535" value="80">
+          <span class="hint">1-65535, requires restart</span>
         </label>
-        <label>FTP enabled
-          <select id="FTP_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
-        </label>
-        <label>SFTP enabled
-          <select id="SFTP_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
-        </label>
-        <label>FTP/SFTP user <input id="FTP_USER" placeholder="aoiftp"></label>
-      </div>
-      <p class="hint">Settings save with the main "Save + Apply" above. Set the ingest password here:</p>
-      <div class="grid">
-        <label>FTP/SFTP password <input id="FTP_PASSWORD" type="password"></label>
-        <label>Confirm <input id="FTP_PASSWORD_CONFIRM" type="password"></label>
       </div>
       <div class="actions">
-        <button id="set-ftp-password">Set Ingest Password</button>
+        <button id="save-system">Save + Apply</button>
       </div>
-    </section>
-
-    <section>
-      <h2>Security</h2>
+      <h3>Web UI password</h3>
       <div class="grid">
         <label>New Web UI Password <input id="WEBUI_PASS" type="password" data-validate="password">
           <span class="hint">min 6 chars</span>
@@ -256,16 +268,18 @@
       <div class="actions">
         <button id="save-webui-pass">Change Web UI Password</button>
       </div>
+      <h3>Time</h3>
+      <pre id="time-status">Loading...</pre>
       <div class="grid">
-        <label>New SMB Password <input id="SMB_PASS" type="password" data-validate="password">
-          <span class="hint">min 6 chars</span>
+        <label>Date <input id="MANUAL_DATE" data-validate="date">
+          <span class="hint">YYYY-MM-DD</span>
         </label>
-        <label>Confirm SMB Password <input id="SMB_PASS2" type="password" data-validate="match:SMB_PASS">
-          <span class="hint">must match</span>
+        <label>Time <input id="MANUAL_CLOCK" data-validate="clock">
+          <span class="hint">HH:MM:SS</span>
         </label>
       </div>
       <div class="actions">
-        <button id="save-smb-pass">Change SMB Password</button>
+        <button id="set-time">Set Time Now</button>
       </div>
     </section>
 
@@ -277,8 +291,6 @@
         </label>
       </div>
       <div class="actions">
-        <button id="trigger-sync">Sync Now</button>
-        <button id="rotate-usb">Rotate USB Now</button>
         <button class="danger" id="resize-usb">Resize USB LVs</button>
         <button class="danger" id="rebalance">Rebalance Storage</button>
         <button class="danger" id="wipe">Wipe All Data</button>
@@ -299,6 +311,22 @@
         <input type="file" id="update-file" accept=".tar.gz,.tgz" class="hidden">
       </div>
       <pre id="update-history">No update history.</pre>
+    </section>
+
+    <section>
+      <h2>Backup &amp; Replacement</h2>
+      <p class="hint">
+        Export/import just the config, or download a full unit bundle (config +
+        passwords + AOI settings) to drop onto a blank replacement unit.
+      </p>
+      <div class="actions">
+        <button id="export-config">Export Config</button>
+        <button id="import-config">Import Config</button>
+        <input type="file" id="import-config-file" accept=".conf,.txt" class="hidden">
+        <button id="export-bundle">Download Config Bundle</button>
+        <button id="provision-bundle" class="danger">Provision from Bundle&hellip;</button>
+        <input type="file" id="provision-bundle-file" accept=".citostore" class="hidden">
+      </div>
     </section>
 
     <section>
