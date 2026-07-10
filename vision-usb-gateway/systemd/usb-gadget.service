@@ -1,6 +1,11 @@
 [Unit]
 Description=USB Gadget for Vision Host
-After=local-fs.target
+# Order after the config restore so /etc/vision-gw.conf (and USB_LVS) is fully
+# written before we start: with only After=local-fs.target the gadget raced
+# vision-gw-config's rewrite of that file and intermittently read it truncated,
+# crashing on `USB_LVS: unbound variable`.
+After=local-fs.target vision-gw-config.service
+Wants=vision-gw-config.service
 
 [Service]
 Type=oneshot
