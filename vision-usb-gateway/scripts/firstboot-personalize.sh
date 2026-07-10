@@ -73,11 +73,17 @@ if [[ ! -f "$STATE_DIR/vision-gw.conf" && -f /etc/vision-gw.conf ]]; then
   log "seeded shadow config from golden /etc"
 fi
 
-# 4c) Grow the root filesystem to fill its partition. Shrunk (PiShrink) images
-#     ship a small ext4; PiShrink enlarges the partition but its own resize2fs
-#     hook does not survive our overlay/firstboot flow. Do it here explicitly,
-#     in the writable window BEFORE the overlay is (re-)enabled below. Idempotent
-#     (no-op once the fs already fills the partition), and skipped under overlay.
+# 4c) Drop PiShrink's own autoexpand hook: our vision-rootfs-grow.service does the
+#     resize, and resize2fs_once otherwise fails every boot under the read-only
+#     overlay (leaving a failed unit). Runs here in the writable window so the
+#     removal persists to the eMMC lower.
+rm -f /etc/init.d/resize2fs_once /etc/rc*.d/*resize2fs_once 2>/dev/null || true
+
+# 4d) Enlarge the root PARTITION to fill the disk (shrunk images ship it small).
+#     The FS itself is grown by vision-rootfs-grow.service on the next boot, once
+#     the enlarged partition is visible after a fresh scan — doing resize2fs in
+#     this same boot proved unreliable (kernel didn't see the new size in time).
+#     Skipped under overlay (root_src won't be /dev/*).
 root_src=$(findmnt -no SOURCE / 2>/dev/null)
 if [[ "$root_src" == /dev/* ]]; then
   root_disk=$(lsblk -no PKNAME "$root_src" 2>/dev/null | head -1)
