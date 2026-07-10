@@ -84,6 +84,11 @@ if [[ "$root_src" == /dev/* ]]; then
   root_partnum=$(printf '%s' "$root_src" | grep -oE '[0-9]+$')
   if [[ -n "$root_disk" && -n "$root_partnum" ]] && command -v parted >/dev/null 2>&1; then
     parted -s "/dev/$root_disk" resizepart "$root_partnum" 100% >/dev/null 2>&1 || true
+    # Make the kernel see the enlarged partition BEFORE resize2fs, or resize2fs
+    # reads the stale (small) partition size and no-ops. parted's BLKPG alone
+    # proved unreliable on the mounted root; partx -u updates it explicitly.
+    partx -u "/dev/$root_disk" >/dev/null 2>&1 || partprobe "/dev/$root_disk" >/dev/null 2>&1 || true
+    udevadm settle >/dev/null 2>&1 || true
   fi
   if command -v resize2fs >/dev/null 2>&1; then
     log "growing root filesystem to fill $root_src"
