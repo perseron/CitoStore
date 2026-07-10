@@ -1,0 +1,16 @@
+# Never commit SSH private keys / secrets (added 2026-07-10)
+ssh-keys/
+id_ed25519
+id_ed25519.pub
+*.pem
+*_rsa
+*_ed25519
+
+# Build / test artifacts
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Host diagnostic dumps (transient)
+vision-host-forensics-*/
