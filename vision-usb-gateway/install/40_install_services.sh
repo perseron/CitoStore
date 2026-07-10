@@ -116,6 +116,7 @@ systemctl enable vision-nvme-health.timer
 systemctl enable vision-log-cleanup.timer
 systemctl enable vision-persist-boot-log.service
 systemctl enable vision-update-reapply.service
+systemctl enable vision-rootfs-grow.service
 
 # vision-firstboot.service is installed but only enabled by
 # prepare-golden-image.sh (it must run on clones, not on a normal install).

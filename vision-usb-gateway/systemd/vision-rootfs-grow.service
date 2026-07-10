@@ -1,0 +1,17 @@
+[Unit]
+Description=Grow the eMMC root filesystem to fill its partition (idempotent)
+# Runs early each boot; a no-op once the fs is full size. Ordered before the
+# services that write to the (initially tight) root so they get the space.
+After=local-fs.target
+Before=vision-shadow-config.service vision-sync.timer smbd.service vision-webui.service
+DefaultDependencies=yes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/grow-rootfs.sh
+
+[Install]
+WantedBy=multi-user.target
