@@ -129,6 +129,33 @@ def run_cmd(args, input_text=None, timeout=120):
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
+def run_privileged(args, input_text=None, timeout=120):
+    """Run a system-mutating command outside this service's sandbox.
+
+    vision-webui.service runs under ProtectSystem=strict with a narrow
+    ReadWritePaths list, and any child it spawns inherits that read-only view
+    of /etc, /usr, /var, etc. The config-apply and account scripts must write
+    broadly under those trees (sed -i tempfiles in /etc, useradd touching
+    /etc/passwd + /etc/shadow, network and vsftpd/ssh config, the Samba
+    passdb), so running them directly fails with EROFS. Hand them to PID 1 via
+    systemd-run instead: the transient unit runs with full root access,
+    unconstrained by our sandbox. Running in a separate unit (not our cgroup)
+    also means apply-shadow-config restarting vision-webui no longer kills the
+    apply mid-run.
+    """
+    cmd = [
+        "systemd-run",
+        "--quiet",
+        "--collect",
+        "--wait",
+        "--pipe",
+        "--service-type=oneshot",
+        "--",
+        *args,
+    ]
+    return run_cmd(cmd, input_text=input_text, timeout=timeout)
+
+
 def load_config_text() -> str:
     if SHADOW_CONF.exists():
         return SHADOW_CONF.read_text(encoding="utf-8")
@@ -1159,7 +1186,7 @@ class WebHandler(BaseHTTPRequestHandler):
     def handle_apply(self):
         with require_lock():
             gh = get_gateway_home()
-            code, out, err = run_cmd([f"{gh}/scripts/apply-shadow-config.sh"])
+            code, out, err = run_privileged([f"{gh}/scripts/apply-shadow-config.sh"])
             log(f"apply-config rc={code} out={out} err={err}")
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
@@ -1192,13 +1219,13 @@ class WebHandler(BaseHTTPRequestHandler):
         cfg = parse_config(load_config_text())
         smb_user = cfg.get("SMB_USER", "smbuser")
         input_text = f"{password}\n{password}\n"
-        code, out, err = run_cmd(
+        code, out, err = run_privileged(
             ["/usr/bin/smbpasswd", "-s", "-a", smb_user],
             input_text=input_text,
         )
         if code != 0:
             return self.send_json({"ok": False, "error": err or out}, status=500)
-        run_cmd(["/usr/bin/smbpasswd", "-e", smb_user])
+        run_privileged(["/usr/bin/smbpasswd", "-e", smb_user])
         log(f"smb password changed for {smb_user}")
         return self.send_json({"ok": True})
 
@@ -1219,7 +1246,7 @@ class WebHandler(BaseHTTPRequestHandler):
         creds.write_text(f"password={password}\n", encoding="utf-8")
         os.chmod(creds, 0o600)
         # Apply now if the ingest user already exists.
-        run_cmd(["/usr/sbin/chpasswd"], input_text=f"{ftp_user}:{password}\n")
+        run_privileged(["/usr/sbin/chpasswd"], input_text=f"{ftp_user}:{password}\n")
         log(f"ftp password changed for {ftp_user}")
         return self.send_json({"ok": True})
 
@@ -1287,7 +1314,7 @@ class WebHandler(BaseHTTPRequestHandler):
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
             gh = get_gateway_home()
-            run_cmd([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
+            run_privileged([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
             log(f"system time set: {value}")
             return self.send_json({"ok": True})
 
@@ -1327,7 +1354,12 @@ class WebHandler(BaseHTTPRequestHandler):
                 args = ["/bin/systemctl", "start", "vision-sync.service"]
             else:
                 return self.send_json({"ok": False, "error": "unknown action"}, status=400)
-            code, out, err = run_cmd(args, timeout=3600)
+            # Direct-script actions mutate /etc, /dev and LVM metadata, so they must
+            # run outside this service's ProtectSystem=strict sandbox. systemctl/
+            # shutdown actions only talk to PID 1 over D-Bus and work in-sandbox.
+            privileged = action and action[0] in ("rebalance", "resize", "restore-defaults")
+            runner = run_privileged if privileged else run_cmd
+            code, out, err = runner(args, timeout=3600)
             log(f"maintenance {action} rc={code} out={out} err={err}")
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
