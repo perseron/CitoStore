@@ -17,7 +17,10 @@ load_config
 : "${USB_MAX_POWER:=250}"
 : "${LVM_VG:=vg0}"
 
-if [[ ${#USB_LVS[@]} -eq 0 ]]; then
+# Defence in depth against the config not being loaded yet: under `set -u` a
+# bare ${#USB_LVS[@]} on an unset array aborts the service. ${USB_LVS+x} probes
+# it safely first.
+if [[ -z "${USB_LVS+x}" || ${#USB_LVS[@]} -eq 0 ]]; then
   USB_LVS=(usb_0)
 fi
 
