@@ -73,6 +73,24 @@ if [[ ! -f "$STATE_DIR/vision-gw.conf" && -f /etc/vision-gw.conf ]]; then
   log "seeded shadow config from golden /etc"
 fi
 
+# 4c) Grow the root filesystem to fill its partition. Shrunk (PiShrink) images
+#     ship a small ext4; PiShrink enlarges the partition but its own resize2fs
+#     hook does not survive our overlay/firstboot flow. Do it here explicitly,
+#     in the writable window BEFORE the overlay is (re-)enabled below. Idempotent
+#     (no-op once the fs already fills the partition), and skipped under overlay.
+root_src=$(findmnt -no SOURCE / 2>/dev/null)
+if [[ "$root_src" == /dev/* ]]; then
+  root_disk=$(lsblk -no PKNAME "$root_src" 2>/dev/null | head -1)
+  root_partnum=$(printf '%s' "$root_src" | grep -oE '[0-9]+$')
+  if [[ -n "$root_disk" && -n "$root_partnum" ]] && command -v parted >/dev/null 2>&1; then
+    parted -s "/dev/$root_disk" resizepart "$root_partnum" 100% >/dev/null 2>&1 || true
+  fi
+  if command -v resize2fs >/dev/null 2>&1; then
+    log "growing root filesystem to fill $root_src"
+    resize2fs "$root_src" >/dev/null 2>&1 || log "resize2fs failed (non-fatal)"
+  fi
+fi
+
 # 5) Seed the shared WebUI password (from the eMMC), generate a fresh secret.
 if [[ ! -f "$STATE_DIR/webui.passwd" && -f "$SEED_DIR/webui.passwd" ]]; then
   cp "$SEED_DIR/webui.passwd" "$STATE_DIR/webui.passwd"

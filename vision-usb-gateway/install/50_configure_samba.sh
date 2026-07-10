@@ -106,7 +106,12 @@ fi
 
 systemctl daemon-reload
 systemctl enable smbd nmbd
-systemctl restart smbd nmbd
+systemctl restart smbd
+# nmbd (NetBIOS only) fails if no network interface is up yet (e.g. cable not
+# plugged in at boot). Don't let that abort this script under `set -e` and take
+# apply-shadow-config (and the ingest config after it) down with it; its
+# Restart=on-failure drop-in brings it up once an interface appears.
+systemctl restart nmbd || log "nmbd restart deferred (no network interface yet); will retry"
 systemctl enable --now wsdd.service || true
 
 log "samba configured"
