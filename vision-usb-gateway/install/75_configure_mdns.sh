@@ -55,25 +55,13 @@ set_conf() {  # key value
 set_conf host-name "$NETBIOS_NAME"
 set_conf domain-name local
 set_conf allow-interfaces "$MDNS_INTERFACE"
-# Advertise over both IPv4 and IPv6: on a direct 1-1 link the only address may be
-# an IPv6 link-local (fe80::), so the name must resolve there too (the WebUI now
-# listens dual-stack).
+# Advertise IPv4 only. On a direct 1-1 link the interface would otherwise also
+# have an IPv6 link-local (fe80::), which browsers can't reliably reach (it needs
+# a zone/scope index) — so the name must resolve to a plain IPv4 address. In
+# direct mode mdns-apply-mode gives the interface a 169.254 IPv4 for exactly this.
 set_conf use-ipv4 yes
-set_conf use-ipv6 yes
+set_conf use-ipv6 no
 set_conf publish-workstation no
-
-# ---- link-local fallback on the mDNS interface (for direct 1-1 access) ----
-if command -v nmcli >/dev/null 2>&1; then
-  con=$(nmcli -g GENERAL.CONNECTION device show "$MDNS_INTERFACE" 2>/dev/null || true)
-  if [[ -n "$con" ]]; then
-    # "enabled": always keep a 169.254 link-local address so a direct 1-1 laptop
-    # (also link-local) can resolve the name. On a real network the routable
-    # DHCP/static address coexists and wins (mdns-apply-mode filters 169.254 out
-    # when deciding the mode). NM 1.42 has no "fallback"; "enabled" is the closest.
-    nmcli connection modify "$con" ipv4.link-local enabled >/dev/null 2>&1 \
-      || log "could not set ipv4.link-local on $MDNS_INTERFACE ($con)"
-  fi
-fi
 
 # ---- NetworkManager dispatcher: re-evaluate name when addressing changes ----
 mkdir -p "$(dirname "$DISPATCHER")"

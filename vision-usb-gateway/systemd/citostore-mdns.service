@@ -1,15 +1,17 @@
 [Unit]
-Description=CitoStore mDNS name mode (network vs direct 1-1)
-# Evaluate once addressing has settled so a slow DHCP can't be seen as "direct".
+Description=CitoStore mDNS configuration (network vs direct 1-1)
+# Run once addressing has settled so a slow DHCP can't be seen as "direct".
 After=network-online.target avahi-daemon.service vision-gw-config.service
-Wants=network-online.target
-Requires=avahi-daemon.service
+Wants=network-online.target avahi-daemon.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
-ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/mdns-apply-mode.sh
+# Full mDNS setup (avahi conf + interface IPv4 + advertised name). This service
+# is the authoritative applier — ordered after avahi so it always lands, even if
+# the boot-time apply-shadow-config ran before avahi was ready.
+ExecStart=/bin/bash ${GATEWAY_HOME}/install/75_configure_mdns.sh
 
 [Install]
 WantedBy=multi-user.target

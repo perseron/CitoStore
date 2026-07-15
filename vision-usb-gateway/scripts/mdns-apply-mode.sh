@@ -23,6 +23,7 @@ load_config
 : "${MDNS_INTERFACE:=eth0}"
 : "${MDNS_DIRECT_NAME:=citostore.local}"
 : "${NETBIOS_NAME:=CITOSTORE}"
+: "${MDNS_DIRECT_IP:=169.254.1.1/16}"
 
 [[ "$MDNS_ENABLED" == "true" ]] || exit 0
 command -v avahi-set-host-name >/dev/null 2>&1 || { log "avahi-utils missing; skipping mDNS name"; exit 0; }
@@ -34,9 +35,18 @@ routable=$(ip -4 -o addr show dev "$MDNS_INTERFACE" 2>/dev/null \
 if [[ -n "$routable" ]]; then
   target="$NETBIOS_NAME"
   mode="network"
+  # Drop the direct-mode maintenance IPv4 if we left a 1-1 link (keeps the
+  # network-mode mDNS record clean — only the routable address is advertised).
+  ip addr del "$MDNS_DIRECT_IP" dev "$MDNS_INTERFACE" 2>/dev/null || true
 else
   target="${MDNS_DIRECT_NAME%.local}"
   mode="direct"
+  # Give the interface a stable IPv4 link-local so avahi can advertise an IPv4
+  # address (not just an fe80:: that browsers can't reach). A laptop on
+  # "automatic" gets its own 169.254 APIPA on the same /16, so it can reach us.
+  if [[ -z "$(ip -4 -o addr show dev "$MDNS_INTERFACE" 2>/dev/null)" ]]; then
+    ip addr add "$MDNS_DIRECT_IP" dev "$MDNS_INTERFACE" 2>/dev/null || true
+  fi
 fi
 
 # Only act on a change (state file avoids restarting avahi's name needlessly).
