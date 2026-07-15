@@ -1600,11 +1600,36 @@ def _watchdog_thread(interval: float) -> None:
         time.sleep(interval)
 
 
+class DualStackHTTPServer(HTTPServer):
+    """Serve on both IPv4 and IPv6.
+
+    Binding an IPv6 wildcard socket with IPV6_V6ONLY disabled also accepts IPv4
+    (as v4-mapped addresses), so the WebUI is reachable both over ordinary IPv4
+    and by an mDNS name that resolves to an IPv6 link-local (fe80::) address on a
+    direct, router-free 1-1 link.
+    """
+
+    address_family = socket.AF_INET6
+
+    def server_bind(self):
+        try:
+            self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
+        except (AttributeError, OSError):
+            pass
+        HTTPServer.server_bind(self)
+
+
 def main():
     cfg = parse_config(load_config_text())
     host = cfg.get("WEBUI_BIND", "0.0.0.0")
     port = int(cfg.get("WEBUI_PORT", "80"))
-    server = HTTPServer((host, port), WebHandler)
+    # "0.0.0.0"/"::"/"" all mean "all interfaces": use a dual-stack socket so the
+    # UI answers on IPv6 too (needed for fe80:: mDNS names on a direct link). A
+    # specific literal address is bound as-is.
+    if host in ("", "0.0.0.0", "::"):
+        server = DualStackHTTPServer(("::", port), WebHandler)
+    else:
+        server = HTTPServer((host, port), WebHandler)
     log(f"webui started on {host}:{port}")
     sd_notify("READY=1")
     watchdog_usec = os.environ.get("WATCHDOG_USEC")

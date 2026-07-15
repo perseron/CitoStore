@@ -55,7 +55,11 @@ set_conf() {  # key value
 set_conf host-name "$NETBIOS_NAME"
 set_conf domain-name local
 set_conf allow-interfaces "$MDNS_INTERFACE"
-set_conf use-ipv6 no
+# Advertise over both IPv4 and IPv6: on a direct 1-1 link the only address may be
+# an IPv6 link-local (fe80::), so the name must resolve there too (the WebUI now
+# listens dual-stack).
+set_conf use-ipv4 yes
+set_conf use-ipv6 yes
 set_conf publish-workstation no
 
 # ---- link-local fallback on the mDNS interface (for direct 1-1 access) ----
