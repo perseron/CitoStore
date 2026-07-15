@@ -441,24 +441,28 @@ async function applyNetwork() {
 }
 
 async function changeWebuiPassword() {
-  if (!validateAll()) {
-    setStatus("Fix invalid fields before changing password");
-    return;
-  }
   const password = document.getElementById("WEBUI_PASS").value;
   const confirm = document.getElementById("WEBUI_PASS2").value;
+  if (!password || password !== confirm) {
+    setStatus("Web UI passwords do not match");
+    return;
+  }
   await api("/api/password/webui", { method: "POST", body: JSON.stringify({ password, confirm }) });
+  document.getElementById("WEBUI_PASS").value = "";
+  document.getElementById("WEBUI_PASS2").value = "";
   setStatus("Web UI password updated");
 }
 
 async function changeSmbPassword() {
-  if (!validateAll()) {
-    setStatus("Fix invalid fields before changing password");
-    return;
-  }
   const password = document.getElementById("SMB_PASS").value;
   const confirm = document.getElementById("SMB_PASS2").value;
+  if (!password || password !== confirm) {
+    setStatus("SMB passwords do not match");
+    return;
+  }
   await api("/api/password/smb", { method: "POST", body: JSON.stringify({ password, confirm }) });
+  document.getElementById("SMB_PASS").value = "";
+  document.getElementById("SMB_PASS2").value = "";
   setStatus("SMB password updated");
 }
 
