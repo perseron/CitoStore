@@ -59,8 +59,11 @@ routable=$(ip -4 -o addr show dev "$MDNS_INTERFACE" 2>/dev/null \
   | awk '{print $4}' | cut -d/ -f1 \
   | grep -vE "^169\.254\.|^${MDNS_DIRECT_SUBNET//./\\.}\." | head -1 || true)
 
+# The advertised name is always the configured NETBIOS_NAME (e.g. AOI1 ->
+# AOI1.local), on a network and on a direct link alike, so operators reach the
+# unit by the name they gave it.
+target="$NETBIOS_NAME"
 if [[ -n "$routable" ]]; then
-  target="$NETBIOS_NAME"
   mode="network"
   # Leave a 1-1 link: hand control of the interface back to the DHCP client.
   if [[ "$MDNS_DIRECT_DHCP" == "true" ]] && shared_active; then
@@ -69,7 +72,6 @@ if [[ -n "$routable" ]]; then
     nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
   fi
 else
-  target="${MDNS_DIRECT_NAME%.local}"
   mode="direct"
   # No routable address = a 1-1 link with no router, so become the DHCP server and
   # hand the laptop a real IP. Decided at boot only (action=boot), after
@@ -90,14 +92,10 @@ else
   fi
 fi
 
-# Only act on a change (state file avoids restarting avahi's name needlessly).
-state=/run/citostore-mdns.name
-prev=$(cat "$state" 2>/dev/null || true)
-if [[ "$prev" != "$target" ]]; then
-  if avahi-set-host-name "$target" >/dev/null 2>&1; then
-    printf '%s' "$target" > "$state" 2>/dev/null || true
-    log "mDNS: $mode mode on $MDNS_INTERFACE -> advertising ${target}.local"
-  else
-    log "mDNS: failed to set host-name to $target"
-  fi
+# The advertised name (NETBIOS_NAME) is set authoritatively by 75_configure_mdns
+# via avahi's host-name; nothing to switch at runtime. Record the current mode.
+prev=$(cat /run/citostore-mdns.mode 2>/dev/null || true)
+if [[ "$prev" != "$mode" ]]; then
+  printf '%s' "$mode" > /run/citostore-mdns.mode 2>/dev/null || true
+  log "mDNS: $mode mode on $MDNS_INTERFACE -> advertising ${target}.local"
 fi
