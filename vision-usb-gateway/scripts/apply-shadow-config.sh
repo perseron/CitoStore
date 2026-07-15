@@ -33,6 +33,9 @@ fi
 # eth1 + FTP/SFTP ingest (overlay-safe: re-applied from config on every boot).
 "$GATEWAY_HOME/install/70_configure_ingest.sh" || true
 
+# mDNS (.local) name advertising for router-free / field access.
+"$GATEWAY_HOME/install/75_configure_mdns.sh" || true
+
 # Restart the WebUI only if its own bind/port changed, and do it out-of-band
 # (a transient timer 2s out) so a WebUI-triggered apply can still deliver its
 # HTTP response before we drop its listener. A same-cgroup restart here would
