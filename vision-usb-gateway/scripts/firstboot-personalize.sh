@@ -73,11 +73,21 @@ if [[ ! -f "$STATE_DIR/vision-gw.conf" && -f /etc/vision-gw.conf ]]; then
   log "seeded shadow config from golden /etc"
 fi
 
-# 4c) Drop PiShrink's own autoexpand hook: our vision-rootfs-grow.service does the
-#     resize, and resize2fs_once otherwise fails every boot under the read-only
-#     overlay (leaving a failed unit). Runs here in the writable window so the
-#     removal persists to the eMMC lower.
+# 4c) Drop PiShrink's own autoexpand hooks: our vision-rootfs-grow.service does the
+#     resize. Both fail/misbehave under the read-only overlay. Runs here in the
+#     writable window so the removal persists to the eMMC lower.
+#   - resize2fs_once: fails every boot under overlay (leaving a failed unit).
+#   - /etc/rc.local: PiShrink's expander runs `raspi-config --expand-rootfs` and
+#     REBOOTS, meant to restore itself from rc.local.bak once — but under overlay
+#     that restore lands in tmpfs and is lost, so it expand+reboots on EVERY boot
+#     = an infinite boot loop. Neutralise it to a no-op (firstboot is ordered
+#     before rc-local.service, so this wins the race).
 rm -f /etc/init.d/resize2fs_once /etc/rc*.d/*resize2fs_once 2>/dev/null || true
+if [[ -f /etc/rc.local ]] && grep -qiE 'expand.?rootfs|PiShrink' /etc/rc.local 2>/dev/null; then
+  log "neutralising PiShrink autoexpand /etc/rc.local (overlay-safe grow via vision-rootfs-grow)"
+  printf '#!/bin/sh\nexit 0\n' > /etc/rc.local
+  chmod 0755 /etc/rc.local
+fi
 
 # 4d) Enlarge the root PARTITION to fill the disk (shrunk images ship it small).
 #     The FS itself is grown by vision-rootfs-grow.service on the next boot, once

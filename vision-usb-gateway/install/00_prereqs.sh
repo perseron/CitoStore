@@ -32,6 +32,7 @@ apt-get update -y
 apt-get install -y \
   lvm2 thin-provisioning-tools dosfstools \
   samba cifs-utils rsync wsdd kpartx \
+  avahi-daemon avahi-utils \
   vsftpd openssh-server \
   nvme-cli \
   python3 python3-venv python3-pip \
