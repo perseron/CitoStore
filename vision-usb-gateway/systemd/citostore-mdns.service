@@ -8,10 +8,12 @@ Wants=network-online.target avahi-daemon.service
 Type=oneshot
 RemainAfterExit=yes
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
-# Full mDNS setup (avahi conf + interface IPv4 + advertised name). This service
-# is the authoritative applier — ordered after avahi so it always lands, even if
-# the boot-time apply-shadow-config ran before avahi was ready.
+# Full mDNS setup (avahi conf + shared profile + advertised name). Ordered after
+# avahi + network-online so it always lands and DHCP has settled. The second call
+# makes the boot-time network-vs-direct decision (only here, after the link has
+# settled, may we become the DHCP server on a 1-1 link).
 ExecStart=/bin/bash ${GATEWAY_HOME}/install/75_configure_mdns.sh
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/mdns-apply-mode.sh boot
 
 [Install]
 WantedBy=multi-user.target

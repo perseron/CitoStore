@@ -21,9 +21,12 @@ load_config
 : "${MDNS_INTERFACE:=eth0}"
 : "${MDNS_DIRECT_NAME:=citostore.local}"
 : "${NETBIOS_NAME:=CITOSTORE}"
+: "${MDNS_DIRECT_DHCP:=true}"
+: "${MDNS_DIRECT_SUBNET:=10.10.10}"
 
 AVAHI_CONF=/etc/avahi/avahi-daemon.conf
 DISPATCHER=/etc/NetworkManager/dispatcher.d/90-citostore-mdns
+SHARED_CON=citostore-direct
 
 if [[ "$MDNS_ENABLED" != "true" ]]; then
   log "mDNS disabled; stopping avahi"
@@ -55,23 +58,36 @@ set_conf() {  # key value
 set_conf host-name "$NETBIOS_NAME"
 set_conf domain-name local
 set_conf allow-interfaces "$MDNS_INTERFACE"
-# Advertise IPv4 only. On a direct 1-1 link the interface would otherwise also
-# have an IPv6 link-local (fe80::), which browsers can't reliably reach (it needs
-# a zone/scope index) — so the name must resolve to a plain IPv4 address. In
-# direct mode mdns-apply-mode gives the interface a 169.254 IPv4 for exactly this.
+# Advertise IPv4 only. On a direct 1-1 link the interface has a routable IPv4
+# from the board's own DHCP server (see below), so the name resolves to a plain
+# IPv4 address — not an fe80:: link-local that browsers can't reliably reach.
 set_conf use-ipv4 yes
 set_conf use-ipv6 no
 set_conf publish-workstation no
+
+# ---- direct-link DHCP profile (NM "shared": static .1 + dnsmasq DHCP server) ----
+# Activated by mdns-apply-mode only on a 1-1 link with no router; autoconnect=no
+# so it never fights the DHCP client on a real network.
+if [[ "$MDNS_DIRECT_DHCP" == "true" ]] && command -v nmcli >/dev/null 2>&1; then
+  if ! nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$SHARED_CON"; then
+    nmcli connection add type ethernet ifname "$MDNS_INTERFACE" con-name "$SHARED_CON" \
+      connection.autoconnect no ipv4.method shared \
+      ipv4.addresses "${MDNS_DIRECT_SUBNET}.1/24" ipv6.method ignore >/dev/null 2>&1 \
+      || log "could not create $SHARED_CON shared profile"
+  fi
+fi
 
 # ---- NetworkManager dispatcher: re-evaluate name when addressing changes ----
 mkdir -p "$(dirname "$DISPATCHER")"
 cat > "$DISPATCHER" <<DISPATCH
 #!/bin/sh
-# Managed by 75_configure_mdns.sh — re-evaluate the mDNS name on address changes.
+# Managed by 75_configure_mdns.sh — re-evaluate mDNS name + direct-link DHCP when
+# $MDNS_INTERFACE addressing changes. The action (up/down/...) is passed through
+# so the helper can re-probe for a router when a 1-1 link is unplugged.
 [ "\$1" = "$MDNS_INTERFACE" ] || exit 0
 case "\$2" in
   up|down|dhcp4-change|dhcp6-change|connectivity-change)
-    "$GATEWAY_HOME/scripts/mdns-apply-mode.sh" >/dev/null 2>&1 || true ;;
+    "$GATEWAY_HOME/scripts/mdns-apply-mode.sh" "\$2" >/dev/null 2>&1 || true ;;
 esac
 DISPATCH
 chmod 0755 "$DISPATCHER"

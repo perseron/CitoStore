@@ -23,29 +23,66 @@ load_config
 : "${MDNS_INTERFACE:=eth0}"
 : "${MDNS_DIRECT_NAME:=citostore.local}"
 : "${NETBIOS_NAME:=CITOSTORE}"
-: "${MDNS_DIRECT_IP:=169.254.1.1/16}"
+# On a direct 1-1 link (no router) the board hands out DHCP itself so a laptop on
+# "automatic" gets a real routable IP — no APIPA/link-local needed. MDNS_DIRECT_SUBNET
+# is the /24 the board serves; the board takes .1.
+: "${MDNS_DIRECT_DHCP:=true}"
+: "${MDNS_DIRECT_SUBNET:=10.10.10}"
+SHARED_CON=citostore-direct
+
+action="${1:-}"
 
 [[ "$MDNS_ENABLED" == "true" ]] || exit 0
 command -v avahi-set-host-name >/dev/null 2>&1 || { log "avahi-utils missing; skipping mDNS name"; exit 0; }
 
-# Any IPv4 on the interface that is NOT link-local (169.254/16) means we are on a
-# real network (DHCP or static).
+shared_active() { nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -q "^$SHARED_CON:"; }
+
+# On any carrier change (cable moved), if we are currently serving DHCP on a 1-1
+# link, drop it and let the DHCP client re-probe: this is how we notice a router
+# reappeared and switch direct -> network (otherwise, seeing only our own
+# 10.10.10.1, we'd wrongly conclude "still direct" and keep serving rogue DHCP on
+# the LAN). The resulting up/dhcp event then decides network vs direct.
+if [[ "$MDNS_DIRECT_DHCP" == "true" ]] && [[ "$action" == "up" || "$action" == "down" ]] && shared_active; then
+  log "mDNS: carrier change on $MDNS_INTERFACE while serving DHCP -> re-probing for a router"
+  nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
+  nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
+  exit 0
+fi
+
+# A "routable" address that is neither link-local nor our own shared subnet means
+# we are on a real network (router DHCP or a static IP).
 routable=$(ip -4 -o addr show dev "$MDNS_INTERFACE" 2>/dev/null \
-  | awk '{print $4}' | cut -d/ -f1 | grep -v '^169\.254\.' | head -1 || true)
+  | awk '{print $4}' | cut -d/ -f1 \
+  | grep -vE "^169\.254\.|^${MDNS_DIRECT_SUBNET//./\\.}\." | head -1 || true)
+
 if [[ -n "$routable" ]]; then
   target="$NETBIOS_NAME"
   mode="network"
-  # Drop the direct-mode maintenance IPv4 if we left a 1-1 link (keeps the
-  # network-mode mDNS record clean — only the routable address is advertised).
-  ip addr del "$MDNS_DIRECT_IP" dev "$MDNS_INTERFACE" 2>/dev/null || true
+  # Leave a 1-1 link: hand control of the interface back to the DHCP client.
+  if [[ "$MDNS_DIRECT_DHCP" == "true" ]] && shared_active; then
+    log "mDNS: network detected -> stopping direct-link DHCP server"
+    nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
+    nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
+  fi
 else
   target="${MDNS_DIRECT_NAME%.local}"
   mode="direct"
-  # Give the interface a stable IPv4 link-local so avahi can advertise an IPv4
-  # address (not just an fe80:: that browsers can't reach). A laptop on
-  # "automatic" gets its own 169.254 APIPA on the same /16, so it can reach us.
-  if [[ -z "$(ip -4 -o addr show dev "$MDNS_INTERFACE" 2>/dev/null)" ]]; then
-    ip addr add "$MDNS_DIRECT_IP" dev "$MDNS_INTERFACE" 2>/dev/null || true
+  # No routable address = a 1-1 link with no router, so become the DHCP server and
+  # hand the laptop a real IP. Decided at boot only (action=boot), after
+  # network-online has let DHCP settle — no runtime hot-switch, and never during a
+  # LAN's brief DHCP-acquisition window. A static-IP unit always has a routable
+  # address, so it takes the network branch above and never serves DHCP.
+  if [[ "$action" == "boot" && "$MDNS_DIRECT_DHCP" == "true" ]] \
+     && command -v nmcli >/dev/null 2>&1 && ! shared_active; then
+    # Only if this interface is actually a DHCP client (not a deliberate static IP).
+    con=$(nmcli -g GENERAL.CONNECTION device show "$MDNS_INTERFACE" 2>/dev/null || true)
+    method=$(nmcli -g ipv4.method connection show "$con" 2>/dev/null || echo auto)
+    if [[ "$method" == "auto" ]]; then
+      log "mDNS: direct 1-1 link at boot -> serving DHCP on $MDNS_INTERFACE (${MDNS_DIRECT_SUBNET}.1)"
+      nmcli connection up "$SHARED_CON" >/dev/null 2>&1 || true
+    else
+      log "mDNS: $MDNS_INTERFACE is $method (fixed IP) -> not serving DHCP"
+    fi
   fi
 fi
 
