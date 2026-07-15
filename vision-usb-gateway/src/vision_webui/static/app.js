@@ -39,20 +39,53 @@ async function api(path, options = {}) {
   return res.json();
 }
 
+let _suppressToast = false;
+
+function showToast(text, kind) {
+  let c = document.getElementById("toast-container");
+  if (!c) {
+    c = document.createElement("div");
+    c.id = "toast-container";
+    document.body.appendChild(c);
+    const s = document.createElement("style");
+    s.textContent =
+      "#toast-container{position:fixed;top:18px;right:18px;z-index:9999;display:flex;" +
+      "flex-direction:column;gap:10px;max-width:min(360px,92vw)}" +
+      ".toast{padding:12px 16px;border-radius:8px;color:#fff;font-size:14px;line-height:1.35;" +
+      "box-shadow:0 8px 28px rgba(0,0,0,.28);opacity:0;transform:translateX(24px);" +
+      "transition:opacity .22s ease,transform .22s ease;word-break:break-word}" +
+      ".toast.show{opacity:1;transform:none}" +
+      ".toast.ok{background:#1e8e5a}.toast.warn{background:#b5760f}.toast.error{background:#bb4238}";
+    document.head.appendChild(s);
+  }
+  const t = document.createElement("div");
+  t.className = "toast " + (kind || "ok");
+  t.textContent = text;
+  c.appendChild(t);
+  requestAnimationFrame(() => t.classList.add("show"));
+  setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 260); }, 3600);
+}
+
 function setStatus(text) {
   const el = document.getElementById("status-line");
   el.classList.remove("status-ok", "status-warn", "status-error");
   const lower = text.toLowerCase();
+  let kind = "ok";
   if (lower.startsWith("error") || lower.includes("failed")) {
     el.textContent = "\u2716 " + text;
     el.classList.add("status-error");
+    kind = "error";
   } else if (lower.includes("warn") || lower.includes("expired")) {
     el.textContent = "\u26A0 " + text;
     el.classList.add("status-warn");
+    kind = "warn";
   } else {
     el.textContent = "\u2714 " + text;
     el.classList.add("status-ok");
   }
+  // Pop a visible toast for user-triggered feedback (suppressed during the
+  // 10s background status refresh, which would otherwise toast "OK" endlessly).
+  if (!_suppressToast) showToast(el.textContent, kind);
 }
 
 function setFieldValidity(el, ok, message = "") {
@@ -860,6 +893,7 @@ function displayTimeSyncStatus(timeData) {
 }
 
 async function refreshStatus() {
+  _suppressToast = true;
   try {
     await loadStatus();
     const time = await api("/api/time", { method: "GET" });
@@ -885,6 +919,8 @@ async function refreshStatus() {
     await checkSessionExpiry();
   } catch (err) {
     setStatus("Error: " + err.message);
+  } finally {
+    _suppressToast = false;
   }
 }
 
