@@ -37,13 +37,14 @@ command -v avahi-set-host-name >/dev/null 2>&1 || { log "avahi-utils missing; sk
 
 shared_active() { nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -q "^$SHARED_CON:"; }
 
-# On any carrier change (cable moved), if we are currently serving DHCP on a 1-1
-# link, drop it and let the DHCP client re-probe: this is how we notice a router
-# reappeared and switch direct -> network (otherwise, seeing only our own
-# 10.10.10.1, we'd wrongly conclude "still direct" and keep serving rogue DHCP on
-# the LAN). The resulting up/dhcp event then decides network vs direct.
-if [[ "$MDNS_DIRECT_DHCP" == "true" ]] && [[ "$action" == "up" || "$action" == "down" ]] && shared_active; then
-  log "mDNS: carrier change on $MDNS_INTERFACE while serving DHCP -> re-probing for a router"
+# When the 1-1 cable is UNPLUGGED (carrier down) while we are serving DHCP, stop
+# serving and hand the interface back to the DHCP client — so a unit later moved
+# onto a LAN never keeps serving rogue DHCP. Only on "down": acting on "up" would
+# also fire right after the boot decision brings the shared connection up (that
+# activation itself emits an "up"), immediately tearing down what we just set. The
+# direct<->network switch is otherwise decided at the next boot.
+if [[ "$MDNS_DIRECT_DHCP" == "true" && "$action" == "down" ]] && shared_active; then
+  log "mDNS: $MDNS_INTERFACE unplugged while serving DHCP -> releasing to DHCP client"
   nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
   nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
   exit 0
