@@ -422,8 +422,8 @@ async function refreshLogs() {
 // each feature section writes only its own keys to the shadow, then applies.
 
 async function applyNetwork() {
-  if (!validateAll()) {
-    setStatus("Fix invalid fields before applying network");
+  if (!validateFields(["NET_IFACE", "NET_METHOD", "NET_ADDR", "NET_PREFIX", "NET_GW", "NET_DNS"])) {
+    setStatus("Fix invalid network fields before applying");
     return;
   }
   const rawDns = document.getElementById("NET_DNS").value;
