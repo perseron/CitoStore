@@ -37,14 +37,17 @@ command -v avahi-set-host-name >/dev/null 2>&1 || { log "avahi-utils missing; sk
 
 shared_active() { nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -q "^$SHARED_CON:"; }
 
-# When the 1-1 cable is UNPLUGGED (carrier down) while we are serving DHCP, stop
+# When the 1-1 cable is physically UNPLUGGED while we are serving DHCP, stop
 # serving and hand the interface back to the DHCP client — so a unit later moved
-# onto a LAN never keeps serving rogue DHCP. Only on "down": acting on "up" would
-# also fire right after the boot decision brings the shared connection up (that
-# activation itself emits an "up"), immediately tearing down what we just set. The
-# direct<->network switch is otherwise decided at the next boot.
-if [[ "$MDNS_DIRECT_DHCP" == "true" && "$action" == "down" ]] && shared_active; then
-  log "mDNS: $MDNS_INTERFACE unplugged while serving DHCP -> releasing to DHCP client"
+# onto a LAN never keeps serving rogue DHCP. Gate on real carrier loss (no
+# LOWER_UP): a "down" event also fires when the boot decision switches the
+# interface from the DHCP client to the shared connection (the old connection
+# deactivates) — that is NOT an unplug (the cable is still up), and acting on it
+# would tear down the DHCP server we just started (flap). The direct<->network
+# switch is otherwise decided at the next boot.
+if [[ "$MDNS_DIRECT_DHCP" == "true" && "$action" == "down" ]] && shared_active \
+   && ! ip link show "$MDNS_INTERFACE" 2>/dev/null | grep -q 'LOWER_UP'; then
+  log "mDNS: $MDNS_INTERFACE cable unplugged while serving DHCP -> releasing to DHCP client"
   nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
   nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
   exit 0
