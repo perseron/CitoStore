@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from vision_sync.config import parse_config_text
+from vision_sync.fsops import safe_join
 
 STATE_DIR = Path("/srv/vision_mirror/.state")
 SHADOW_CONF = STATE_DIR / "vision-gw.conf"
@@ -189,6 +190,43 @@ def set_system_time(value):
 
 BUILD_STAMP = Path("/etc/citostore-build")
 
+# The file manager's two roots. "mirror" is exposed read-only — an operator may
+# copy production data off, never delete it — and .state is excluded outright:
+# it holds the FTP/NAS/WebUI secrets and the Samba passdb, which an earlier audit
+# found leaking over the SMB share. "usb" is whatever is plugged in, or an empty
+# mount point when nothing is.
+EXPORT_ROOTS = {
+    "mirror": Path("/srv/vision_mirror"),
+    "usb": Path("/srv/usb_backup"),
+}
+EXPORT_HIDDEN = {".state"}
+USB_JOB_UNIT = "citostore-usb-copy"
+
+
+def export_root(name: str) -> Path:
+    root = EXPORT_ROOTS.get(name)
+    if root is None:
+        raise ValueError("unknown root")
+    return root
+
+
+def resolve_export_path(root_name: str, rel: str) -> Path:
+    """Resolve a browse/copy path, refusing anything outside its root.
+
+    safe_join resolves symlinks before comparing, so a link planted inside the
+    tree cannot walk out of it.
+    """
+    root = export_root(root_name)
+    rel = (rel or "").strip()
+    # Deliberately strict: an absolute path is refused rather than quietly
+    # reinterpreted under the root, so a caller can never think it addressed
+    # /etc/shadow and be handed mirror/etc/shadow instead.
+    target = safe_join(root, Path(rel)) if rel else root.resolve()
+    parts = target.relative_to(root.resolve()).parts if target != root.resolve() else ()
+    if parts and parts[0] in EXPORT_HIDDEN:
+        raise ValueError("path not allowed")
+    return target
+
 
 def get_build_stamp() -> dict:
     """Which image this unit was flashed from.
@@ -211,6 +249,142 @@ def get_build_stamp() -> dict:
     except OSError:
         pass
     return stamp
+
+
+def get_usb_export_status() -> dict:
+    """What is plugged into the export port, if anything."""
+    mount = str(EXPORT_ROOTS["usb"])
+    code, out, _ = run_cmd(["/usr/bin/findmnt", "-no", "SOURCE,FSTYPE,OPTIONS", mount])
+    if code != 0 or not out:
+        return {"present": False, "mount": mount}
+    source, fstype, options = (out.split(None, 2) + ["", ""])[:3]
+    info = {
+        "present": True,
+        "mount": mount,
+        "device": source,
+        "fstype": fstype,
+        "write_through": "sync" in options.split(","),
+        "usage": get_disk_usage(mount),
+    }
+    code, out, _ = run_cmd(["/sbin/blkid", "-o", "value", "-s", "LABEL", source])
+    info["label"] = out.strip() if code == 0 else ""
+    return info
+
+
+def list_export_dir(root_name: str, rel: str) -> dict:
+    target = resolve_export_path(root_name, rel)
+    if not target.is_dir():
+        raise ValueError("not a directory")
+    root = export_root(root_name).resolve()
+    entries = []
+    with os.scandir(target) as it:
+        for e in it:
+            if target == root and e.name in EXPORT_HIDDEN:
+                continue
+            try:
+                st = e.stat(follow_symlinks=False)
+            except OSError:
+                continue
+            entries.append(
+                {
+                    "name": e.name,
+                    "dir": e.is_dir(follow_symlinks=False),
+                    "size": st.st_size,
+                    "mtime": int(st.st_mtime),
+                }
+            )
+    entries.sort(key=lambda x: (not x["dir"], x["name"].lower()))
+    return {
+        "root": root_name,
+        "path": target.relative_to(root).as_posix() if target != root else "",
+        "writable": root_name != "mirror",
+        "entries": entries,
+    }
+
+
+def usb_copy_running() -> bool:
+    code, out, _ = run_cmd(["/bin/systemctl", "is-active", f"{USB_JOB_UNIT}.service"])
+    return out.strip() in ("active", "activating")
+
+
+def start_usb_copy(sources: list, dest_rel: str) -> tuple:
+    """Copy into the USB drive in the background, as a transient unit.
+
+    rsync runs under PID 1 rather than in this request: a copy takes minutes to
+    hours, and vision-webui is sandboxed (ProtectSystem=strict) so a child of it
+    could not write the mount anyway. --no-block returns immediately; progress is
+    read back from the unit's journal.
+    """
+    if usb_copy_running():
+        return 1, "", "a copy is already running"
+    dest = resolve_export_path("usb", dest_rel)
+    if not dest.is_dir():
+        return 1, "", "destination is not a directory on the USB drive"
+
+    srcs = []
+    for item in sources:
+        path = resolve_export_path(item.get("root", "mirror"), item.get("path", ""))
+        if not path.exists():
+            return 1, "", f"source not found: {item.get('path')}"
+        # A trailing slash would copy a directory's *contents*; keep the folder.
+        srcs.append(str(path))
+    if not srcs:
+        return 1, "", "nothing selected"
+
+    args = [
+        "systemd-run",
+        "--quiet",
+        "--collect",
+        "--no-block",
+        f"--unit={USB_JOB_UNIT}",
+        "--service-type=oneshot",
+        "--property=IOSchedulingClass=best-effort",
+        "--property=IOSchedulingPriority=7",
+        "--property=Nice=5",
+        "--",
+        "/usr/bin/rsync",
+        "-rlt",
+        "--info=progress2",
+        "--no-perms",
+        "--no-owner",
+        "--no-group",
+        *srcs,
+        f"{dest}/",
+    ]
+    return run_cmd(args)
+
+
+def get_usb_copy_status() -> dict:
+    active = usb_copy_running()
+    code, out, _ = run_cmd(
+        ["/usr/bin/journalctl", "-u", f"{USB_JOB_UNIT}.service", "-n", "40", "-o", "cat", "--no-pager"]
+    )
+    lines = [l for l in out.splitlines() if l.strip()] if code == 0 else []
+    progress = ""
+    for line in reversed(lines):
+        # rsync --info=progress2 rewrites one line: "  123,456  45%  12.3MB/s ..."
+        if "%" in line:
+            progress = line.strip()
+            break
+    result = {"running": active, "progress": progress, "log": lines[-6:]}
+    if not active:
+        code, out, _ = run_cmd(
+            ["/bin/systemctl", "show", f"{USB_JOB_UNIT}.service", "-p", "Result", "--value"]
+        )
+        result["result"] = out.strip() or "unknown"
+    return result
+
+
+def eject_usb() -> tuple:
+    """Flush and unmount, so the drive can be pulled with no data left in flight."""
+    mount = str(EXPORT_ROOTS["usb"])
+    code, out, err = run_cmd(["/bin/findmnt", "-no", "SOURCE", mount])
+    if code != 0:
+        return 1, "", "nothing is mounted"
+    if usb_copy_running():
+        return 1, "", "a copy is still running"
+    run_privileged(["/bin/sync"])
+    return run_privileged(["/bin/umount", mount])
 
 
 def load_config_text() -> str:
@@ -967,6 +1141,18 @@ class WebHandler(BaseHTTPRequestHandler):
                 "build": get_build_stamp(),
             }
             return self.send_json(data)
+        if self.path.startswith("/api/usb-export/status"):
+            return self.send_json(get_usb_export_status())
+        if self.path.startswith("/api/usb-export/list"):
+            params = parse_qs(urlparse(self.path).query)
+            root = params.get("root", ["mirror"])[0]
+            rel = params.get("path", [""])[0]
+            try:
+                return self.send_json(list_export_dir(root, rel))
+            except (ValueError, OSError) as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path.startswith("/api/usb-export/job"):
+            return self.send_json(get_usb_copy_status())
         if self.path.startswith("/api/log-services"):
             return self.send_json({"services": LOG_SERVICES})
         if self.path.startswith("/api/logs"):
@@ -1167,6 +1353,15 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_network()
         if self.path == "/api/time":
             return self.handle_time()
+        if self.path == "/api/usb-export/copy":
+            return self.handle_usb_copy()
+        if self.path == "/api/usb-export/eject":
+            with require_lock():
+                code, out, err = eject_usb()
+                if code != 0:
+                    return self.send_json({"ok": False, "error": err or out}, status=400)
+                log("usb-export: drive ejected from the WebUI")
+                return self.send_json({"ok": True})
         if self.path == "/api/config/import":
             return self.handle_config_import()
         if self.path == "/api/maintenance-mode":
@@ -1374,6 +1569,22 @@ class WebHandler(BaseHTTPRequestHandler):
             gh = get_gateway_home()
             run_privileged([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
             log(f"system time set: {value} (ntp disabled)")
+            return self.send_json({"ok": True})
+
+    def handle_usb_copy(self):
+        length = int(self.headers.get("Content-Length", 0))
+        data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        sources = data.get("items") or []
+        if not isinstance(sources, list):
+            return self.send_json({"ok": False, "error": "items must be a list"}, status=400)
+        with require_lock():
+            try:
+                code, out, err = start_usb_copy(sources, str(data.get("dest", "")))
+            except (ValueError, OSError) as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, status=400)
+            if code != 0:
+                return self.send_json({"ok": False, "error": err or out}, status=400)
+            log(f"usb-export: copy started ({len(sources)} item(s))")
             return self.send_json({"ok": True})
 
     def handle_maintenance(self, action):

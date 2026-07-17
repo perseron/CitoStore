@@ -19,6 +19,7 @@ SMB_PASS=${SMB_PASS:-}
 NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
 SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
 MIRROR_MOUNT=${MIRROR_MOUNT:-/srv/vision_mirror}
+USB_EXPORT_MOUNT=${USB_EXPORT_MOUNT:-/srv/usb_backup}
 SAMBA_LIB=/var/lib/samba
 SAMBA_PERSIST="$MIRROR_MOUNT/.state/samba"
 
@@ -48,10 +49,13 @@ setup_samba_persist() {
 }
 setup_samba_persist
 
+# USB_EXPORT_MOUNT is a path, so it carries slashes — use a separator sed will
+# not confuse for one.
 sed -e "s/{{SMB_BIND_INTERFACE}}/$SMB_BIND_INTERFACE/" \
   -e "s/{{SMB_USER}}/$SMB_USER/" \
   -e "s/{{NETBIOS_NAME}}/$NETBIOS_NAME/" \
   -e "s/{{SMB_WORKGROUP}}/$SMB_WORKGROUP/" \
+  -e "s#{{USB_EXPORT_MOUNT}}#$USB_EXPORT_MOUNT#" \
   "$TEMPLATE" > "$OUT"
 
 if ! id -u "$SMB_USER" >/dev/null 2>&1; then

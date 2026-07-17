@@ -28,3 +28,17 @@
   # SMB, independent of on-disk permissions.
   veto files = /.state/
   delete veto files = no
+
+# A USB drive plugged into a host port, auto-mounted here by usb-export-mount.sh.
+# Copying from [vision_mirror] to this share in Explorer is done server-side by
+# Samba (measured: 0 bytes over the wire, 719 MB/s — faster than the 1 Gb link
+# could ever carry), so the data never round-trips through the operator's PC.
+# Writable, unlike the mirror: this is the one place an operator may put files.
+# Empty when nothing is plugged in — the mount point always exists.
+[usb_backup]
+  path = {{USB_EXPORT_MOUNT}}
+  browseable = yes
+  read only = no
+  guest ok = no
+  valid users = {{SMB_USER}}
+  force user = {{SMB_USER}}

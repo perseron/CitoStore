@@ -24,10 +24,10 @@ load_config
 
 USB_EXPORT_ENABLED=${USB_EXPORT_ENABLED:-true}
 USB_EXPORT_MOUNT=${USB_EXPORT_MOUNT:-/srv/usb_backup}
-# Write-through would let an operator unplug without a "safely remove" step, but
-# measured on a real stick it costs 3.4x: 7 MB/s vs 24 MB/s, i.e. 4.6 hours
-# instead of 1.4 for a 117 GB drive. Not worth it — eject deliberately instead.
-USB_EXPORT_SYNC=${USB_EXPORT_SYNC:-false}
+# Write-through: the drive survives being yanked mid-copy, which on a shop floor
+# it eventually will be. Costs 3.4x, measured on a real stick (7 vs 24 MB/s), so
+# it is a deliberate trade, not a default nobody thought about.
+USB_EXPORT_SYNC=${USB_EXPORT_SYNC:-true}
 SMB_USER=${SMB_USER:-smbuser}
 
 action="${1:-}"
