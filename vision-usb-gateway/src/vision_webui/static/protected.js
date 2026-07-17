@@ -62,7 +62,12 @@ async function api(path, options = {}) {
   return res.json();
 }
 
-const state = { path: "", picked: new Set(), mirror: null };
+// `picked` is the operator's selection, `dirty` says it differs from what is
+// saved. The two must stay apart: the poll below refreshes disk usage and the
+// blocked alarm every 15s, and it used to overwrite `picked` with the saved list
+// while doing so — silently discarding ticks made in the last 15 seconds, and
+// leaving the checkbox ticked over an empty selection, so Save then saved nothing.
+const state = { path: "", picked: new Set(), mirror: null, dirty: false };
 
 function fmtSize(n) {
   if (!n) return "0 B";
@@ -79,8 +84,16 @@ function renderPicked() {
   );
   el.innerHTML = rows.join("") || '<div class="hint">Nothing protected — the unit may delete any of it to make room.</div>';
   el.querySelectorAll("button[data-drop]").forEach((b) => {
-    b.onclick = () => { state.picked.delete(b.dataset.drop); renderPicked(); loadDir(state.path); };
+    b.onclick = () => { markDirty(); state.picked.delete(b.dataset.drop); renderPicked(); loadDir(state.path); };
   });
+  const save = document.getElementById("save");
+  save.textContent = state.dirty ? "Save changes" : "Save";
+  save.classList.toggle("primary", state.dirty);
+  document.getElementById("unsaved").classList.toggle("hidden", !state.dirty);
+}
+
+function markDirty() {
+  state.dirty = true;
 }
 
 async function loadDir(path) {
@@ -114,6 +127,7 @@ async function loadDir(path) {
     });
     listEl.querySelectorAll("input[type=checkbox]").forEach((c) => {
       c.onchange = () => {
+        markDirty();
         if (c.checked) state.picked.add(c.dataset.path);
         else state.picked.delete(c.dataset.path);
         renderPicked();
@@ -130,14 +144,20 @@ async function refresh() {
   try {
     s = await api("/api/protected");
   } catch { return; }
-  state.picked = new Set(s.paths);
+  // Never overwrite what the operator has ticked but not saved yet — that is
+  // their work, and this poll only runs to update usage and the alarm.
+  if (!state.dirty) {
+    state.picked = new Set(s.paths);
+  }
   state.mirror = s.mirror || {};
   renderPicked();
 
   document.getElementById("usage").textContent =
     `Mirror: ${s.mirror.avail || "?"} free of ${s.mirror.size || "?"} (${s.mirror.percent || "?"} used) · ` +
     `protected: ${fmtSize(s.protected_bytes)}`;
-  setStatus(`${s.paths.length} folder(s) protected`);
+  setStatus(state.dirty
+    ? `${state.picked.size} folder(s) selected — not saved`
+    : `${s.paths.length} folder(s) protected`);
 
   // Retention said it is stuck. That means the mirror is filling and the sync
   // will stop capturing — the operator has to see it here, not only in a log.
@@ -155,7 +175,6 @@ async function refresh() {
   // Warn before that happens, not after.
   const sb = document.getElementById("space-banner");
   const pct = parseInt((s.mirror.percent || "0").replace("%", ""), 10);
-  const share = s.mirror.size ? null : null;
   if (!s.blocked && s.paths.length && pct >= 75) {
     sb.classList.remove("hidden");
     sb.textContent =
@@ -172,8 +191,10 @@ document.getElementById("save").onclick = async () => {
       method: "POST",
       body: JSON.stringify({ paths: [...state.picked] }),
     });
+    state.dirty = false;
     showToast(`Saved — ${state.picked.size} folder(s) protected`, "ok");
-    refresh();
+    await refresh();
+    loadDir(state.path);   // re-draw the ticks against what is actually saved
   } catch (err) { showToast(err.message, "error"); }
 };
 

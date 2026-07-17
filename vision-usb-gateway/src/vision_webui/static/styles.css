@@ -226,3 +226,4 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 /* Protected folders */
 .link-btn { margin-left: auto; background: none; border: 0; color: #bb4238; cursor: pointer;
   font-size: 13px; text-decoration: underline; padding: 0; }
+button.primary { background: #1e8e5a; color: #fff; border-color: #1e8e5a; }
