@@ -38,6 +38,7 @@ apt-get install -y \
   python3 python3-venv python3-pip \
   util-linux \
   exfatprogs \
+  smbclient \
   initramfs-tools
 
 # Install overlayroot provider. Package name varies by distro.

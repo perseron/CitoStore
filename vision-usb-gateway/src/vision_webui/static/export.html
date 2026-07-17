@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>USB export</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo"><span class="brand-accent">Cito</span>Store</div>
+      <div class="meta">USB export</div>
+    </div>
+    <div class="status" id="status-line" role="status" aria-live="polite">Loading...</div>
+  </header>
+
+  <main>
+    <section>
+      <h2>USB export</h2>
+      <div id="usb-none" class="banner">No USB drive plugged in. Use a USB-A port on the unit — not the port the AOI is connected to.</div>
+      <div id="usb-present" class="hidden">
+        <div id="usb-info" class="hint"></div>
+        <div class="grid grid-2">
+          <div>
+            <h3>Mirror (read only)</h3>
+            <div id="mirror-crumb" class="hint"></div>
+            <div id="mirror-list" class="file-list"></div>
+          </div>
+          <div>
+            <h3>USB drive</h3>
+            <div id="usb-crumb" class="hint"></div>
+            <div id="usb-list" class="file-list"></div>
+            <div class="actions">
+              <button id="usb-mkdir">New folder</button>
+            </div>
+          </div>
+        </div>
+        <div id="usb-progress" class="banner hidden"></div>
+        <div class="actions">
+          <button id="usb-copy">Copy selected to USB</button>
+          <button id="usb-eject" class="danger">Safely remove</button>
+        </div>
+        <p class="hint">
+          Tick what you want on the left, open the destination folder on the right, then copy.
+          The copy runs on the unit itself, so it keeps going if you close this page. Press
+          <b>Safely remove</b> before unplugging.
+        </p>
+        <p class="hint">
+          You can also drag files in Explorer between <code>\\&lt;unit&gt;\vision_mirror</code> and
+          <code>\\&lt;unit&gt;\usb_backup</code> — the unit copies those itself too, without pulling
+          the data through your PC.
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/export.js"></script>
+</body>
+</html>

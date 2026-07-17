@@ -201,6 +201,7 @@ EXPORT_ROOTS = {
 }
 EXPORT_HIDDEN = {".state"}
 USB_JOB_UNIT = "citostore-usb-copy"
+EXPORT_SESSION_USER = "export"
 
 
 def export_root(name: str) -> Path:
@@ -538,6 +539,40 @@ def validate_session(token: str) -> bool:
         return int(expiry) >= int(time.time())
     except Exception:
         return False
+
+
+def verify_smb_password(password: str) -> bool:
+    """Check a password against Samba's own passdb, by asking Samba.
+
+    The export page is guarded by the SMB credential the operator already has for
+    \\\\unit\\vision_mirror, so no admin password has to be handed out and the same
+    data is not protected by two different strengths. Verified by letting smbd
+    authenticate a real session: Samba's NT hash is MD4-based, OpenSSL 3 no longer
+    exposes MD4 to hashlib, and hand-rolling MD4 to check a password would be a far
+    worse idea than spending the ~44ms this takes.
+    """
+    if not password or not password.isprintable() or len(password) > MAX_PASSWORD_LEN:
+        return False
+    cfg = parse_config(load_config_text())
+    user = cfg.get("SMB_USER", "smbuser")
+    if "%" in user:
+        return False
+    code, _, _ = run_cmd(
+        ["/usr/bin/smbclient", "-L", "localhost", "-U", f"{user}%{password}"],
+        timeout=20,
+    )
+    return code == 0
+
+
+def session_user(token: str) -> str:
+    """The user a session was issued to, or "" if it is not valid."""
+    if not token or not validate_session(token):
+        return ""
+    try:
+        raw = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
+        return raw.split("|", 1)[0]
+    except Exception:
+        return ""
 
 
 def make_csrf(token: str) -> str:
@@ -1095,6 +1130,25 @@ class WebHandler(BaseHTTPRequestHandler):
             return False
         return validate_session(token)
 
+    def is_export_authenticated(self) -> bool:
+        """The export page runs on its own credential, deliberately.
+
+        An operator copying images off the unit should not be handed the admin
+        password, and export must not become a weaker way into the same mirror
+        than the SMB share — so it takes the SMB password, which they already
+        have. An admin session is accepted too, so /export works while logged in.
+        """
+        if session_user(get_cookie(self.headers, "export_session")) == EXPORT_SESSION_USER:
+            return True
+        return self.is_authenticated()
+
+    def require_export_csrf(self) -> bool:
+        token = get_cookie(self.headers, "export_session")
+        if session_user(token) == EXPORT_SESSION_USER:
+            header = self.headers.get("X-CSRF", "")
+            return bool(header) and hmac.compare_digest(header, make_csrf(token))
+        return self.require_csrf()
+
     def require_csrf(self) -> bool:
         csrf_cookie = get_cookie(self.headers, "csrf")
         if not csrf_cookie:
@@ -1121,6 +1175,16 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_text(self.render_setup())
         if self.path.startswith("/static/"):
             return self.serve_static(self.path[len("/static/") :])
+        # The export page sits outside the admin wall on its own credential, so
+        # an operator never needs the admin password to copy data off the unit.
+        if self.path in ("/export", "/export/"):
+            if not self.is_export_authenticated():
+                return self.send_text(self.render_export_login())
+            return self.serve_static("export.html", content_type="text/html; charset=utf-8")
+        if self.path.startswith("/api/usb-export/"):
+            if not self.is_export_authenticated():
+                return self.send_json({"ok": False, "error": "unauthorized"}, status=401)
+            return self.handle_export_get()
         if not self.is_authenticated():
             return self.redirect("/login")
         if self.path in ("/", "/index.html"):
@@ -1141,18 +1205,6 @@ class WebHandler(BaseHTTPRequestHandler):
                 "build": get_build_stamp(),
             }
             return self.send_json(data)
-        if self.path.startswith("/api/usb-export/status"):
-            return self.send_json(get_usb_export_status())
-        if self.path.startswith("/api/usb-export/list"):
-            params = parse_qs(urlparse(self.path).query)
-            root = params.get("root", ["mirror"])[0]
-            rel = params.get("path", [""])[0]
-            try:
-                return self.send_json(list_export_dir(root, rel))
-            except (ValueError, OSError) as exc:
-                return self.send_json({"ok": False, "error": str(exc)}, status=400)
-        if self.path.startswith("/api/usb-export/job"):
-            return self.send_json(get_usb_copy_status())
         if self.path.startswith("/api/log-services"):
             return self.send_json({"services": LOG_SERVICES})
         if self.path.startswith("/api/logs"):
@@ -1311,12 +1363,31 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.redirect("/setup")
         if self.path in ("/login", "/login/"):
             return self.handle_login()
+        if self.path in ("/export", "/export/"):
+            return self.handle_export_login()
         if self.path in ("/setup", "/setup/"):
             if not setup_allowed():
                 # Never allow an unauthenticated password reset once configured.
                 log("rejected /setup POST: password already configured")
                 return self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return self.handle_setup()
+        if self.path.startswith("/api/usb-export/"):
+            if not self.is_export_authenticated():
+                return self.send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
+            if not self.require_export_csrf():
+                return self.send_error(HTTPStatus.FORBIDDEN, "CSRF validation failed")
+            if self.path == "/api/usb-export/copy":
+                return self.handle_usb_copy()
+            if self.path == "/api/usb-export/mkdir":
+                return self.handle_usb_mkdir()
+            if self.path == "/api/usb-export/eject":
+                with require_lock():
+                    code, out, err = eject_usb()
+                    if code != 0:
+                        return self.send_json({"ok": False, "error": err or out}, status=400)
+                    log("usb-export: drive ejected from the WebUI")
+                    return self.send_json({"ok": True})
+            return self.send_error(HTTPStatus.NOT_FOUND, "Not found")
         if not self.is_authenticated():
             return self.send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
         if self.path.startswith("/api/") and not self.require_csrf():
@@ -1353,15 +1424,6 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_network()
         if self.path == "/api/time":
             return self.handle_time()
-        if self.path == "/api/usb-export/copy":
-            return self.handle_usb_copy()
-        if self.path == "/api/usb-export/eject":
-            with require_lock():
-                code, out, err = eject_usb()
-                if code != 0:
-                    return self.send_json({"ok": False, "error": err or out}, status=400)
-                log("usb-export: drive ejected from the WebUI")
-                return self.send_json({"ok": True})
         if self.path == "/api/config/import":
             return self.handle_config_import()
         if self.path == "/api/maintenance-mode":
@@ -1569,6 +1631,71 @@ class WebHandler(BaseHTTPRequestHandler):
             gh = get_gateway_home()
             run_privileged([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
             log(f"system time set: {value} (ntp disabled)")
+            return self.send_json({"ok": True})
+
+    def handle_export_get(self):
+        if self.path.startswith("/api/usb-export/status"):
+            return self.send_json(get_usb_export_status())
+        if self.path.startswith("/api/usb-export/list"):
+            params = parse_qs(urlparse(self.path).query)
+            try:
+                return self.send_json(
+                    list_export_dir(
+                        params.get("root", ["mirror"])[0], params.get("path", [""])[0]
+                    )
+                )
+            except (ValueError, OSError) as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, status=400)
+        if self.path.startswith("/api/usb-export/job"):
+            return self.send_json(get_usb_copy_status())
+        return self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+    def handle_export_login(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        password = parse_qs(body).get("password", [""])[0]
+        if not verify_smb_password(password):
+            log("export login rejected")
+            return self.send_text(self.render_export_login(error=True), status=401)
+        token = make_session(EXPORT_SESSION_USER)
+        log("export login accepted")
+        self.send_response(HTTPStatus.SEE_OTHER)
+        self.send_header("Location", "/export")
+        self.send_header(
+            "Set-Cookie",
+            f"export_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_TTL_SEC}",
+        )
+        self.send_header(
+            "Set-Cookie",
+            f"csrf={make_csrf(token)}; SameSite=Strict; Path=/; Max-Age={SESSION_TTL_SEC}",
+        )
+        self.end_headers()
+
+    def handle_usb_mkdir(self):
+        length = int(self.headers.get("Content-Length", 0))
+        data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        name = str(data.get("name", "")).strip()
+        # A name, not a path: no separators, no traversal, nothing hidden.
+        if not name or name in (".", "..") or "/" in name or "\\" in name:
+            return self.send_json({"ok": False, "error": "invalid folder name"}, status=400)
+        if not name.isprintable() or len(name) > 128:
+            return self.send_json({"ok": False, "error": "invalid folder name"}, status=400)
+        with require_lock():
+            try:
+                parent = resolve_export_path("usb", str(data.get("path", "")))
+                target = resolve_export_path(
+                    "usb", f"{data.get('path', '')}/{name}".strip("/")
+                )
+            except (ValueError, OSError) as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, status=400)
+            if not parent.is_dir():
+                return self.send_json({"ok": False, "error": "no USB drive here"}, status=400)
+            if target.exists():
+                return self.send_json({"ok": False, "error": "already exists"}, status=400)
+            code, out, err = run_privileged(["/bin/mkdir", "--", str(target)])
+            if code != 0:
+                return self.send_json({"ok": False, "error": err or out}, status=500)
+            log(f"usb-export: folder created: {name}")
             return self.send_json({"ok": True})
 
     def handle_usb_copy(self):
@@ -1797,6 +1924,35 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def render_export_login(self, error: bool = False) -> str:
+        msg = (
+            "<p class='error'>Wrong password.</p>"
+            if error
+            else "<p class='hint'>Use the same password you use for the shared folders.</p>"
+        )
+        return f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>USB export - Sign in</title>
+  <style>
+    body {{ font-family: sans-serif; max-width: 420px; margin: 80px auto; }}
+    .error {{ color: #b00020; }}
+    .hint {{ color: #666; font-size: 14px; }}
+    input, button {{ font-size: 15px; padding: 6px 10px; }}
+  </style>
+</head>
+<body>
+  <h1>USB export</h1>
+  {msg}
+  <form method="post">
+    <label>Password</label><br>
+    <input type="password" name="password" autofocus autocomplete="current-password"><br><br>
+    <button type="submit">Sign in</button>
+  </form>
+</body>
+</html>"""
 
     def render_login(self, error: str = "") -> str:
         msg = f"<p class='error'>{error}</p>" if error else ""
