@@ -1557,6 +1557,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_ftp_password()
         if self.path == "/api/maintenance/wipe":
             return self.handle_maintenance(["wipe"])
+        if self.path == "/api/maintenance/factory-reset":
+            return self.handle_maintenance(["factory-reset"])
         if self.path == "/api/maintenance/rebalance":
             return self.handle_maintenance(["rebalance"])
         if self.path == "/api/maintenance/resize":
@@ -1893,6 +1895,12 @@ class WebHandler(BaseHTTPRequestHandler):
             gh = get_gateway_home()
             if action == ["wipe"]:
                 args = ["/bin/systemctl", "start", "vision-wipe.service"]
+            elif action == ["factory-reset"]:
+                # Wipes the whole NVMe and reboots — starting a transient-free
+                # service (like wipe) so it survives this request ending and the
+                # WebUI going down with the reboot. --no-block so the HTTP reply
+                # is sent before the teardown begins.
+                args = ["/bin/systemctl", "--no-block", "start", "vision-factory-reset.service"]
             elif action == ["rebalance"]:
                 args = [f"{gh}/scripts/rebalance-storage.sh", "--i-know-what-im-doing"]
             elif action == ["resize"]:

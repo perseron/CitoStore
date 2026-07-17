@@ -529,6 +529,7 @@ async function setManualTime() {
 
 const MAINTENANCE_CONFIRMATIONS = {
   "wipe":             { title: "Wipe All Data", msg: "This will erase all USB and mirror data. Configuration is preserved.", text: "WIPE ALL DATA" },
+  "factory-reset":    { title: "Factory Reset", msg: "This wipes the ENTIRE NVMe and rebuilds it like a blank drive: all images AND all passwords, network settings and the SMB/WebUI/NAS credentials are erased. The unit reboots and comes back with no password, as if newly imaged. This cannot be undone.", text: "FACTORY RESET" },
   "rebalance":        { title: "Rebalance Storage", msg: "This rebalances thin-pool storage allocation.", text: "REBALANCE" },
   "resize":           { title: "Resize USB LVs", msg: "This will resize all USB logical volumes.", text: "RESIZE" },
   "shutdown":         { title: "Safe Shutdown", msg: "The device will power off.", text: "SHUTDOWN" },
@@ -624,6 +625,8 @@ document.getElementById("resize-usb").addEventListener("click",
   withLoading(document.getElementById("resize-usb"), () => maintenance("resize")));
 document.getElementById("restore-defaults").addEventListener("click",
   withLoading(document.getElementById("restore-defaults"), () => maintenance("restore-defaults")));
+document.getElementById("factory-reset").addEventListener("click",
+  withLoading(document.getElementById("factory-reset"), () => maintenance("factory-reset")));
 document.getElementById("clone-usb-format").addEventListener("click",
   withLoading(document.getElementById("clone-usb-format"), () => maintenance("clone-usb-format")));
 document.getElementById("rotate-usb").addEventListener("click",
