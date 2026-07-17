@@ -113,10 +113,18 @@ case "$MODE" in
 
   # Seed the shadow config from the factory (golden) /etc so boot 2 has something
   # to apply; without it, restore_shadow_conf falls back to the packaged example
-  # and loses the tuned identity. Also create the Samba bind target so
-  # var-lib-samba.mount's ConditionPathIsDirectory passes on boot 2.
+  # and loses the tuned identity.
+  #
+  # Deliberately do NOT create .state/samba here. 50_configure_samba's
+  # setup_samba_persist creates it AND seeds the package's tdb skeleton
+  # (secrets.tdb etc.) into it only when it is empty, then binds it. Pre-creating
+  # an empty .state/samba makes var-lib-samba.mount bind it first, after which
+  # setup_samba_persist sees "already mounted" and skips the seed — leaving smbd
+  # unable to open secrets.tdb. Boot 2 is a clean boot, so leaving .state as a
+  # fresh clone would makes the samba setup identical to a first-boot clone, which
+  # is the proven path.
   STATE_DIR="$MIRROR_MOUNT/.state"
-  mkdir -p "$STATE_DIR" "$STATE_DIR/samba"
+  mkdir -p "$STATE_DIR"
   if [[ -f /etc/vision-gw.conf ]]; then
     cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
     cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf.last-good"
