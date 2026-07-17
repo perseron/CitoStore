@@ -99,12 +99,27 @@ if [[ "$root_src" == /dev/* ]]; then
   root_disk=$(lsblk -no PKNAME "$root_src" 2>/dev/null | head -1)
   root_partnum=$(printf '%s' "$root_src" | grep -oE '[0-9]+$')
   if [[ -n "$root_disk" && -n "$root_partnum" ]] && command -v parted >/dev/null 2>&1; then
-    parted -s "/dev/$root_disk" resizepart "$root_partnum" 100% >/dev/null 2>&1 || true
+    # `parted -s` does NOT mean "say yes": it answers *No* to its own "Partition
+    # /dev/x is being used. Are you sure you want to continue?" and exits 1, so
+    # the mounted root was never grown and clones shipped with a 3.3G root on a
+    # 29G eMMC. Dropping both the output and the status hid that for a week —
+    # hence the explicit Yes over a pretend tty, and a verdict based on the
+    # partition size rather than an exit status the pipe renders meaningless
+    # (parted takes SIGPIPE and reports 141 on success).
+    before=$(blockdev --getsize64 "$root_src" 2>/dev/null || echo 0)
+    printf 'Yes\n' | parted ---pretend-input-tty "/dev/$root_disk" \
+      resizepart "$root_partnum" 100% >/dev/null 2>&1 || true
     # Make the kernel see the enlarged partition BEFORE resize2fs, or resize2fs
     # reads the stale (small) partition size and no-ops. parted's BLKPG alone
     # proved unreliable on the mounted root; partx -u updates it explicitly.
     partx -u "/dev/$root_disk" >/dev/null 2>&1 || partprobe "/dev/$root_disk" >/dev/null 2>&1 || true
     udevadm settle >/dev/null 2>&1 || true
+    after=$(blockdev --getsize64 "$root_src" 2>/dev/null || echo 0)
+    if ((after > before)); then
+      log "root partition grown: $before -> $after bytes"
+    else
+      log "root partition NOT grown (still $after bytes) — vision-rootfs-grow will retry"
+    fi
   fi
   if command -v resize2fs >/dev/null 2>&1; then
     log "growing root filesystem to fill $root_src"

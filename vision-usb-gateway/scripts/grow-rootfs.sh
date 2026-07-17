@@ -28,7 +28,11 @@ dev=$(findmnt -no SOURCE "$mnt" 2>/dev/null)
 disk=$(lsblk -no PKNAME "$dev" 2>/dev/null | head -1)
 pnum=$(printf '%s' "$dev" | grep -oE '[0-9]+$')
 if [[ -n "$disk" && -n "$pnum" ]] && command -v parted >/dev/null 2>&1; then
-  parted -s "/dev/$disk" resizepart "$pnum" 100% >/dev/null 2>&1 || true
+  # `-s` answers *No* to parted's own "Partition ... is being used" warning and
+  # exits 1, so this never grew a mounted root — feed it an explicit Yes over a
+  # pretend tty. See the same fix in firstboot-personalize.sh.
+  printf 'Yes\n' | parted ---pretend-input-tty "/dev/$disk" \
+    resizepart "$pnum" 100% >/dev/null 2>&1 || true
   partx -u "/dev/$disk" >/dev/null 2>&1 || partprobe "/dev/$disk" >/dev/null 2>&1 || true
 fi
 
