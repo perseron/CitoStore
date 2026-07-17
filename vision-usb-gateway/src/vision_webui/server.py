@@ -1310,12 +1310,18 @@ class WebHandler(BaseHTTPRequestHandler):
         if not value:
             return self.send_json({"ok": False, "error": "time is required"}, status=400)
         with require_lock():
+            # timedatectl refuses set-time outright while timesyncd owns the
+            # clock ("Automatic time synchronization is enabled"), so setting the
+            # time by hand means taking that ownership back. An offline unit can
+            # never reach an NTP server anyway; a networked one can be put back
+            # on NTP with `timedatectl set-ntp true`.
+            run_cmd(["/usr/bin/timedatectl", "set-ntp", "false"])
             code, out, err = run_cmd(["/usr/bin/timedatectl", "set-time", value])
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
             gh = get_gateway_home()
             run_privileged([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
-            log(f"system time set: {value}")
+            log(f"system time set: {value} (ntp disabled)")
             return self.send_json({"ok": True})
 
     def handle_maintenance(self, action):

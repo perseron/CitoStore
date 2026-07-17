@@ -92,10 +92,18 @@ NAS_RETRY_MAX=5
 NAS_RETRY_BACKOFF=10
 
 # RTC
-RTC_ENABLED=false
+# The unit is offline by design, so the RTC is its only source of wall-clock time
+# across a power cut — without it the clock rewinds to whatever was baked into the
+# image and files land under the wrong bydate/ folder. Needs a backup cell on the
+# carrier's RTC header (official RTC-Battery-B / ML2032); the SoC's charger is off
+# until 15_configure_rtc.sh enables it. Never charge a non-rechargeable CR2032 —
+# set RTC_CHARGE_ENABLED=false if one is fitted.
+RTC_ENABLED=true
 RTC_DEVICE=/dev/rtc0
 RTC_UTC=true
 RTC_SYNC_INTERVAL=1h
+RTC_CHARGE_ENABLED=true
+RTC_CHARGE_UV=3000000
 
 # Journald (overlay mode memory cap)
 JOURNAL_RUNTIME_MAX_USE=64M

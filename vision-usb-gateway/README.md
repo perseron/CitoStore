@@ -10,6 +10,7 @@ Quick start (on the CM5):
 2) Run install scripts in order
    - `sudo install/00_prereqs.sh`
    - `sudo install/10_configure_otg.sh`
+   - `sudo install/15_configure_rtc.sh` (RTC backup-battery charging)
    - `sudo install/20_enable_readonly_overlay.sh`
    - `sudo install/30_setup_nvme_lvm.sh` (no destructive actions unless `--wipe`)
    - `sudo install/40_install_services.sh`

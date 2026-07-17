@@ -10,8 +10,13 @@ Install
    - `cp conf/vision-gw.conf.example /etc/vision-gw.conf`
 2) Install packages and base config
    - `sudo install/00_prereqs.sh`
-3) Enable USB OTG
+3) Enable USB OTG and RTC backup battery
    - `sudo install/10_configure_otg.sh`
+   - `sudo install/15_configure_rtc.sh`
+   - Enables trickle charging for the cell on the carrier's RTC header, without
+     which the RTC loses the time on every power cut and an offline unit (no NTP)
+     boots at the time baked into its image. Rechargeable cells only — see
+     `RTC_CHARGE_ENABLED`.
 4) Enable read-only overlay
    - `sudo install/20_enable_readonly_overlay.sh`
 5) NVMe LVM setup (safe by default)
@@ -234,8 +239,19 @@ RTC
 - `RTC_DEVICE`: RTC device (default `/dev/rtc0`).
 - `RTC_UTC`: `true` for UTC, `false` for localtime.
 - `RTC_SYNC_INTERVAL`: Periodic sync interval (systemd time format).
+- `RTC_CHARGE_ENABLED`: Trickle-charge the backup cell (`install/15_configure_rtc.sh`).
+  Rechargeable cells only (ML2032 / LIR / supercap) — never a primary CR2032.
+- `RTC_CHARGE_UV`: Charge voltage in microvolts (default `3000000` = 3.0 V, the
+  value Raspberry Pi document for the official RTC-Battery-B / ML2032).
+- `RTC_MIN_VALID_EPOCH`: Times below this are treated as "the RTC lost its
+  contents" and are never copied onto the system clock (default `1767225600` =
+  2026-01-01). This is what keeps a unit with a missing or flat cell from booting
+  at the epoch.
 - Boot sync runs only if NTP is not synchronized.
-- Web UI supports manual time set as a fallback (writes system time and updates RTC).
+- Web UI supports manual time set as a fallback (writes system time and updates
+  RTC). It turns NTP off, since `timedatectl` refuses to set the clock while
+  timesyncd owns it; re-enable with `timedatectl set-ntp true` if the unit is
+  later put on a network.
 
 Journald memory cap (overlay mode)
 - `JOURNAL_RUNTIME_MAX_USE`: Max volatile journal size in RAM/tmpfs (default `64M`).
