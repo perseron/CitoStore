@@ -201,6 +201,9 @@ EXPORT_ROOTS = {
 }
 EXPORT_HIDDEN = {".state"}
 USB_JOB_UNIT = "citostore-usb-copy"
+# /run is tmpfs: the progress file dies with the boot, which is right — a copy
+# does not survive one either.
+USB_PROGRESS_FILE = "/run/citostore-usb-copy.progress"
 EXPORT_SESSION_USER = "export"
 
 
@@ -342,10 +345,20 @@ def start_usb_copy(sources: list, dest_rel: str) -> tuple:
         "--property=IOSchedulingClass=best-effort",
         "--property=IOSchedulingPriority=7",
         "--property=Nice=5",
+        # Progress goes to a file, never the journal. Two reasons, one fix:
+        # journald splits on newlines and rsync only ever writes carriage
+        # returns, so the journal held nothing until rsync exited and the bar sat
+        # at 0% for the whole copy; and 49k files' worth of output would flood a
+        # RAM-backed journal capped at 64M, evicting the logs that matter.
+        # stderr still goes to the journal — real errors belong there.
+        f"--property=StandardOutput=file:{USB_PROGRESS_FILE}",
         "--",
         "/usr/bin/rsync",
         "-rlt",
         "--info=progress2",
+        # Flush every update: rsync buffers when stdout is not a tty, which would
+        # leave the bar stale no matter where the output lands.
+        "--outbuf=N",
         # Scan everything up front. rsync's default incremental recursion means
         # it does not know the total yet, so the percentage and ETA crawl toward
         # a moving target and lie for the first part of a big copy. A slower
@@ -386,13 +399,26 @@ def parse_rsync_progress(text: str) -> dict:
     return {}
 
 
+def read_progress_tail(limit: int = 4096) -> str:
+    """The end of rsync's progress file.
+
+    It only ever grows — rsync separates updates with carriage returns, so every
+    update is appended rather than overwriting. Only the last one matters, and
+    reading the whole file would mean re-reading megabytes every second on a long
+    copy.
+    """
+    try:
+        with open(USB_PROGRESS_FILE, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - limit))
+            return fh.read().decode("utf-8", "replace")
+    except OSError:
+        return ""
+
+
 def get_usb_copy_status() -> dict:
     active = usb_copy_running()
-    code, out, _ = run_cmd(
-        ["/usr/bin/journalctl", "-u", f"{USB_JOB_UNIT}.service", "-n", "40", "-o", "cat", "--no-pager"]
-    )
-    text = out if code == 0 else ""
-    result = {"running": active, "progress": parse_rsync_progress(text)}
+    result = {"running": active, "progress": parse_rsync_progress(read_progress_tail())}
     if not active:
         code, out, _ = run_cmd(
             ["/bin/systemctl", "show", f"{USB_JOB_UNIT}.service", "-p", "Result", "--value"]

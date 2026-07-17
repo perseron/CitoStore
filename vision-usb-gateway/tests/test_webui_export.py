@@ -147,3 +147,33 @@ def test_copy_scans_up_front_so_the_percentage_means_something(roots, monkeypatc
     # Without this rsync does not know the total yet and the ETA chases a moving
     # target for the first part of a big copy.
     assert "--no-inc-recursive" in seen["args"]
+
+
+def test_progress_goes_to_a_file_not_the_journal(roots, monkeypatch):
+    monkeypatch.setattr(server, "usb_copy_running", lambda: False)
+    seen = {}
+    monkeypatch.setattr(
+        server, "run_cmd", lambda args, **kw: (seen.update(args=args), (0, "", ""))[1]
+    )
+    server.start_usb_copy([{"root": "mirror", "path": "raw"}], "")
+    args = seen["args"]
+    # journald splits on newlines and rsync writes only carriage returns, so the
+    # journal stayed empty until rsync exited — and 49k files of output would
+    # flood a RAM-backed journal capped at 64M.
+    assert f"--property=StandardOutput=file:{server.USB_PROGRESS_FILE}" in args
+    # ...and rsync buffers when stdout is not a tty, so it must be told not to.
+    assert "--outbuf=N" in args
+
+
+def test_progress_tail_reads_only_the_end(tmp_path, monkeypatch):
+    f = tmp_path / "prog"
+    f.write_text("x" * 9000 + "\r    268,435,456  63%   21.34MB/s    0:00:07  ", encoding="utf-8")
+    monkeypatch.setattr(server, "USB_PROGRESS_FILE", str(f))
+    assert server.parse_rsync_progress(server.read_progress_tail())["percent"] == 63
+    assert len(server.read_progress_tail()) <= 4096
+
+
+def test_progress_tail_survives_a_missing_file(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "USB_PROGRESS_FILE", str(tmp_path / "nope"))
+    assert server.read_progress_tail() == ""
+    assert server.parse_rsync_progress(server.read_progress_tail()) == {}
