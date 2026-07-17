@@ -1,155 +1,126 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Factory reset: wipe the whole NVMe and rebuild it from nothing, exactly as if a
-# blank drive had been fitted. Unlike "Wipe All Data" (which keeps config,
-# network and every password), this clears ALL of it — the passwords, NAS creds,
-# NetBIOS identity and captured data all live in .state on the NVMe, so wiping
-# the NVMe removes them. The unit comes back at /setup with no password, like a
-# fresh clone.
+# Factory reset in two phases, because it cannot be done on a running system.
 #
-# It deliberately reuses the proven first-boot path (30_setup_nvme_lvm.sh --wipe)
-# rather than reimplementing the teardown: that is the code that initialises an
-# empty NVMe, and it is what runs on every clone's first boot. Everything after
-# the wipe is handled by a normal reboot, so this does not try to re-establish
-# mounts and services by hand.
+# Wiping the NVMe live is impossible and was proven so the hard way: parted on an
+# in-use disk fails ("unable to inform the kernel ... in use") and jams it until a
+# reboot; vgremove/dmsetup cannot release the mirror LV while it reads as open;
+# and udev re-activates the VG faster than it can be torn down. The wipe only
+# works at the point first boot does it — early in boot, before the mount, the
+# gadget, sync or smbd have opened anything on the NVMe, so unmounting the mirror
+# and deactivating the VG genuinely frees the disk.
 #
-# It does NOT reset the OS identity (hostname, machine-id, SSH host keys): those
-# are on the eMMC under the read-only overlay and cannot be changed persistently
-# from here. "A blank NVMe" does not imply a new OS anyway, and the hostname is
-# derived from the CM5 serial, so it is stable hardware identity.
+# So:
+#   --arm  (from the WebUI): drop a marker and reboot. Safe and trivial.
+#   --boot (early-boot service): if the marker is present, wipe and rebuild the
+#          NVMe from nothing, then let the rest of boot bring a fresh unit up.
+#
+# Every secret lives in .state on the NVMe (the SMB passdb, webui.passwd, FTP and
+# NAS creds), so wiping it clears them: the unit comes back at /setup with no
+# password, as if freshly imaged. The OS identity (hostname, machine-id, SSH keys)
+# is on the eMMC and is left alone — a blank NVMe does not imply a new OS.
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
 require_root
-load_config
 
 NVME_DEVICE="${NVME_DEVICE:-/dev/nvme0n1}"
 LVM_VG="${LVM_VG:-vg0}"
 MIRROR_MOUNT="${MIRROR_MOUNT:-/srv/vision_mirror}"
-GATEWAY_HOME="${GATEWAY_HOME:?}"
+BOOT_MOUNT=/boot/firmware
+MARKER="$BOOT_MOUNT/factory-reset-pending"
 
-CONFIRM=false
-for arg in "$@"; do
-  case "$arg" in
-  --i-know-what-im-doing) CONFIRM=true ;;
-  esac
-done
-if [[ "$CONFIRM" != "true" ]]; then
-  echo "Refusing to run without --i-know-what-im-doing" >&2
-  exit 1
-fi
+MODE="${1:-}"
 
-# Guard: only ever wipe the NVMe, never the boot device. If the root filesystem
-# lives on NVME_DEVICE, something is misconfigured and a wipe would destroy the OS.
-root_src=$(findmnt -no SOURCE / 2>/dev/null || true)
-if [[ -n "$root_src" && "$root_src" == "$NVME_DEVICE"* ]]; then
-  echo "REFUSING: root filesystem is on $NVME_DEVICE — this is not the data drive" >&2
-  exit 1
-fi
-if [[ ! -b "$NVME_DEVICE" ]]; then
-  echo "REFUSING: $NVME_DEVICE is not a block device" >&2
-  exit 1
-fi
-
-log "factory reset: releasing everything that holds the NVMe"
-
-# Stop the data-plane services and the Samba passdb bind so the mirror can be
-# unmounted. usb-gadget is the one that bites: it holds the active USB LV open, so
-# without stopping it the VG will not deactivate and parted cannot repartition the
-# NVMe ("Partition ... in use ... unable to inform the kernel"). At first boot the
-# NVMe is empty and nothing holds it, which is why 30_setup's own teardown is
-# enough there but not here.
-for unit in vision-sync.timer vision-sync.service vision-rotator.service \
-  vision-monitor.service mirror-retention.timer vision-shadow-config.service \
-  usb-gadget.service smbd.service nmbd.service wsdd.service vsftpd.service; do
-  systemctl stop "$unit" >/dev/null 2>&1 || true
-done
-
-# Tear the gadget's config down so it stops holding usb_2 (stopping the unit does
-# not always unbind the UDC).
-for g in /sys/kernel/config/usb_gadget/*; do
-  [[ -d "$g" ]] || continue
-  echo "" >"$g/UDC" 2>/dev/null || true
-done
-
-# Any USB export drive is on its own device, but its mount is under /srv; leave it
-# alone (the wipe only touches the NVMe). Release the Samba passdb bind mount.
-systemctl stop var-lib-samba.mount >/dev/null 2>&1 || true
-umount /var/lib/samba >/dev/null 2>&1 || true
-
-if mountpoint -q "$MIRROR_MOUNT"; then
-  umount "$MIRROR_MOUNT" >/dev/null 2>&1 || {
-    log "mirror busy; forcing"
-    command -v fuser >/dev/null 2>&1 && fuser -km "$MIRROR_MOUNT" >/dev/null 2>&1 || true
-    sleep 1
-    umount "$MIRROR_MOUNT" >/dev/null 2>&1 || umount -l "$MIRROR_MOUNT" >/dev/null 2>&1 || true
-  }
-fi
-
-# Tear down the LVM stack in place. Do NOT repartition: the partition already
-# spans the disk and is fine, and `parted mklabel` on a live, in-use NVMe fails
-# with "unable to inform the kernel ... in use" and leaves the disk stuck until a
-# reboot (learned the hard way). So this rebuilds the VG/LVs on the existing
-# partition and never calls parted.
-#
-# vgremove -f alone is not enough: an LV can read as open (open count 1) with no
-# mount and no process holding it — a phantom hold that survives after the gadget
-# is stopped. `dmsetup remove -f` breaks that by swapping in an error target, so
-# the mappings actually go and the PV can be recreated.
-log "factory reset: tearing down the existing LVM on $NVME_DEVICE (in place, no repartition)"
-part=""
-for _p in "${NVME_DEVICE}"p*; do [[ -b "$_p" ]] && part="$_p" && break; done
-: "${part:=${NVME_DEVICE}p1}"
-
-vgchange -an "$LVM_VG" >/dev/null 2>&1 || true
-vgremove -f "$LVM_VG" >/dev/null 2>&1 || true
-# Anything left mapped for this VG (the phantom-open case) gets forced out.
-for dm in $(dmsetup ls 2>/dev/null | awk '{print $1}' | grep "^${LVM_VG}-" || true); do
-  dmsetup remove -f "$dm" >/dev/null 2>&1 || true
-done
-pvremove -ff -y "$part" >/dev/null 2>&1 || true
-wipefs -a "$part" >/dev/null 2>&1 || true
-udevadm settle >/dev/null 2>&1 || true
-
-log "factory reset: rebuilding LVM on $part (fresh PV, no partition change)"
-pvcreate -ff -y "$part"
-# 30_setup WITHOUT --wipe skips parted and only creates what is missing — with a
-# fresh PV that means the whole stack: VG, mirror LV, thin pool, USB LVs, exactly
-# as at first boot but on the partition that is already there.
-"$GATEWAY_HOME/install/30_setup_nvme_lvm.sh"
-
-# Mount the fresh mirror so the shadow config can be seeded onto it.
-mountpoint -q "$MIRROR_MOUNT" || mount "$MIRROR_MOUNT" 2>/dev/null || mount -a || true
-if ! mountpoint -q "$MIRROR_MOUNT"; then
-  echo "factory reset: fresh mirror did not mount at $MIRROR_MOUNT" >&2
-  exit 1
-fi
-
-STATE_DIR="$MIRROR_MOUNT/.state"
-mkdir -p "$STATE_DIR"
-
-# Seed the shadow config from the FACTORY default, not the config that is running
-# now. The golden baked copy on the eMMC lower is the factory config (its NetBIOS
-# name and tuned timings); the current /etc still holds the outgoing config in the
-# overlay's RAM upper, so seeding from it would carry the old settings forward.
-golden_conf=""
-for cand in /media/root-ro/etc/vision-gw.conf /etc/vision-gw.conf; do
-  if [[ -f "$cand" ]]; then
-    golden_conf="$cand"
-    break
+# Write to the FAT boot partition, which is persistent and readable at early boot.
+# It is mounted read-only under the overlay, so flip it just long enough.
+boot_write() {
+  local was_ro=false
+  if mountpoint -q "$BOOT_MOUNT" && findmnt -no OPTIONS "$BOOT_MOUNT" | tr ',' '\n' | grep -qx ro; then
+    was_ro=true
+    mount -o remount,rw "$BOOT_MOUNT"
   fi
-done
-if [[ -n "$golden_conf" ]]; then
-  cp "$golden_conf" "$STATE_DIR/vision-gw.conf"
-  cp "$golden_conf" "$STATE_DIR/vision-gw.conf.last-good"
-  log "factory reset: shadow config seeded from $golden_conf"
-else
-  log "factory reset: no golden config found; boot will fall back to the example"
-fi
+  "$@"
+  sync
+  $was_ro && mount -o remount,ro "$BOOT_MOUNT" || true
+}
 
-log "factory reset complete — rebooting into a fresh unit"
-sync
-systemctl reboot
+case "$MODE" in
+--arm)
+  # Load config only to honour a custom GATEWAY_HOME etc; the wipe itself reads
+  # config fresh at boot.
+  load_config
+  log "factory reset: arming — the unit will wipe its NVMe on the next boot"
+  boot_write touch "$MARKER"
+  log "factory reset: armed, rebooting"
+  sync
+  systemctl reboot
+  ;;
+
+--boot)
+  [[ -f "$MARKER" ]] || exit 0
+
+  # Remove the marker FIRST, so a wipe that fails cannot turn into a boot loop.
+  # A degraded boot (mirror absent) is recoverable; a loop is not.
+  boot_write rm -f "$MARKER"
+
+  load_config
+  NVME_DEVICE="${NVME_DEVICE:-/dev/nvme0n1}"
+  LVM_VG="${LVM_VG:-vg0}"
+  MIRROR_MOUNT="${MIRROR_MOUNT:-/srv/vision_mirror}"
+  GATEWAY_HOME="${GATEWAY_HOME:?}"
+
+  # Never wipe the boot device.
+  root_src=$(findmnt -no SOURCE / 2>/dev/null || true)
+  if [[ -n "$root_src" && "$root_src" == "$NVME_DEVICE"* ]]; then
+    log "factory reset: REFUSING — root is on $NVME_DEVICE"
+    exit 1
+  fi
+
+  log "factory reset: marker present — wiping $NVME_DEVICE early in boot"
+
+  # At this point only the mirror mount (and possibly the samba bind on top of it)
+  # holds the NVMe — the gadget, sync, smbd and retention are all ordered after
+  # this service and have not opened anything yet. That is the whole reason this
+  # works here and not on a running system.
+  umount /var/lib/samba >/dev/null 2>&1 || true
+  if mountpoint -q "$MIRROR_MOUNT"; then
+    umount "$MIRROR_MOUNT" >/dev/null 2>&1 || umount -l "$MIRROR_MOUNT" >/dev/null 2>&1 || true
+  fi
+  vgchange -an "$LVM_VG" >/dev/null 2>&1 || true
+  udevadm settle >/dev/null 2>&1 || true
+
+  # The proven first-boot initialiser. A full wipe (parted + fresh PV + VG + LVs)
+  # works now that the disk is free. /etc still holds the golden baked config at
+  # this point in boot (vision-gw-config, which copies the shadow over it, is
+  # ordered after us), so the LV sizes are the factory ones.
+  "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
+
+  mountpoint -q "$MIRROR_MOUNT" || mount "$MIRROR_MOUNT" 2>/dev/null || mount -a || true
+  if ! mountpoint -q "$MIRROR_MOUNT"; then
+    log "factory reset: fresh mirror did not mount — boot will continue degraded"
+    exit 1
+  fi
+
+  # Seed the shadow config from the factory (golden) /etc so the rest of boot has
+  # something to apply; without it, restore_shadow_conf falls back to the packaged
+  # example and loses the tuned identity.
+  STATE_DIR="$MIRROR_MOUNT/.state"
+  mkdir -p "$STATE_DIR"
+  if [[ -f /etc/vision-gw.conf ]]; then
+    cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
+    cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf.last-good"
+    log "factory reset: shadow config seeded from /etc (factory)"
+  fi
+
+  log "factory reset complete — a fresh unit is coming up"
+  ;;
+
+*)
+  echo "usage: $0 {--arm|--boot}" >&2
+  exit 1
+  ;;
+esac

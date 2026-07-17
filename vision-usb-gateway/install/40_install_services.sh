@@ -132,6 +132,9 @@ systemctl enable vision-persist-boot-log.service
 systemctl enable vision-update-reapply.service
 systemctl enable vision-rootfs-grow.service
 systemctl enable citostore-mdns.service
+# Enabled but gated on the factory-reset marker (ConditionPathExists), so it does
+# nothing on a normal boot and only wipes the NVMe when armed from the WebUI.
+systemctl enable vision-factory-reset-boot.service
 
 # vision-firstboot.service is installed but only enabled by
 # prepare-golden-image.sh (it must run on clones, not on a normal install).

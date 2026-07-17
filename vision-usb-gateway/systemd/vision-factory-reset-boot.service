@@ -1,0 +1,20 @@
+[Unit]
+Description=CitoStore factory reset — wipe the NVMe before the data plane, if armed
+# Same window as first-boot NVMe init: after the filesystems are up but before the
+# gadget, sync, smbd or the mirror mount have opened anything on the NVMe. That is
+# the only point the wipe can free the disk. Gated on the marker so a normal boot
+# skips it with no cost.
+ConditionPathExists=/boot/firmware/factory-reset-pending
+After=local-fs.target network-pre.target
+Before=vision-firstboot.service vision-gw-config.service usb-gadget.service vision-sync.timer smbd.service var-lib-samba.mount
+DefaultDependencies=yes
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash -c '"${GATEWAY_HOME:-/opt/CitoStore/vision-usb-gateway}"/scripts/factory-reset.sh --boot'
+
+[Install]
+WantedBy=multi-user.target

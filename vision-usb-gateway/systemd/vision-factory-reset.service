@@ -1,12 +1,11 @@
 [Unit]
-Description=Vision Factory Reset (wipe NVMe, rebuild like a fresh drive)
+Description=Vision Factory Reset (arm: mark for NVMe wipe on next boot, then reboot)
 After=local-fs.target
 
 [Service]
 Type=oneshot
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
-# Runs as full root, outside the WebUI's ProtectSystem=strict sandbox: it wipes a
-# block device, tears down LVM, and reboots — none of which the sandboxed WebUI
-# process could do. The script reboots on success, so this unit does not return.
-ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/factory-reset.sh --i-know-what-im-doing
+# Only arms and reboots — the wipe itself runs at early boot, when the NVMe is not
+# yet held. Runs as full root, outside the WebUI's sandbox; reboots on success.
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/factory-reset.sh --arm
