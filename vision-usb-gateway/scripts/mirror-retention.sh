@@ -53,8 +53,41 @@ now = int(__import__("time").time())
 
 state_db = Path(mirror) / ".state" / "vision.db"
 maint_state = Path(mirror) / ".state" / "retention.state.json"
+# Folders an operator marked keep-forever, chosen in the WebUI. Lives on the NVMe
+# so it survives an OS reflash — protection quietly lapsing after an update would
+# be worse than never having offered it.
+protected_file = Path(mirror) / ".state" / "retention-protected.json"
 if not state_db.exists():
     raise SystemExit("state DB not found")
+
+def load_protected() -> list:
+    """Absolute, resolved roots that must never be deleted.
+
+    Fail closed: if the list cannot be read, protect nothing is the wrong answer
+    — but so is deleting everything on a parse error. Raise instead, so the run
+    aborts loudly and a broken file cannot silently un-protect an operator's data.
+    """
+    if not protected_file.exists():
+        return []
+    import json
+    raw = json.loads(protected_file.read_text(encoding="utf-8"))
+    roots = []
+    base = Path(mirror).resolve()
+    for rel in raw.get("paths", []):
+        p = (base / str(rel).lstrip("/")).resolve()
+        if p == base or base not in p.parents:
+            continue  # never let a bad entry protect (or escape) the whole mirror
+        roots.append(p)
+    return roots
+
+protected = load_protected()
+
+def is_protected(path: Path) -> bool:
+    try:
+        rp = path.resolve()
+    except OSError:
+        return False
+    return any(rp == r or r in rp.parents for r in protected)
 
 def usage_pct():
     total, used, _ = shutil.disk_usage(mirror)
@@ -113,6 +146,8 @@ def file_fallback_delete_one() -> bool:
         for p in root.rglob("*"):
             if not p.is_file():
                 continue
+            if is_protected(p):
+                continue
             try:
                 st = p.stat()
             except OSError:
@@ -158,12 +193,20 @@ if not dry:
 progress_failures = 0
 while usage_pct() >= ret_hi:
     before = usage_pct()
-    cur = conn.execute(
+    # Walk oldest-first and skip anything an operator protected. SQL cannot know
+    # about the protected roots, so ask for a window rather than a single row —
+    # otherwise one protected file at the head of the queue stalls the whole run.
+    row = None
+    for cand in conn.execute(
         "SELECT id, raw_path, bydate_path FROM synced_files "
         "WHERE raw_path != '' OR bydate_path != '' "
-        "ORDER BY synced_at ASC LIMIT 1"
-    )
-    row = cur.fetchone()
+        "ORDER BY synced_at ASC LIMIT 200"
+    ):
+        paths = [Path(p) for p in (cand["raw_path"], cand["bydate_path"]) if p]
+        if any(is_protected(p) for p in paths):
+            continue
+        row = cand
+        break
     if row is None:
         if not file_fallback_delete_one():
             break
@@ -211,6 +254,34 @@ while usage_pct() >= ret_hi:
             progress_failures = 0
         else:
             break
+
+# Protection holds: protected data is never deleted to make room. But retention
+# giving up quietly is how the mirror fills, the sync's free-space guard trips,
+# and the AOI's images stop being captured while everything still looks green.
+# Say so loudly enough that it is noticed before that happens.
+final = usage_pct()
+if final >= ret_hi and protected:
+    health = Path(mirror) / ".state" / "retention-blocked.json"
+    import json
+    try:
+        health.parent.mkdir(parents=True, exist_ok=True)
+        health.write_text(
+            json.dumps({"usage": final, "target": ret_lo, "protected": len(protected), "ts": now}),
+            encoding="utf-8",
+        )
+    except OSError:
+        pass
+    print(
+        f"CRITICAL: mirror at {final}% and retention cannot reach {ret_lo}% — "
+        f"{len(protected)} protected folder(s) are keeping the rest. Free space or "
+        f"unprotect something: when the mirror fills, the sync stops capturing.",
+        flush=True,
+    )
+else:
+    try:
+        (Path(mirror) / ".state" / "retention-blocked.json").unlink(missing_ok=True)
+    except OSError:
+        pass
 
 if not dry and db_maint_interval > 0:
     state = load_maint_state()
