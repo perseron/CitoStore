@@ -9,10 +9,9 @@ set -euo pipefail
 #
 # Static-IP units count as "network" (they have a routable address), so they keep
 # the configured name — the direct fallback only triggers on a genuine 1-1 link
-# with no DHCP server. The default is always network mode: the direct name is used
-# only when we affirmatively see no routable address, so a slow/renewing DHCP can
-# never flip us into 1-1 mode. Invoked by the NM dispatcher (after DHCP settles)
-# and by citostore-mdns.service on boot.
+# with no DHCP server. Invoked by the NM dispatcher (after DHCP settles) and by
+# citostore-mdns.service on boot, where it waits for DHCP before ruling out a
+# network (see MDNS_NETWORK_WAIT_SEC below).
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=/dev/null
@@ -28,6 +27,11 @@ load_config
 # is the /24 the board serves; the board takes .1.
 : "${MDNS_DIRECT_DHCP:=true}"
 : "${MDNS_DIRECT_SUBNET:=10.10.10}"
+# How long the boot decision waits for DHCP before concluding there is no network.
+# Only spent on a link that never answers: a lease ends the wait immediately, so a
+# normal LAN costs nothing. Must outlast a switch port that negotiates and runs
+# spanning-tree before it will pass DHCP.
+: "${MDNS_NETWORK_WAIT_SEC:=45}"
 SHARED_CON=citostore-direct
 
 action="${1:-}"
@@ -55,9 +59,35 @@ fi
 
 # A "routable" address that is neither link-local nor our own shared subnet means
 # we are on a real network (router DHCP or a static IP).
-routable=$(ip -4 -o addr show dev "$MDNS_INTERFACE" 2>/dev/null \
-  | awk '{print $4}' | cut -d/ -f1 \
-  | grep -vE "^169\.254\.|^${MDNS_DIRECT_SUBNET//./\\.}\." | head -1 || true)
+routable_addr() {
+  ip -4 -o addr show dev "$MDNS_INTERFACE" 2>/dev/null \
+    | awk '{print $4}' | cut -d/ -f1 \
+    | grep -vE "^169\.254\.|^${MDNS_DIRECT_SUBNET//./\\.}\." | head -1 || true
+}
+
+routable=$(routable_addr)
+
+# At boot, "no address yet" is not "no network". network-online.target only means
+# NetworkManager stopped waiting, and we cap that at 15s (see the wait-online
+# drop-in) so a carrier-less eth1 cannot stall boot — a switch port that
+# negotiates and runs spanning-tree pushes DHCP well past it. This decision is
+# final for the boot, so getting it wrong puts a rogue DHCP server on a real LAN
+# and takes the unit off its own subnet. Wait for the lease before ruling the
+# network out; it arrives on a normal LAN in a second or two and ends the wait.
+if [[ -z "$routable" && "$action" == "boot" ]]; then
+  waited=0
+  while ((waited < MDNS_NETWORK_WAIT_SEC)); do
+    sleep 1
+    waited=$((waited + 1))
+    routable=$(routable_addr)
+    [[ -n "$routable" ]] && break
+  done
+  if [[ -n "$routable" ]]; then
+    log "mDNS: $MDNS_INTERFACE got a routable address after ${waited}s -> network"
+  else
+    log "mDNS: no routable address on $MDNS_INTERFACE after ${MDNS_NETWORK_WAIT_SEC}s -> direct 1-1 link"
+  fi
+fi
 
 # The advertised name is always the configured NETBIOS_NAME (e.g. AOI1 ->
 # AOI1.local), on a network and on a direct link alike, so operators reach the
@@ -73,11 +103,11 @@ if [[ -n "$routable" ]]; then
   fi
 else
   mode="direct"
-  # No routable address = a 1-1 link with no router, so become the DHCP server and
-  # hand the laptop a real IP. Decided at boot only (action=boot), after
-  # network-online has let DHCP settle — no runtime hot-switch, and never during a
-  # LAN's brief DHCP-acquisition window. A static-IP unit always has a routable
-  # address, so it takes the network branch above and never serves DHCP.
+  # No routable address after the wait above = a 1-1 link with no router, so
+  # become the DHCP server and hand the laptop a real IP. Decided at boot only
+  # (action=boot) — no runtime hot-switch. A static-IP unit always has a routable
+  # address, so it takes the network branch above and never serves DHCP; that is
+  # the reason to give a unit that lives on a LAN a fixed address.
   if [[ "$action" == "boot" && "$MDNS_DIRECT_DHCP" == "true" ]] \
      && command -v nmcli >/dev/null 2>&1 && ! shared_active; then
     # Only if this interface is actually a DHCP client (not a deliberate static IP).
