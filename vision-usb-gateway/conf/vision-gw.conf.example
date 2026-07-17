@@ -105,6 +105,16 @@ RTC_SYNC_INTERVAL=1h
 RTC_CHARGE_ENABLED=true
 RTC_CHARGE_UV=3000000
 
+# USB export: plug a drive into one of the HOST ports (NOT the AOI's OTG port) and
+# it is mounted here automatically, so mirror data can be copied off by hand. The
+# gadget's LVs, the NVMe and the eMMC can never be picked up: the udev rule matches
+# ID_BUS=usb only, and usb-export-mount.sh re-checks. USB_EXPORT_SYNC mounts
+# write-through — slower, but the drive stays consistent, so it can be unplugged
+# without a "safely remove" step.
+USB_EXPORT_ENABLED=true
+USB_EXPORT_MOUNT=/srv/usb_backup
+USB_EXPORT_SYNC=true
+
 # Journald (overlay mode memory cap)
 JOURNAL_RUNTIME_MAX_USE=64M
 JOURNAL_RUNTIME_KEEP_FREE=32M

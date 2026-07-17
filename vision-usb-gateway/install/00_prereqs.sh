@@ -37,6 +37,7 @@ apt-get install -y \
   nvme-cli \
   python3 python3-venv python3-pip \
   util-linux \
+  exfatprogs exfat-fuse ntfs-3g \
   initramfs-tools
 
 # Install overlayroot provider. Package name varies by distro.

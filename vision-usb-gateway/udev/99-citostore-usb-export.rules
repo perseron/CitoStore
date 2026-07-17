@@ -1,0 +1,16 @@
+# Auto-mount a plugged-in USB drive for manual export of mirror data.
+#
+# ID_BUS=="usb" is what keeps this away from everything that matters: the
+# gadget's backing LVs are device-mapper, the mirror/usbpool are nvme, the root
+# is mmc, and on the OTG port the Pi is the *peripheral*, so its own gadget never
+# appears here as a block device. usb-export-mount.sh re-checks all of that
+# anyway — mounting a live gadget-backed LV would corrupt the FAT under the AOI.
+#
+# The Realtek USB NIC on eth1 is also ID_BUS=usb but is not SUBSYSTEM=block, so
+# it never matches.
+
+ACTION=="add", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", ENV{ID_FS_USAGE}=="filesystem", \
+  TAG+="systemd", ENV{SYSTEMD_WANTS}+="citostore-usb-mount@%k.service"
+
+ACTION=="remove", SUBSYSTEM=="block", ENV{ID_BUS}=="usb", \
+  RUN+="/bin/systemctl --no-block start citostore-usb-umount@%k.service"

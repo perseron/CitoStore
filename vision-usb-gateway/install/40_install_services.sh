@@ -63,6 +63,20 @@ if [[ -d "$SCRIPT_DIR/../systemd/NetworkManager-wait-online.service.d" ]]; then
     /etc/systemd/system/NetworkManager-wait-online.service.d/
 fi
 
+# USB export: udev pulls citostore-usb-mount@.service in when a drive appears.
+# The template units above are installed by the systemd/*.service glob and must
+# NOT be enabled — udev instantiates them per device.
+if [[ -f "$SCRIPT_DIR/../udev/99-citostore-usb-export.rules" ]]; then
+  log "installing usb-export udev rule"
+  install -m 0644 "$SCRIPT_DIR/../udev/99-citostore-usb-export.rules" \
+    /etc/udev/rules.d/99-citostore-usb-export.rules
+  udevadm control --reload-rules >/dev/null 2>&1 || true
+fi
+
+# The SMB share and the WebUI both expect this to exist even with nothing plugged
+# in, so create it now: under the overlay it would otherwise only ever live in RAM.
+mkdir -p "${USB_EXPORT_MOUNT:-/srv/usb_backup}"
+
 log "configuring vision-sync.timer override"
 SYNC_TIMER_DIR=/etc/systemd/system/vision-sync.timer.d
 SYNC_TIMER_OVERRIDE=$SYNC_TIMER_DIR/override.conf

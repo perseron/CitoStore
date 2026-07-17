@@ -1,0 +1,11 @@
+[Unit]
+Description=Unmount USB export drive %I
+# Started by udev on remove. Deliberately not BindsTo=dev-%i.device: the device
+# is already gone by the time this runs.
+
+[Service]
+Type=oneshot
+RemainAfterExit=no
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/bash -c '"${GATEWAY_HOME:-/opt/CitoStore/vision-usb-gateway}"/scripts/usb-export-mount.sh remove %I'
