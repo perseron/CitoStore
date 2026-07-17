@@ -1165,7 +1165,19 @@ class WebHandler(BaseHTTPRequestHandler):
         )
 
     def do_GET(self):
-        if setup_allowed() and self.path not in ("/setup", "/setup/"):
+        # The landing page and the export flow are reachable before the admin
+        # password exists: export has its own credential (the SMB one), so
+        # herding an operator into setting an admin password to copy files off
+        # would be backwards.
+        if self.path in ("/", "/index.html"):
+            return self.send_text(self.render_landing())
+        if (
+            setup_allowed()
+            and self.path not in ("/setup", "/setup/")
+            and not self.path.startswith("/export")
+            and not self.path.startswith("/api/usb-export/")
+            and not self.path.startswith("/static/")
+        ):
             return self.redirect("/setup")
         if self.path in ("/login", "/login/"):
             return self.send_text(self.render_login())
@@ -1187,7 +1199,7 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_export_get()
         if not self.is_authenticated():
             return self.redirect("/login")
-        if self.path in ("/", "/index.html"):
+        if self.path in ("/admin", "/admin/"):
             return self.serve_static("index.html", content_type="text/html; charset=utf-8")
         if self.path.startswith("/api/status"):
             cfg = parse_config(load_config_text())
@@ -1457,7 +1469,9 @@ class WebHandler(BaseHTTPRequestHandler):
             self.send_response(HTTPStatus.SEE_OTHER)
             self.send_header("Set-Cookie", f"session={token}; HttpOnly; Path=/; SameSite=Strict")
             self.send_header("Set-Cookie", f"csrf={csrf}; Path=/; SameSite=Strict")
-            self.send_header("Location", "/")
+            # Straight to the config UI: "/" is now the landing page, and being
+            # bounced back to a chooser right after signing in reads as a failure.
+            self.send_header("Location", "/admin")
             self.end_headers()
             log("login success")
         else:
@@ -1924,6 +1938,58 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
+
+    def render_landing(self) -> str:
+        """Front door. Deliberately unauthenticated and deliberately empty of facts.
+
+        Its whole job is to send the two audiences to the right place — an
+        operator who wants files off the unit should not land on an admin login.
+        It therefore shows the unit's name (already broadcast over mDNS/NetBIOS,
+        so not a disclosure) and nothing else: no status, no config, no hint of
+        what is stored here.
+        """
+        cfg = parse_config(load_config_text())
+        name = cfg.get("NETBIOS_NAME", "CitoStore")
+        return f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{name} - CitoStore</title>
+  <style>
+    body {{ font-family: system-ui, sans-serif; margin: 0; background: #f4f6f8; color: #1c2530; }}
+    .wrap {{ max-width: 720px; margin: 0 auto; padding: 64px 20px; }}
+    h1 {{ margin: 0 0 4px; font-size: 30px; }}
+    h1 .accent {{ color: #1e8e5a; }}
+    .unit {{ color: #667; margin: 0 0 40px; font-size: 15px; }}
+    .cards {{ display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }}
+    a.card {{ display: block; padding: 26px 24px; background: #fff; border: 1px solid #e2e6ea;
+      border-radius: 12px; text-decoration: none; color: inherit;
+      transition: border-color .15s, box-shadow .15s, transform .15s; }}
+    a.card:hover {{ border-color: #1e8e5a; box-shadow: 0 8px 24px rgba(0,0,0,.09); transform: translateY(-2px); }}
+    .card h2 {{ margin: 0 0 8px; font-size: 19px; }}
+    .card p {{ margin: 0; color: #667; font-size: 14px; line-height: 1.5; }}
+    @media (max-width: 640px) {{ .cards {{ grid-template-columns: 1fr; }} }}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1><span class="accent">Cito</span>Store</h1>
+    <p class="unit">{name}</p>
+    <div class="cards">
+      <a class="card" href="/export">
+        <h2>Copy files to USB &rarr;</h2>
+        <p>Plug a USB drive into the unit and copy images onto it. Sign in with the
+           password you use for the shared folders.</p>
+      </a>
+      <a class="card" href="/admin">
+        <h2>Settings &rarr;</h2>
+        <p>Configuration, status and maintenance. Needs the administrator password.</p>
+      </a>
+    </div>
+  </div>
+</body>
+</html>"""
 
     def render_export_login(self, error: bool = False) -> str:
         msg = (
