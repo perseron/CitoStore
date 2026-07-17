@@ -31,20 +31,28 @@ c.execute("CREATE TABLE file_state (path TEXT, last_seen INT)")
 c.commit()
 PY
 
+if [[ $(id -u) -ne 0 ]]; then
+  echo "must run as root (the script requires it) — re-run with sudo" >&2
+  exit 1
+fi
+
 fail=0
 check() { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; else echo "  FAIL: $1 (got '$2', want '$3')"; fail=1; fi; }
 
 echo "=== protected folder is skipped by the file fallback ==="
-# RETENTION_HI=0 forces a run regardless of real disk usage; the loop then tries
-# to delete until it can reach RETENTION_LO, which it never will here — exactly
-# the "protection blocks retention" case.
+# RETENTION_HI=0 forces a run regardless of real disk usage; the loop deletes
+# until nothing unprotected is left, which is exactly the "protection blocks
+# retention" case (LO=0 is unreachable on a real filesystem).
 MIRROR_MOUNT="$MIRROR" RETENTION_HI=0 RETENTION_LO=0 DRY_RUN=false \
   timeout 60 bash "$GW/scripts/mirror-retention.sh" >"$TMP/out.txt" 2>&1 || true
 
+# Prove the run actually did something, or every check below passes vacuously.
+check "the run reached the deletion logic" \
+  "$(grep -qi 'must run as root' "$TMP/out.txt" && echo no || echo yes)" "yes"
 check "protected file survived" \
   "$(test -f "$MIRROR/raw/keep_me/important.bin" && echo yes || echo no)" "yes"
 check "unprotected file was deleted" \
-  "$(test -f "$MIRROR/raw/old_stuff/junk.bin" && echo gone || echo gone)" "gone"
+  "$(test -f "$MIRROR/raw/old_stuff/junk.bin" && echo still-there || echo gone)" "gone"
 
 echo "=== it says so loudly when protection blocks it ==="
 check "CRITICAL reported" \
