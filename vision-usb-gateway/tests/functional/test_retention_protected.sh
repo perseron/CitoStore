@@ -32,8 +32,10 @@ trap cleanup EXIT
 
 # --- a real filesystem, small enough to fill -------------------------------
 mkdir -p "$MIRROR"
-truncate -s 32M "$IMG"
-mkfs.ext4 -q -F "$IMG" >/dev/null 2>&1
+truncate -s 64M "$IMG"
+# No journal: on a filesystem this small its ~4M is a large slice of the budget,
+# and the sizes below are chosen against what is actually free.
+mkfs.ext4 -q -F -O ^has_journal "$IMG" >/dev/null 2>&1
 mount -o loop "$IMG" "$MIRROR"
 
 # Never let this loose on the real mirror: the whole point is deleting files.
@@ -46,11 +48,27 @@ fi
 
 mkdir -p "$MIRROR/.state" "$MIRROR/raw/keep_me" "$MIRROR/raw/old_stuff" "$MIRROR/bydate"
 
-# The protected data is the bulk, and the oldest — so retention reaches for it
-# first, and deleting everything unprotected still leaves usage above the target.
-# That is the case worth proving: protection holds *and* the run reports it.
-head -c 26000000 /dev/zero >"$MIRROR/raw/keep_me/important.bin"
-head -c 1000000 /dev/zero >"$MIRROR/raw/old_stuff/junk.bin"
+usage() { python3 -c "import shutil;t,u,_=shutil.disk_usage('$MIRROR');print(int(u*100/t))"; }
+
+# Fill adaptively rather than guessing sizes against ext4's overhead (a first
+# attempt hard-coded 26M into a 32M image and ran out of space during setup).
+#
+# The protected data must be the bulk AND the oldest: retention then reaches for
+# it first, and even after deleting everything unprotected, usage stays above
+# RETENTION_HI. That is the case worth proving — protection holds, and the run
+# reports that it is stuck rather than filling up quietly.
+fill_to() { # <file> <target pct>
+  local f="$1" target="$2"
+  : >"$f"
+  while (($(usage) < target)); do
+    head -c 2000000 /dev/zero >>"$f" || break
+    sync
+  done
+}
+
+fill_to "$MIRROR/raw/keep_me/important.bin" 92
+protected_size=$(stat -c%s "$MIRROR/raw/keep_me/important.bin")
+head -c 2000000 /dev/zero >"$MIRROR/raw/old_stuff/junk.bin"
 touch -d "2020-01-01" "$MIRROR/raw/keep_me/important.bin"
 touch -d "2021-01-01" "$MIRROR/raw/old_stuff/junk.bin"
 sync
@@ -76,7 +94,6 @@ INGEST_DIR=$MIRROR/ingest
 DB_MAINT_INTERVAL_SEC=0
 EOF
 
-usage() { python3 -c "import shutil;t,u,_=shutil.disk_usage('$MIRROR');print(int(u*100/t))"; }
 start_usage=$(usage)
 echo "=== test filesystem starts at ${start_usage}% (needs >= 90 to exercise anything) ==="
 if ((start_usage < 90)); then
