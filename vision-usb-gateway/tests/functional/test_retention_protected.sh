@@ -116,8 +116,8 @@ check "unprotected file was deleted" \
 echo "=== protection holds ==="
 check "protected file survived" \
   "$(test -f "$MIRROR/raw/keep_me/important.bin" && echo yes || echo no)" "yes"
-check "protected file is intact" \
-  "$(stat -c%s "$MIRROR/raw/keep_me/important.bin" 2>/dev/null || echo 0)" "26000000"
+check "protected file is intact (not truncated to make room)" \
+  "$(stat -c%s "$MIRROR/raw/keep_me/important.bin" 2>/dev/null || echo 0)" "$protected_size"
 
 echo "=== and it says so, rather than filling up quietly ==="
 check "CRITICAL reported" \
