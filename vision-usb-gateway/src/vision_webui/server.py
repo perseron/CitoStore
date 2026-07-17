@@ -187,6 +187,32 @@ def set_system_time(value):
     return code, out, err
 
 
+BUILD_STAMP = Path("/etc/citostore-build")
+
+
+def get_build_stamp() -> dict:
+    """Which image this unit was flashed from.
+
+    Written into the image at bake time. Without it there is no way to tell what
+    a unit is actually running: the repo's HEAD is only visible over SSH, and it
+    lies whenever someone has checked something out into the RAM overlay — which
+    reverts on the next boot, so the unit silently goes back to the baked code.
+    """
+    stamp = {"sha": "unknown", "date": "unknown", "subject": ""}
+    try:
+        for line in BUILD_STAMP.read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition("=")
+            if key == "CITOSTORE_BUILD_SHA":
+                stamp["sha"] = value
+            elif key == "CITOSTORE_BUILD_DATE":
+                stamp["date"] = value
+            elif key == "CITOSTORE_BUILD_SUBJECT":
+                stamp["subject"] = value
+    except OSError:
+        pass
+    return stamp
+
+
 def load_config_text() -> str:
     if SHADOW_CONF.exists():
         return SHADOW_CONF.read_text(encoding="utf-8")
@@ -938,6 +964,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 "sync_service": get_sync_service_status(),
                 "mirror_usage": get_disk_usage("/srv/vision_mirror"),
                 "nvme": get_nvme_smart(),
+                "build": get_build_stamp(),
             }
             return self.send_json(data)
         if self.path.startswith("/api/log-services"):
