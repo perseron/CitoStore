@@ -346,6 +346,11 @@ def start_usb_copy(sources: list, dest_rel: str) -> tuple:
         "/usr/bin/rsync",
         "-rlt",
         "--info=progress2",
+        # Scan everything up front. rsync's default incremental recursion means
+        # it does not know the total yet, so the percentage and ETA crawl toward
+        # a moving target and lie for the first part of a big copy. A slower
+        # start buys a progress bar that means something.
+        "--no-inc-recursive",
         "--no-perms",
         "--no-owner",
         "--no-group",
@@ -355,19 +360,39 @@ def start_usb_copy(sources: list, dest_rel: str) -> tuple:
     return run_cmd(args)
 
 
+# "  1,234,567,890  45%   12.34MB/s    0:01:23"
+PROGRESS_RE = re.compile(
+    r"([\d,]+)\s+(\d+)%\s+([\d.]+[kKMG]?B/s)\s+(\d+:\d{2}:\d{2})"
+)
+
+
+def parse_rsync_progress(text: str) -> dict:
+    """Pull the latest progress out of rsync's --info=progress2 stream.
+
+    rsync redraws one status line with carriage returns. Nothing converts those
+    to newlines, so the journal accumulates every update into a single enormous
+    line — reading that line whole would render the entire history at once. Split
+    on \\r and take the last update that parsed.
+    """
+    for chunk in reversed(text.split("\r")):
+        m = PROGRESS_RE.search(chunk)
+        if m:
+            return {
+                "bytes": m.group(1),
+                "percent": int(m.group(2)),
+                "rate": m.group(3),
+                "eta": m.group(4),
+            }
+    return {}
+
+
 def get_usb_copy_status() -> dict:
     active = usb_copy_running()
     code, out, _ = run_cmd(
         ["/usr/bin/journalctl", "-u", f"{USB_JOB_UNIT}.service", "-n", "40", "-o", "cat", "--no-pager"]
     )
-    lines = [l for l in out.splitlines() if l.strip()] if code == 0 else []
-    progress = ""
-    for line in reversed(lines):
-        # rsync --info=progress2 rewrites one line: "  123,456  45%  12.3MB/s ..."
-        if "%" in line:
-            progress = line.strip()
-            break
-    result = {"running": active, "progress": progress, "log": lines[-6:]}
+    text = out if code == 0 else ""
+    result = {"running": active, "progress": parse_rsync_progress(text)}
     if not active:
         code, out, _ = run_cmd(
             ["/bin/systemctl", "show", f"{USB_JOB_UNIT}.service", "-p", "Result", "--value"]

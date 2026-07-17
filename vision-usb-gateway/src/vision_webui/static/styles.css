@@ -216,3 +216,9 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .file-row:hover { background: #f4f6f8; }
 .file-row .hint { margin-left: auto; }
 @media (max-width: 720px) { .grid-2 { grid-template-columns: 1fr; } }
+
+/* USB export copy progress */
+.prog-head { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; font-size: 14px; }
+.prog-head span { color: #667; }
+.prog-track { height: 8px; background: #dfe4e8; border-radius: 999px; overflow: hidden; }
+.prog-fill { height: 100%; background: #1e8e5a; border-radius: 999px; transition: width .4s ease; }

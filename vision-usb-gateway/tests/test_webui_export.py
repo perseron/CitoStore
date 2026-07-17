@@ -111,3 +111,39 @@ def test_copy_builds_an_rsync_command_into_the_usb_root(roots, monkeypatch):
     assert "--no-block" in args
     assert str((mirror / "raw").resolve()) in args
     assert args[-1] == f"{usb.resolve()}/"
+
+
+def test_progress_reads_the_latest_update_from_a_collapsed_line():
+    # rsync redraws its status line with carriage returns and nothing converts
+    # them to newlines, so the journal hands back every update glued together.
+    # Reading it whole would render the entire history at once.
+    collapsed = (
+        "Starting citostore-usb-copy.service...\n"
+        "\r         32,768   0%    0.00kB/s    0:00:00  "
+        "\r      2,097,152   0%    5.41MB/s    0:00:00 (xfr#1, to-chk=122/124)"
+        "\r    268,435,456  63%   21.34MB/s    0:00:07  "
+    )
+    p = server.parse_rsync_progress(collapsed)
+    assert p == {
+        "bytes": "268,435,456",
+        "percent": 63,
+        "rate": "21.34MB/s",
+        "eta": "0:00:07",
+    }
+
+
+def test_progress_is_empty_before_rsync_says_anything():
+    assert server.parse_rsync_progress("Starting...\nFinished.") == {}
+    assert server.parse_rsync_progress("") == {}
+
+
+def test_copy_scans_up_front_so_the_percentage_means_something(roots, monkeypatch):
+    monkeypatch.setattr(server, "usb_copy_running", lambda: False)
+    seen = {}
+    monkeypatch.setattr(
+        server, "run_cmd", lambda args, **kw: (seen.update(args=args), (0, "", ""))[1]
+    )
+    server.start_usb_copy([{"root": "mirror", "path": "raw"}], "")
+    # Without this rsync does not know the total yet and the ETA chases a moving
+    # target for the first part of a big copy.
+    assert "--no-inc-recursive" in seen["args"]

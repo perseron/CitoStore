@@ -119,16 +119,52 @@ async function loadDir(root, path) {
   }
 }
 
+// "0:01:23" -> "1m 23s left". rsync's own estimate: it knows the total up front
+// (--no-inc-recursive) and the current rate, which is a better guess than
+// anything recomputed from percentages sampled every 5s.
+function fmtEta(eta) {
+  const p = (eta || "").split(":").map(Number);
+  if (p.length !== 3 || p.some(isNaN)) return "";
+  const [h, m, s] = p;
+  if (h) return `${h}h ${m}m left`;
+  if (m) return `${m}m ${s}s left`;
+  return s > 0 ? `${s}s left` : "finishing…";
+}
+
+function renderProgress(job) {
+  const bar = document.getElementById("usb-progress");
+  const p = (job && job.progress) || {};
+  const has = typeof p.percent === "number";
+
+  if (job && job.running) {
+    bar.classList.remove("hidden");
+    bar.innerHTML = has
+      ? `<div class="prog-head"><b>Copying… ${p.percent}%</b>` +
+        `<span>${p.rate} · ${fmtEta(p.eta)}</span></div>` +
+        `<div class="prog-track"><div class="prog-fill" style="width:${p.percent}%"></div></div>`
+      : "<b>Copying…</b> <span class='hint'>counting files…</span>";
+    return;
+  }
+  if (!bar.classList.contains("hidden")) {
+    const ok = job && job.result === "success";
+    bar.innerHTML = ok
+      ? "<b>Copy finished.</b> Press <b>Safely remove</b> before unplugging."
+      : `<b>Copy ended:</b> ${(job && job.result) || "unknown"}`;
+    loadDir("usb", usbState.usb);
+    setTimeout(() => bar.classList.add("hidden"), 8000);
+  }
+}
+
 async function refreshUsbExport() {
   let s;
   try {
     s = await api("/api/usb-export/status");
-  } catch { return; }
+  } catch { return false; }
   const changed = s.present !== usbState.present;
   usbState.present = s.present;
   document.getElementById("usb-none").classList.toggle("hidden", s.present);
   document.getElementById("usb-present").classList.toggle("hidden", !s.present);
-  if (!s.present) { setStatus("No drive plugged in"); return; }
+  if (!s.present) { setStatus("No drive plugged in"); return false; }
 
   // get_disk_usage returns df's own human-readable strings ("118G"), not bytes.
   const u = s.usage || {};
@@ -140,19 +176,12 @@ async function refreshUsbExport() {
   if (changed) { usbState.picked.clear(); loadDir("mirror", ""); loadDir("usb", ""); }
 
   const job = await api("/api/usb-export/job").catch(() => null);
-  const bar = document.getElementById("usb-progress");
-  if (job && job.running) {
-    bar.classList.remove("hidden");
-    bar.textContent = "Copying… " + (job.progress || "");
-  } else if (job && job.progress && !bar.classList.contains("hidden")) {
-    bar.textContent = job.result === "success" ? "Copy finished." : `Copy ended: ${job.result}`;
-    loadDir("usb", usbState.usb);
-    setTimeout(() => bar.classList.add("hidden"), 6000);
-  }
+  renderProgress(job);
   const busy = !!(job && job.running);
   document.getElementById("usb-copy").disabled = busy;
   document.getElementById("usb-eject").disabled = busy;
   document.getElementById("usb-mkdir").disabled = busy;
+  return busy;
 }
 
 document.getElementById("usb-copy").onclick = async () => {
@@ -190,5 +219,10 @@ document.getElementById("usb-eject").onclick = async () => {
   } catch (err) { showToast(err.message, "error"); }
 };
 
-refreshUsbExport();
-setInterval(refreshUsbExport, 5000);
+// A progress bar wants to move, but polling twice a second forever just to watch
+// an idle drive is waste. Chase the copy, idle the rest of the time.
+async function pollLoop() {
+  const busy = await refreshUsbExport();
+  setTimeout(pollLoop, busy ? 1000 : 5000);
+}
+pollLoop();
