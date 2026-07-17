@@ -335,6 +335,11 @@ def start_usb_copy(sources: list, dest_rel: str) -> tuple:
     if not srcs:
         return 1, "", "nothing selected"
 
+    # systemd truncates the progress file when rsync opens it, but --no-block
+    # returns before that happens: the page polls in between and reads the *last*
+    # copy's final line, flashing 100% before the new one has moved a byte.
+    run_privileged(["/bin/rm", "-f", USB_PROGRESS_FILE])
+
     args = [
         "systemd-run",
         "--quiet",

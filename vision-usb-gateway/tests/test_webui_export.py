@@ -177,3 +177,23 @@ def test_progress_tail_survives_a_missing_file(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "USB_PROGRESS_FILE", str(tmp_path / "nope"))
     assert server.read_progress_tail() == ""
     assert server.parse_rsync_progress(server.read_progress_tail()) == {}
+
+
+def test_stale_progress_is_cleared_before_a_new_copy(roots, monkeypatch):
+    monkeypatch.setattr(server, "usb_copy_running", lambda: False)
+    calls = []
+    monkeypatch.setattr(
+        server, "run_cmd", lambda args, **kw: (calls.append(args), (0, "", ""))[1]
+    )
+    monkeypatch.setattr(
+        server, "run_privileged", lambda args, **kw: (calls.append(args), (0, "", ""))[1]
+    )
+    server.start_usb_copy([{"root": "mirror", "path": "raw"}], "")
+
+    # systemd truncates the file only once rsync opens it, and --no-block returns
+    # before that: the page would read the previous copy's final line and flash
+    # 100% before the new one has moved a byte.
+    rm = [c for c in calls if c[0] == "/bin/rm"]
+    run = [i for i, c in enumerate(calls) if c[0] == "systemd-run"]
+    assert rm and rm[0] == ["/bin/rm", "-f", server.USB_PROGRESS_FILE]
+    assert calls.index(rm[0]) < run[0], "must be cleared before the copy starts"
