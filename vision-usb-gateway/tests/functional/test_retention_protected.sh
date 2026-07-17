@@ -137,6 +137,29 @@ fi
 check "protected file still there after the failed run" \
   "$(test -f "$MIRROR/raw/keep_me/important.bin" && echo yes || echo no)" "yes"
 
+echo "=== protecting a bydate/ folder keeps the underlying raw data ==="
+# bydate/ is a hardlink farm over raw/: same inodes. Protecting the by-date view
+# of an image must keep the image, or freeing space by deleting the raw link
+# would take the protected data with it (the fallback used to check only the raw
+# path). Re-fill first — earlier runs freed everything unprotected.
+rm -f "$MIRROR/.state/retention-blocked.json"
+mkdir -p "$MIRROR/raw/session_A" "$MIRROR/bydate/2026-07-15"
+fill_to "$MIRROR/raw/session_A/frame.bin" 92
+ln "$MIRROR/raw/session_A/frame.bin" "$MIRROR/bydate/2026-07-15/frame.bin"
+head -c 2000000 /dev/zero >"$MIRROR/raw/session_A/spacer.bin"  # unprotected, deletable
+sync
+raw_size=$(stat -c%s "$MIRROR/raw/session_A/frame.bin")
+# Protect ONLY the by-date view, not the raw path.
+printf '{"paths": ["bydate/2026-07-15"]}' >"$MIRROR/.state/retention-protected.json"
+CONF_FILE="$CONF" DRY_RUN=false timeout 120 bash "$GW/scripts/mirror-retention.sh" \
+  >"$TMP/out_bd.txt" 2>&1 || true
+check "raw file survives when only its bydate link is protected" \
+  "$(test -f "$MIRROR/raw/session_A/frame.bin" && echo yes || echo no)" "yes"
+check "the protected bydate link survives" \
+  "$(test -f "$MIRROR/bydate/2026-07-15/frame.bin" && echo yes || echo no)" "yes"
+check "the protected data is intact" \
+  "$(stat -c%s "$MIRROR/raw/session_A/frame.bin" 2>/dev/null || echo 0)" "$raw_size"
+
 echo "=== when nothing is protected, retention still frees space ==="
 rm -f "$MIRROR/.state/retention-protected.json"
 mkdir -p "$MIRROR/raw/more"

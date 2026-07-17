@@ -141,18 +141,25 @@ def file_fallback_delete_one() -> bool:
                 continue
             inode_links.setdefault((st.st_dev, st.st_ino), []).append(p)
 
-    candidates: list[tuple[float, Path, tuple[int, int]]] = []
+    candidates: list[tuple[float, Path, tuple[int, int], Path]] = []
     for root in prune_roots:
         for p in root.rglob("*"):
             if not p.is_file():
-                continue
-            if is_protected(p):
                 continue
             try:
                 st = p.stat()
             except OSError:
                 continue
-            candidates.append((st.st_mtime, p, (st.st_dev, st.st_ino), root))
+            inode = (st.st_dev, st.st_ino)
+            # raw/ and bydate/ are the same inodes (hardlinks), so protection is
+            # about the data, not a path: an image is protected if EITHER its raw
+            # file or ANY of its bydate links is protected. Freeing space means
+            # deleting every link, so if one link is kept none may go — checking
+            # only the raw path would let an unprotected raw file drag a protected
+            # bydate link to deletion with it.
+            if is_protected(p) or any(is_protected(l) for l in inode_links.get(inode, [])):
+                continue
+            candidates.append((st.st_mtime, p, inode, root))
     candidates.sort(key=lambda x: x[0])
 
     for _, raw_path, inode, root in candidates:
