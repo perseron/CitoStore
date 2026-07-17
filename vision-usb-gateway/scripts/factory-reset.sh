@@ -110,6 +110,12 @@ case "$MODE" in
   # example and loses the tuned identity.
   STATE_DIR="$MIRROR_MOUNT/.state"
   mkdir -p "$STATE_DIR"
+  # var-lib-samba.mount binds /var/lib/samba onto this dir, and smbd (plus the
+  # boot config applier that would otherwise create it) is ordered after that
+  # mount — so on a wiped .state the mount fails for want of a target, and smbd
+  # never comes up. Create it here to break that chicken-and-egg; the applier
+  # repopulates the passdb into it on this same boot.
+  mkdir -p "$STATE_DIR/samba"
   if [[ -f /etc/vision-gw.conf ]]; then
     cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
     cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf.last-good"
