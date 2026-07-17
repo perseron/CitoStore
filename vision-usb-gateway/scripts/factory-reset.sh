@@ -89,20 +89,37 @@ if mountpoint -q "$MIRROR_MOUNT"; then
   }
 fi
 
-# Explicitly tear down the LVM stack so the partition is genuinely free before
-# 30_setup repartitions it. 30_setup does vgchange -an + wipefs, but on a live
-# unit an LV that is still mapped keeps the PV busy; vgremove -f releases them all.
-# Idempotent and best-effort: a fresh/half-wiped NVMe may have none of this.
-log "factory reset: tearing down the existing LVM on $NVME_DEVICE"
+# Tear down the LVM stack in place. Do NOT repartition: the partition already
+# spans the disk and is fine, and `parted mklabel` on a live, in-use NVMe fails
+# with "unable to inform the kernel ... in use" and leaves the disk stuck until a
+# reboot (learned the hard way). So this rebuilds the VG/LVs on the existing
+# partition and never calls parted.
+#
+# vgremove -f alone is not enough: an LV can read as open (open count 1) with no
+# mount and no process holding it — a phantom hold that survives after the gadget
+# is stopped. `dmsetup remove -f` breaks that by swapping in an error target, so
+# the mappings actually go and the PV can be recreated.
+log "factory reset: tearing down the existing LVM on $NVME_DEVICE (in place, no repartition)"
+part=""
+for _p in "${NVME_DEVICE}"p*; do [[ -b "$_p" ]] && part="$_p" && break; done
+: "${part:=${NVME_DEVICE}p1}"
+
 vgchange -an "$LVM_VG" >/dev/null 2>&1 || true
 vgremove -f "$LVM_VG" >/dev/null 2>&1 || true
-for _p in "${NVME_DEVICE}"p*; do
-  [[ -b "$_p" ]] && pvremove -ff -y "$_p" >/dev/null 2>&1 || true
+# Anything left mapped for this VG (the phantom-open case) gets forced out.
+for dm in $(dmsetup ls 2>/dev/null | awk '{print $1}' | grep "^${LVM_VG}-" || true); do
+  dmsetup remove -f "$dm" >/dev/null 2>&1 || true
 done
+pvremove -ff -y "$part" >/dev/null 2>&1 || true
+wipefs -a "$part" >/dev/null 2>&1 || true
 udevadm settle >/dev/null 2>&1 || true
 
-log "factory reset: wiping and re-initialising $NVME_DEVICE (proven first-boot path)"
-"$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
+log "factory reset: rebuilding LVM on $part (fresh PV, no partition change)"
+pvcreate -ff -y "$part"
+# 30_setup WITHOUT --wipe skips parted and only creates what is missing — with a
+# fresh PV that means the whole stack: VG, mirror LV, thin pool, USB LVs, exactly
+# as at first boot but on the partition that is already there.
+"$GATEWAY_HOME/install/30_setup_nvme_lvm.sh"
 
 # Mount the fresh mirror so the shadow config can be seeded onto it.
 mountpoint -q "$MIRROR_MOUNT" || mount "$MIRROR_MOUNT" 2>/dev/null || mount -a || true
