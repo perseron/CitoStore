@@ -108,12 +108,14 @@ RTC_CHARGE_UV=3000000
 # USB export: plug a drive into one of the HOST ports (NOT the AOI's OTG port) and
 # it is mounted here automatically, so mirror data can be copied off by hand. The
 # gadget's LVs, the NVMe and the eMMC can never be picked up: the udev rule matches
-# ID_BUS=usb only, and usb-export-mount.sh re-checks. USB_EXPORT_SYNC mounts
-# write-through — slower, but the drive stays consistent, so it can be unplugged
-# without a "safely remove" step.
+# ID_BUS=usb only, and usb-export-mount.sh re-checks. exFAT and NTFS both use
+# in-kernel drivers (exfat, ntfs3) — no FUSE package needed.
+# USB_EXPORT_SYNC mounts write-through so the drive can be unplugged at any time;
+# measured cost on a real stick is 3.4x (7 MB/s vs 24 MB/s), so it is off and the
+# drive should be ejected deliberately instead.
 USB_EXPORT_ENABLED=true
 USB_EXPORT_MOUNT=/srv/usb_backup
-USB_EXPORT_SYNC=true
+USB_EXPORT_SYNC=false
 
 # Journald (overlay mode memory cap)
 JOURNAL_RUNTIME_MAX_USE=64M
