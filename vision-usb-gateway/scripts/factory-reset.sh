@@ -57,11 +57,22 @@ fi
 log "factory reset: releasing everything that holds the NVMe"
 
 # Stop the data-plane services and the Samba passdb bind so the mirror can be
-# unmounted. Ordering matters: the bind mount sits on top of the mirror.
+# unmounted. usb-gadget is the one that bites: it holds the active USB LV open, so
+# without stopping it the VG will not deactivate and parted cannot repartition the
+# NVMe ("Partition ... in use ... unable to inform the kernel"). At first boot the
+# NVMe is empty and nothing holds it, which is why 30_setup's own teardown is
+# enough there but not here.
 for unit in vision-sync.timer vision-sync.service vision-rotator.service \
   vision-monitor.service mirror-retention.timer vision-shadow-config.service \
-  smbd.service nmbd.service wsdd.service vsftpd.service; do
+  usb-gadget.service smbd.service nmbd.service wsdd.service vsftpd.service; do
   systemctl stop "$unit" >/dev/null 2>&1 || true
+done
+
+# Tear the gadget's config down so it stops holding usb_2 (stopping the unit does
+# not always unbind the UDC).
+for g in /sys/kernel/config/usb_gadget/*; do
+  [[ -d "$g" ]] || continue
+  echo "" >"$g/UDC" 2>/dev/null || true
 done
 
 # Any USB export drive is on its own device, but its mount is under /srv; leave it
@@ -77,6 +88,18 @@ if mountpoint -q "$MIRROR_MOUNT"; then
     umount "$MIRROR_MOUNT" >/dev/null 2>&1 || umount -l "$MIRROR_MOUNT" >/dev/null 2>&1 || true
   }
 fi
+
+# Explicitly tear down the LVM stack so the partition is genuinely free before
+# 30_setup repartitions it. 30_setup does vgchange -an + wipefs, but on a live
+# unit an LV that is still mapped keeps the PV busy; vgremove -f releases them all.
+# Idempotent and best-effort: a fresh/half-wiped NVMe may have none of this.
+log "factory reset: tearing down the existing LVM on $NVME_DEVICE"
+vgchange -an "$LVM_VG" >/dev/null 2>&1 || true
+vgremove -f "$LVM_VG" >/dev/null 2>&1 || true
+for _p in "${NVME_DEVICE}"p*; do
+  [[ -b "$_p" ]] && pvremove -ff -y "$_p" >/dev/null 2>&1 || true
+done
+udevadm settle >/dev/null 2>&1 || true
 
 log "factory reset: wiping and re-initialising $NVME_DEVICE (proven first-boot path)"
 "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
