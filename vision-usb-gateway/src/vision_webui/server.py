@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import base64
+import contextlib
 import hashlib
 import hmac
 import ipaddress
@@ -205,6 +206,10 @@ USB_JOB_UNIT = "citostore-usb-copy"
 # does not survive one either.
 USB_PROGRESS_FILE = "/run/citostore-usb-copy.progress"
 EXPORT_SESSION_USER = "export"
+# Folders retention must never delete. On the NVMe, so it survives an OS reflash
+# — protection lapsing after an update would be worse than never offering it.
+PROTECTED_FILE = Path("/srv/vision_mirror/.state/retention-protected.json")
+RETENTION_BLOCKED = Path("/srv/vision_mirror/.state/retention-blocked.json")
 
 
 def export_root(name: str) -> Path:
@@ -253,6 +258,66 @@ def get_build_stamp() -> dict:
     except OSError:
         pass
     return stamp
+
+
+def get_protected_paths() -> list:
+    try:
+        data = json.loads(PROTECTED_FILE.read_text(encoding="utf-8"))
+        return [str(p) for p in data.get("paths", [])]
+    except (OSError, ValueError):
+        return []
+
+
+def set_protected_paths(paths: list) -> tuple:
+    """Replace the protected list, after checking every entry is real and inside.
+
+    mirror-retention.sh aborts its whole run on a list it cannot parse — the
+    right call, since a broken file must not quietly unprotect anything — which
+    makes writing a bad one here a way to stop retention dead. Validate first,
+    write atomically second.
+    """
+    clean = []
+    for raw in paths:
+        rel = str(raw).strip().strip("/")
+        if not rel:
+            return 1, "", "empty path"
+        target = resolve_export_path("mirror", rel)  # raises on traversal
+        if not target.is_dir():
+            return 1, "", f"not a folder: {rel}"
+        clean.append(rel)
+    payload = json.dumps({"paths": sorted(set(clean))}, indent=2)
+    tmp = PROTECTED_FILE.with_suffix(".tmp")
+    code, out, err = run_privileged(["/usr/bin/tee", str(tmp)], input_text=payload)
+    if code != 0:
+        return code, out, err
+    return run_privileged(["/bin/mv", "-f", str(tmp), str(PROTECTED_FILE)])
+
+
+def get_protected_status() -> dict:
+    paths = get_protected_paths()
+    total = 0
+    for rel in paths:
+        try:
+            target = resolve_export_path("mirror", rel)
+        except (ValueError, OSError):
+            continue
+        code, out, _ = run_cmd(["/usr/bin/du", "-sb", str(target)])
+        if code == 0 and out:
+            with contextlib.suppress(ValueError):
+                total += int(out.split()[0])
+    usage = get_disk_usage(str(EXPORT_ROOTS["mirror"]))
+    blocked = None
+    with contextlib.suppress(OSError, ValueError):
+        blocked = json.loads(RETENTION_BLOCKED.read_text(encoding="utf-8"))
+    return {
+        "paths": paths,
+        "protected_bytes": total,
+        "mirror": usage,
+        # Set by mirror-retention.sh when protection is why it cannot free space.
+        # The mirror then fills, the sync's guard trips, and capture stops — so
+        # this must be visible here, not only in a log nobody reads.
+        "blocked": blocked,
+    }
 
 
 def get_usb_export_status() -> dict:
@@ -1249,6 +1314,16 @@ class WebHandler(BaseHTTPRequestHandler):
             if not self.is_export_authenticated():
                 return self.send_text(self.render_export_login())
             return self.serve_static("export.html", content_type="text/html; charset=utf-8")
+        # Same credential as /export: same audience, same data, and an operator
+        # deciding what to keep should not need the admin password either.
+        if self.path in ("/protected", "/protected/"):
+            if not self.is_export_authenticated():
+                return self.send_text(self.render_export_login(target="/protected"))
+            return self.serve_static("protected.html", content_type="text/html; charset=utf-8")
+        if self.path.startswith("/api/protected"):
+            if not self.is_export_authenticated():
+                return self.send_json({"ok": False, "error": "unauthorized"}, status=401)
+            return self.send_json(get_protected_status())
         if self.path.startswith("/api/usb-export/"):
             if not self.is_export_authenticated():
                 return self.send_json({"ok": False, "error": "unauthorized"}, status=401)
@@ -1433,12 +1508,20 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_login()
         if self.path in ("/export", "/export/"):
             return self.handle_export_login()
+        if self.path in ("/protected", "/protected/"):
+            return self.handle_export_login(target="/protected")
         if self.path in ("/setup", "/setup/"):
             if not setup_allowed():
                 # Never allow an unauthenticated password reset once configured.
                 log("rejected /setup POST: password already configured")
                 return self.send_error(HTTPStatus.NOT_FOUND, "Not found")
             return self.handle_setup()
+        if self.path == "/api/protected":
+            if not self.is_export_authenticated():
+                return self.send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
+            if not self.require_export_csrf():
+                return self.send_error(HTTPStatus.FORBIDDEN, "CSRF validation failed")
+            return self.handle_protected_save()
         if self.path.startswith("/api/usb-export/"):
             if not self.is_export_authenticated():
                 return self.send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
@@ -1720,17 +1803,19 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_json(get_usb_copy_status())
         return self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
-    def handle_export_login(self):
+    def handle_export_login(self, target: str = "/export"):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         password = parse_qs(body).get("password", [""])[0]
         if not verify_smb_password(password):
             log("export login rejected")
-            return self.send_text(self.render_export_login(error=True), status=401)
+            return self.send_text(
+                self.render_export_login(error=True, target=target), status=401
+            )
         token = make_session(EXPORT_SESSION_USER)
         log("export login accepted")
         self.send_response(HTTPStatus.SEE_OTHER)
-        self.send_header("Location", "/export")
+        self.send_header("Location", target)
         self.send_header(
             "Set-Cookie",
             f"export_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age={SESSION_TTL_SEC}",
@@ -1766,6 +1851,22 @@ class WebHandler(BaseHTTPRequestHandler):
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
             log(f"usb-export: folder created: {name}")
+            return self.send_json({"ok": True})
+
+    def handle_protected_save(self):
+        length = int(self.headers.get("Content-Length", 0))
+        data = json.loads(self.rfile.read(length).decode("utf-8") or "{}")
+        paths = data.get("paths")
+        if not isinstance(paths, list):
+            return self.send_json({"ok": False, "error": "paths must be a list"}, status=400)
+        with require_lock():
+            try:
+                code, out, err = set_protected_paths(paths)
+            except (ValueError, OSError) as exc:
+                return self.send_json({"ok": False, "error": str(exc)}, status=400)
+            if code != 0:
+                return self.send_json({"ok": False, "error": err or out}, status=500)
+            log(f"retention: {len(paths)} folder(s) protected")
             return self.send_json({"ok": True})
 
     def handle_usb_copy(self):
@@ -2018,14 +2119,14 @@ class WebHandler(BaseHTTPRequestHandler):
     h1 {{ margin: 0 0 4px; font-size: 30px; }}
     h1 .accent {{ color: #1e8e5a; }}
     .unit {{ color: #667; margin: 0 0 40px; font-size: 15px; }}
-    .cards {{ display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }}
+    .cards {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }}
     a.card {{ display: block; padding: 26px 24px; background: #fff; border: 1px solid #e2e6ea;
       border-radius: 12px; text-decoration: none; color: inherit;
       transition: border-color .15s, box-shadow .15s, transform .15s; }}
     a.card:hover {{ border-color: #1e8e5a; box-shadow: 0 8px 24px rgba(0,0,0,.09); transform: translateY(-2px); }}
     .card h2 {{ margin: 0 0 8px; font-size: 19px; }}
     .card p {{ margin: 0; color: #667; font-size: 14px; line-height: 1.5; }}
-    @media (max-width: 640px) {{ .cards {{ grid-template-columns: 1fr; }} }}
+    @media (max-width: 860px) {{ .cards {{ grid-template-columns: 1fr; }} }}
   </style>
 </head>
 <body>
@@ -2038,6 +2139,11 @@ class WebHandler(BaseHTTPRequestHandler):
         <p>Plug a USB drive into the unit and copy images onto it. Sign in with the
            password you use for the shared folders.</p>
       </a>
+      <a class="card" href="/protected">
+        <h2>Keep folders &rarr;</h2>
+        <p>Choose folders that must never be deleted when the disk fills up. Same
+           password as copying to USB.</p>
+      </a>
       <a class="card" href="/admin">
         <h2>Settings &rarr;</h2>
         <p>Configuration, status and maintenance. Needs the administrator password.</p>
@@ -2047,7 +2153,7 @@ class WebHandler(BaseHTTPRequestHandler):
 </body>
 </html>"""
 
-    def render_export_login(self, error: bool = False) -> str:
+    def render_export_login(self, error: bool = False, target: str = "/export") -> str:
         msg = (
             "<p class='error'>Wrong password.</p>"
             if error
@@ -2068,7 +2174,7 @@ class WebHandler(BaseHTTPRequestHandler):
 <body>
   <h1>USB export</h1>
   {msg}
-  <form method="post">
+  <form method="post" action="{target}">
     <label>Password</label><br>
     <input type="password" name="password" autofocus autocomplete="current-password"><br><br>
     <button type="submit">Sign in</button>

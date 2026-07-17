@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -197,3 +198,40 @@ def test_stale_progress_is_cleared_before_a_new_copy(roots, monkeypatch):
     run = [i for i, c in enumerate(calls) if c[0] == "systemd-run"]
     assert rm and rm[0] == ["/bin/rm", "-f", server.USB_PROGRESS_FILE]
     assert calls.index(rm[0]) < run[0], "must be cleared before the copy starts"
+
+
+# --- protected folders -----------------------------------------------------
+
+def test_protected_refuses_paths_outside_the_mirror(roots, monkeypatch):
+    monkeypatch.setattr(server, "run_privileged", lambda *a, **k: (0, "", ""))
+    with pytest.raises(ValueError):
+        server.set_protected_paths(["../outside.txt"])
+
+
+def test_protected_refuses_state(roots, monkeypatch):
+    monkeypatch.setattr(server, "run_privileged", lambda *a, **k: (0, "", ""))
+    with pytest.raises(ValueError):
+        server.set_protected_paths([".state"])
+
+
+def test_protected_refuses_a_path_that_is_not_a_folder(roots, monkeypatch):
+    monkeypatch.setattr(server, "run_privileged", lambda *a, **k: (0, "", ""))
+    code, _, err = server.set_protected_paths(["raw/2026/img.png"])
+    assert code != 0 and "not a folder" in err
+
+
+def test_protected_writes_a_list_retention_can_parse(roots, monkeypatch, tmp_path):
+    # mirror-retention.sh aborts its whole run on a list it cannot parse, so a
+    # malformed write here would stop retention dead.
+    written = {}
+
+    def fake_privileged(args, input_text=None, **kw):
+        if args[0].endswith("tee"):
+            written["payload"] = input_text
+        return 0, "", ""
+
+    monkeypatch.setattr(server, "run_privileged", fake_privileged)
+    code, _, _ = server.set_protected_paths(["raw/2026", "raw/2026", "/raw//"])
+    assert code == 0
+    data = json.loads(written["payload"])
+    assert data["paths"] == ["raw", "raw/2026"], "deduped, normalised, sorted"

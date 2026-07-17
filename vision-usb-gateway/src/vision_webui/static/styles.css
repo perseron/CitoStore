@@ -222,3 +222,7 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .prog-head span { color: #667; }
 .prog-track { height: 8px; background: #dfe4e8; border-radius: 999px; overflow: hidden; }
 .prog-fill { height: 100%; background: #1e8e5a; border-radius: 999px; transition: width .4s ease; }
+
+/* Protected folders */
+.link-btn { margin-left: auto; background: none; border: 0; color: #bb4238; cursor: pointer;
+  font-size: 13px; text-decoration: underline; padding: 0; }

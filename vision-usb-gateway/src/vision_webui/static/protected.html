@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Protected folders</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo"><span class="brand-accent">Cito</span>Store</div>
+      <div class="meta">Protected folders</div>
+    </div>
+    <div class="status" id="status-line" role="status" aria-live="polite">Loading...</div>
+  </header>
+
+  <main>
+    <section>
+      <h2>Keep these folders</h2>
+      <p class="hint">
+        When the disk fills up, the unit deletes its oldest images to make room. Anything
+        ticked here is never deleted — not even when the disk is completely full.
+      </p>
+
+      <div id="blocked-banner" class="banner hidden"></div>
+      <div id="space-banner" class="banner hidden"></div>
+      <div id="usage" class="hint"></div>
+
+      <div class="grid grid-2">
+        <div>
+          <h3>Mirror</h3>
+          <div id="mirror-crumb" class="hint"></div>
+          <div id="mirror-list" class="file-list"></div>
+        </div>
+        <div>
+          <h3>Protected</h3>
+          <div id="protected-list" class="file-list"></div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="save">Save</button>
+      </div>
+      <p class="hint">
+        Protecting too much has a cost: if the unit cannot free enough space, it stops
+        saving new images from the AOI. It will say so here and in the logs rather than
+        delete anything you protected — but it is worth leaving it room to work.
+      </p>
+    </section>
+  </main>
+
+  <script src="/static/protected.js"></script>
+</body>
+</html>
