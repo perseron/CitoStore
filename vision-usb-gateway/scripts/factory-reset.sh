@@ -99,30 +99,38 @@ case "$MODE" in
   # ordered after us), so the LV sizes are the factory ones.
   "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
 
+  # Mount the fresh mirror just long enough to seed .state onto it. This is a
+  # bare `mount`, so systemd's own srv-vision_mirror.mount unit does not consider
+  # itself active — which is exactly why we do NOT try to continue this boot:
+  # var-lib-samba.mount (Requires=srv-vision_mirror.mount) and the config applier
+  # would not start, and smbd would stay down. A clean reboot mounts everything
+  # through systemd and brings the unit up properly.
   mountpoint -q "$MIRROR_MOUNT" || mount "$MIRROR_MOUNT" 2>/dev/null || mount -a || true
   if ! mountpoint -q "$MIRROR_MOUNT"; then
     log "factory reset: fresh mirror did not mount — boot will continue degraded"
     exit 1
   fi
 
-  # Seed the shadow config from the factory (golden) /etc so the rest of boot has
-  # something to apply; without it, restore_shadow_conf falls back to the packaged
-  # example and loses the tuned identity.
+  # Seed the shadow config from the factory (golden) /etc so boot 2 has something
+  # to apply; without it, restore_shadow_conf falls back to the packaged example
+  # and loses the tuned identity. Also create the Samba bind target so
+  # var-lib-samba.mount's ConditionPathIsDirectory passes on boot 2.
   STATE_DIR="$MIRROR_MOUNT/.state"
-  mkdir -p "$STATE_DIR"
-  # var-lib-samba.mount binds /var/lib/samba onto this dir, and smbd (plus the
-  # boot config applier that would otherwise create it) is ordered after that
-  # mount — so on a wiped .state the mount fails for want of a target, and smbd
-  # never comes up. Create it here to break that chicken-and-egg; the applier
-  # repopulates the passdb into it on this same boot.
-  mkdir -p "$STATE_DIR/samba"
+  mkdir -p "$STATE_DIR" "$STATE_DIR/samba"
   if [[ -f /etc/vision-gw.conf ]]; then
     cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
     cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf.last-good"
     log "factory reset: shadow config seeded from /etc (factory)"
   fi
 
-  log "factory reset complete — a fresh unit is coming up"
+  # The marker is already gone, so this second boot is an ordinary one: the mirror
+  # LV now exists, systemd mounts it, the samba bind and config applier run, and
+  # smbd comes up. Rebooting is far cleaner than fighting systemd's mount state
+  # after a bare mount mid-boot.
+  sync
+  umount "$MIRROR_MOUNT" >/dev/null 2>&1 || true
+  log "factory reset: NVMe rebuilt — rebooting into the fresh unit"
+  systemctl reboot
   ;;
 
 *)
