@@ -156,6 +156,37 @@ def run_privileged(args, input_text=None, timeout=120):
     return run_cmd(cmd, input_text=input_text, timeout=timeout)
 
 
+# Bounds the retry of a set-time that raced timedatectl's own set-ntp job.
+TIME_SET_ATTEMPTS = 8
+TIME_SET_RETRY_SEC = 0.3
+
+
+def set_system_time(value):
+    """Set the system clock, taking it back from timesyncd first.
+
+    timedatectl refuses set-time outright while timesyncd owns the clock
+    ("Automatic time synchronization is enabled"), so setting the time by hand
+    means disabling NTP. An offline unit — the case this exists for — can never
+    reach an NTP server anyway; a networked one can be put back on NTP with
+    `timedatectl set-ntp true`.
+
+    set-ntp then hands the timesyncd stop to a systemd job and returns before it
+    lands, and timedated rejects a set-time overlapping that job with "Previous
+    request is not finished, refusing". That reject is timing-dependent (it
+    reproduces intermittently), so retry across the window instead of sleeping a
+    guessed interval. Any other failure is real and is returned as-is.
+    """
+    run_cmd(["/usr/bin/timedatectl", "set-ntp", "false"])
+    code, out, err = 1, "", ""
+    for attempt in range(TIME_SET_ATTEMPTS):
+        code, out, err = run_cmd(["/usr/bin/timedatectl", "set-time", value])
+        if code == 0 or "not finished" not in f"{out}{err}":
+            break
+        if attempt < TIME_SET_ATTEMPTS - 1:
+            time.sleep(TIME_SET_RETRY_SEC)
+    return code, out, err
+
+
 def load_config_text() -> str:
     if SHADOW_CONF.exists():
         return SHADOW_CONF.read_text(encoding="utf-8")
@@ -1310,12 +1341,12 @@ class WebHandler(BaseHTTPRequestHandler):
         if not value:
             return self.send_json({"ok": False, "error": "time is required"}, status=400)
         with require_lock():
-            code, out, err = run_cmd(["/usr/bin/timedatectl", "set-time", value])
+            code, out, err = set_system_time(value)
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
             gh = get_gateway_home()
             run_privileged([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
-            log(f"system time set: {value}")
+            log(f"system time set: {value} (ntp disabled)")
             return self.send_json({"ok": True})
 
     def handle_maintenance(self, action):
