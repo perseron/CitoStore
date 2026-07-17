@@ -5,6 +5,12 @@ Description=CitoStore factory reset — wipe the NVMe before the data plane, if 
 # the only point the wipe can free the disk. Gated on the marker so a normal boot
 # skips it with no cost.
 ConditionPathExists=/boot/firmware/factory-reset-pending
+# Force /boot/firmware to be mounted before this unit is evaluated — without it
+# ConditionPathExists is checked before the FAT partition mounts, the marker is
+# not seen, and the wipe is silently skipped (observed exactly this). This adds
+# the ordering + requirement on boot-firmware.mount that After=local-fs.target
+# alone did not guarantee in time for the condition check.
+RequiresMountsFor=/boot/firmware
 After=local-fs.target network-pre.target
 Before=vision-firstboot.service vision-gw-config.service usb-gadget.service vision-sync.timer smbd.service var-lib-samba.mount
 DefaultDependencies=yes
