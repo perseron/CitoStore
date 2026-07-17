@@ -1042,11 +1042,12 @@ async function refreshUsbExport() {
   document.getElementById("usb-present").classList.toggle("hidden", !s.present);
   if (!s.present) return;
 
+  // get_disk_usage returns df's own human-readable strings ("118G"), not bytes.
   const u = s.usage || {};
   document.getElementById("usb-info").textContent =
     `${s.device} · ${s.fstype}${s.label ? " · " + s.label : ""} · ` +
-    `${fmtSize(u.free)} free of ${fmtSize(u.total)}` +
-    (s.write_through ? " · write-through (safe to unplug, slower)" : "");
+    `${u.avail || "?"} free of ${u.size || "?"} (${u.percent || "?"} used)` +
+    (s.write_through ? " · write-through: safe to unplug, slower" : "");
   if (changed) { usbState.picked.clear(); loadDir("mirror", ""); loadDir("usb", ""); }
 
   const job = await api("/api/usb-export/job").catch(() => null);
