@@ -20,6 +20,15 @@ load_config "${CONF_FILE:-}"
 # Discard the sync-written USB usage reading if older than this (sync stalled);
 # fall back to live lvs data_percent so rotation still triggers.
 : "${USB_USAGE_STALE_SEC:=180}"
+# Health thresholds. SYNC_HEALTH_MAX_AGE_SEC catches a HUNG sync: the
+# ExecStopPost health path only fires on completed cycles, so a sync stuck in
+# D-state would otherwise leave stale "ok" health while capture is stopped.
+: "${SYNC_HEALTH_MAX_AGE_SEC:=900}"
+: "${OVERLAY_USAGE_WARN_PCT:=80}"
+: "${OVERLAY_USAGE_CRIT_PCT:=95}"
+: "${SOC_TEMP_WARN_C:=80}"
+: "${SOC_TEMP_CRIT_C:=85}"
+: "${USB_GADGET_NAME:=vision}"
 
 ACTIVE_FILE=/run/vision-usb-active
 STATE_FILE=/run/vision-rotate.state
@@ -241,6 +250,34 @@ echo "state=$state" > "$STATE_FILE"
 echo "active=$active_dev" >> "$STATE_FILE"
 echo "reason=$reason" >> "$STATE_FILE"
 
+# --- system-level liveness checks (computed once, reported by write_health) ---
+
+sync_stale_msg=""
+if [[ -f "$USB_USAGE_FILE" ]]; then
+  sync_age=$(( $(date +%s) - $(stat -c %Y "$USB_USAGE_FILE" 2>/dev/null || echo 0) ))
+  if (( sync_age > SYNC_HEALTH_MAX_AGE_SEC )); then
+    sync_stale_msg="sync stalled: last completed cycle ${sync_age}s ago"
+  fi
+elif systemctl is-active --quiet vision-sync.timer 2>/dev/null; then
+  sync_stale_msg="sync has not completed a cycle since boot"
+fi
+
+# An unbound UDC means the AOI sees no drive at all — without this check that
+# failure mode leaves health green.
+gadget_msg=""
+gadget_udc_file="/sys/kernel/config/usb_gadget/${USB_GADGET_NAME}/UDC"
+if [[ -f "$gadget_udc_file" && -z "$(cat "$gadget_udc_file" 2>/dev/null)" ]]; then
+  gadget_msg="USB gadget not bound to UDC (AOI sees no drive)"
+fi
+
+# The root overlay upper is tmpfs: filling it costs RAM first (OOM on 2GB
+# units) and ends in ENOSPC on /.
+overlay_pct=$(df --output=pcent / 2>/dev/null | awk 'NR==2 {gsub(/[ %]/,""); print}')
+
+soc_temp_c=""
+soc_temp_raw=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo "")
+[[ "$soc_temp_raw" =~ ^[0-9]+$ ]] && soc_temp_c=$((soc_temp_raw / 1000))
+
 # Write health JSON for WebUI /api/health (refreshed every monitor cycle)
 write_health() {
   local health_status="ok"
@@ -265,6 +302,32 @@ write_health() {
   if [[ -n "${SERVICE_RESULT:-}" && "${SERVICE_RESULT}" != "success" ]]; then
     health_status="error"
     issues+=("sync cycle failed: ${SERVICE_RESULT}")
+  fi
+  if [[ -n "$sync_stale_msg" ]]; then
+    health_status="error"
+    issues+=("$sync_stale_msg")
+  fi
+  if [[ -n "$gadget_msg" ]]; then
+    health_status="error"
+    issues+=("$gadget_msg")
+  fi
+  if [[ -n "$overlay_pct" ]]; then
+    if (( overlay_pct >= OVERLAY_USAGE_CRIT_PCT )); then
+      health_status="error"
+      issues+=("root overlay ${overlay_pct}% full (tmpfs eats RAM)")
+    elif (( overlay_pct >= OVERLAY_USAGE_WARN_PCT )); then
+      [[ "$health_status" == "ok" ]] && health_status="warn"
+      issues+=("root overlay ${overlay_pct}% full (tmpfs eats RAM)")
+    fi
+  fi
+  if [[ -n "$soc_temp_c" ]]; then
+    if (( soc_temp_c >= SOC_TEMP_CRIT_C )); then
+      health_status="error"
+      issues+=("SoC temperature ${soc_temp_c}C (throttling)")
+    elif (( soc_temp_c >= SOC_TEMP_WARN_C )); then
+      [[ "$health_status" == "ok" ]] && health_status="warn"
+      issues+=("SoC temperature ${soc_temp_c}C")
+    fi
   fi
   local out="$1"
   {

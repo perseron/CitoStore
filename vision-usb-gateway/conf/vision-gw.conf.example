@@ -45,6 +45,9 @@ SYNC_HI_INTERVAL_SEC=10s
 FAST_SYNC_MIN_ON_SCANS=3
 FAST_SYNC_COOLDOWN_SCANS=2
 FAST_SYNC_EXIT_DELTA=5
+# Health alarm when no sync cycle has completed for this long (a hung sync
+# never reaches the ExecStopPost health path, this is what catches it).
+SYNC_HEALTH_MAX_AGE_SEC=900
 SYNC_CHANGE_DETECT=false
 SYNC_MANIFEST_FILE=/srv/vision_mirror/.state/usb_sync.manifest
 SYNC_CHANGE_RESUME_SCANS=2

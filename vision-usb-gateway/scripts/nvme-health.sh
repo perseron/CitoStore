@@ -21,24 +21,24 @@ if [[ -z "$list_out" ]]; then
   exit 0
 fi
 
-device=$(printf '%s' "$list_out" | python3 - <<'PY'
+# python3 -c keeps the pipe as stdin — a `python3 - <<heredoc` would REPLACE
+# stdin with the heredoc, so the JSON never reached python and the unread pipe
+# intermittently killed the script with EPIPE under set -e.
+device=$(printf '%s' "$list_out" | python3 -c '
 import json,sys
 raw=sys.stdin.read()
 start=raw.find("{")
 end=raw.rfind("}")
 if start == -1 or end == -1 or end <= start:
-    print("")
-    sys.exit(0)
+    raise SystemExit(0)
 snippet=raw[start:end+1]
 try:
     data=json.loads(snippet)
 except json.JSONDecodeError:
-    print("")
-    sys.exit(0)
+    raise SystemExit(0)
 devices=data.get("Devices", [])
 print(devices[0].get("DevicePath", "") if devices else "")
-PY
-)
+' || true)
 
 if [[ -z "$device" ]]; then
   text_list=$(/usr/sbin/nvme list 2>/dev/null || true)
