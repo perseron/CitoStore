@@ -5,6 +5,10 @@ Requires=vision-gw-config.service
 
 [Service]
 Type=oneshot
+# Type=oneshot defaults to an INFINITE start timeout, so a sync stuck in D-state
+# (FAT mount, LVM stall) would block the timer forever and silently stop all
+# capture. 30min covers even a full 16G first-sync at measured throughput.
+TimeoutStartSec=30min
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/usr/bin/python3 -m vision_sync.sync --config /etc/vision-gw.conf

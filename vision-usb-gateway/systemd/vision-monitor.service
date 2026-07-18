@@ -4,12 +4,16 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
+TimeoutStartSec=5min
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/vision-monitor.sh
 ProtectSystem=strict
 PrivateTmp=true
-ReadWritePaths=/run
+# The mirror path is needed because the monitor persists health.json to .state;
+# when it ran only as vision-sync's ExecStopPost it inherited the sync unit's
+# broader sandbox, but the standalone timer runs under THIS sandbox.
+ReadWritePaths=/run /srv/vision_mirror
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_SYS_ADMIN
 

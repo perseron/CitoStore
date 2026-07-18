@@ -1,0 +1,13 @@
+[Unit]
+Description=Persist journal tail to NVMe state
+RequiresMountsFor=/srv/vision_mirror
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+TimeoutStartSec=2min
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/journal-persist.sh
+
+[Install]
+WantedBy=multi-user.target

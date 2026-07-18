@@ -9,6 +9,7 @@ Wants=vision-gw-config.service
 
 [Service]
 Type=oneshot
+TimeoutStartSec=3min
 RemainAfterExit=yes
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env

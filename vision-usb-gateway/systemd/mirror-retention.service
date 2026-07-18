@@ -4,6 +4,7 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
+TimeoutStartSec=30min
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/mirror-retention.sh

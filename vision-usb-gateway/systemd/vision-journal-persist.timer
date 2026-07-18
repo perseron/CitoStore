@@ -1,0 +1,9 @@
+[Unit]
+Description=Persist Journal Tail Timer
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

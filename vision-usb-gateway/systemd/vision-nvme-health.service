@@ -4,6 +4,7 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
+TimeoutStartSec=2min
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/nvme-health.sh
 NoNewPrivileges=true
