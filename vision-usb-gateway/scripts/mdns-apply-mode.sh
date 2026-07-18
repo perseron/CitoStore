@@ -75,6 +75,17 @@ routable=$(routable_addr)
 # and takes the unit off its own subnet. Wait for the lease before ruling the
 # network out; it arrives on a normal LAN in a second or two and ends the wait.
 if [[ -z "$routable" && "$action" == "boot" ]]; then
+  # Waiting only helps if something is actually asking for a lease. If the
+  # device has NO active connection (a leftover saved profile suppresses NM's
+  # auto-default DHCP connection), start the DHCP client explicitly — otherwise
+  # the wait below times out by construction and a LAN unit turns rogue DHCP.
+  if command -v nmcli >/dev/null 2>&1; then
+    con=$(nmcli -g GENERAL.CONNECTION device show "$MDNS_INTERFACE" 2>/dev/null || true)
+    if [[ -z "$con" ]]; then
+      log "mDNS: no active connection on $MDNS_INTERFACE -> starting DHCP client before deciding"
+      nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
+    fi
+  fi
   waited=0
   while ((waited < MDNS_NETWORK_WAIT_SEC)); do
     sleep 1

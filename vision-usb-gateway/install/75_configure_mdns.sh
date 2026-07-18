@@ -68,9 +68,20 @@ set_conf publish-workstation no
 # ---- direct-link DHCP profile (NM "shared": static .1 + dnsmasq DHCP server) ----
 # Activated by mdns-apply-mode only on a 1-1 link with no router; autoconnect=no
 # so it never fights the DHCP client on a real network.
+#
+# The profile MUST be runtime-only (save no -> /run): a SAVED profile bound to
+# the interface suppresses NetworkManager's auto-default DHCP connection, so on
+# the next boot eth0 never even attempts DHCP, the network-wait times out, and
+# the unit turns rogue DHCP server on a real LAN. Exactly that happened when an
+# overlay-off boot persisted this profile to the real /etc.
 if [[ "$MDNS_DIRECT_DHCP" == "true" ]] && command -v nmcli >/dev/null 2>&1; then
+  if [[ -f "/etc/NetworkManager/system-connections/${SHARED_CON}.nmconnection" ]]; then
+    log "removing persisted $SHARED_CON profile (it suppresses ${MDNS_INTERFACE} auto-DHCP)"
+    rm -f "/etc/NetworkManager/system-connections/${SHARED_CON}.nmconnection"
+    nmcli connection reload >/dev/null 2>&1 || true
+  fi
   if ! nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$SHARED_CON"; then
-    nmcli connection add type ethernet ifname "$MDNS_INTERFACE" con-name "$SHARED_CON" \
+    nmcli connection add save no type ethernet ifname "$MDNS_INTERFACE" con-name "$SHARED_CON" \
       connection.autoconnect no ipv4.method shared \
       ipv4.addresses "${MDNS_DIRECT_SUBNET}.1/24" ipv6.method ignore >/dev/null 2>&1 \
       || log "could not create $SHARED_CON shared profile"
