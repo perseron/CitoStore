@@ -1,0 +1,12 @@
+[Unit]
+Description=Boot-phase breadcrumb (complete) on the FAT partition
+After=multi-user.target
+
+[Service]
+Type=oneshot
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
+TimeoutStartSec=2min
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/boot-trace.sh boot-complete
+
+[Install]
+WantedBy=multi-user.target

@@ -33,6 +33,7 @@ load_config
 # spanning-tree before it will pass DHCP.
 : "${MDNS_NETWORK_WAIT_SEC:=45}"
 SHARED_CON=citostore-direct
+PROBE_CON=citostore-probe
 
 action="${1:-}"
 
@@ -53,6 +54,12 @@ if [[ "$MDNS_DIRECT_DHCP" == "true" && "$action" == "down" ]] && shared_active \
    && ! ip link show "$MDNS_INTERFACE" 2>/dev/null | grep -q 'LOWER_UP'; then
   log "mDNS: $MDNS_INTERFACE cable unplugged while serving DHCP -> releasing to DHCP client"
   nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
+  # Delete the (runtime-only) profile before reconnecting: `nmcli device
+  # connect` activates the best AVAILABLE profile, and with the shared profile
+  # still present that is the shared profile itself — flapping the DHCP server
+  # right back on. apply-shadow recreates the profile on the next boot; within
+  # this boot a re-plugged 1-1 link needs a reboot anyway (decision is per-boot).
+  nmcli connection delete "$SHARED_CON" >/dev/null 2>&1 || true
   nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
   exit 0
 fi
@@ -67,6 +74,24 @@ routable_addr() {
 
 routable=$(routable_addr)
 
+# Start an explicit runtime DHCP client on the interface. `nmcli device connect`
+# must never be used for this: it activates the best AVAILABLE profile, which
+# can be the shared (DHCP-server) profile itself when that is the only one
+# matching the interface. The probe profile is runtime-only (save no).
+start_dhcp_probe() {
+  command -v nmcli >/dev/null 2>&1 || return 0
+  local con
+  con=$(nmcli -g GENERAL.CONNECTION device show "$MDNS_INTERFACE" 2>/dev/null || true)
+  # Something real (a DHCP client or a deliberate static profile) already owns
+  # the interface — leave it alone, the lease wait below will see its address.
+  [[ -n "$con" && "$con" != "$SHARED_CON" ]] && return 0
+  [[ "$con" == "$SHARED_CON" ]] && nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
+  nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$PROBE_CON" \
+    || nmcli connection add save no type ethernet ifname "$MDNS_INTERFACE" con-name "$PROBE_CON" \
+         connection.autoconnect no ipv4.method auto ipv6.method ignore >/dev/null 2>&1 || true
+  nmcli -w 5 connection up "$PROBE_CON" >/dev/null 2>&1 || true
+}
+
 # At boot, "no address yet" is not "no network". network-online.target only means
 # NetworkManager stopped waiting, and we cap that at 15s (see the wait-online
 # drop-in) so a carrier-less eth1 cannot stall boot — a switch port that
@@ -74,18 +99,24 @@ routable=$(routable_addr)
 # final for the boot, so getting it wrong puts a rogue DHCP server on a real LAN
 # and takes the unit off its own subnet. Wait for the lease before ruling the
 # network out; it arrives on a normal LAN in a second or two and ends the wait.
-if [[ -z "$routable" && "$action" == "boot" ]]; then
-  # Waiting only helps if something is actually asking for a lease. If the
-  # device has NO active connection (a leftover saved profile suppresses NM's
-  # auto-default DHCP connection), start the DHCP client explicitly — otherwise
-  # the wait below times out by construction and a LAN unit turns rogue DHCP.
-  if command -v nmcli >/dev/null 2>&1; then
-    con=$(nmcli -g GENERAL.CONNECTION device show "$MDNS_INTERFACE" 2>/dev/null || true)
-    if [[ -z "$con" ]]; then
-      log "mDNS: no active connection on $MDNS_INTERFACE -> starting DHCP client before deciding"
-      nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
-    fi
+if [[ -z "$routable" && ( "$action" == "boot" || "$action" == "carrier-wait" ) ]]; then
+  if [[ "$action" == "boot" ]] && ! ip link show "$MDNS_INTERFACE" 2>/dev/null | grep -q 'LOWER_UP'; then
+    # No cable at boot. Serving DHCP NOW would poison a LAN the cable is later
+    # plugged into (the decision used to be final for the boot). Advertise the
+    # name, hand the serve decision to a background carrier wait so boot can
+    # finish, and probe for a router only once a cable actually appears.
+    log "mDNS: no carrier on $MDNS_INTERFACE at boot -> deferring DHCP-serve decision until a cable appears"
+    printf 'direct' > /run/citostore-mdns.mode 2>/dev/null || true
+    nohup "$SCRIPT_DIR/mdns-apply-mode.sh" carrier-wait >/dev/null 2>&1 &
+    exit 0
   fi
+  if [[ "$action" == "carrier-wait" ]]; then
+    while ! ip link show "$MDNS_INTERFACE" 2>/dev/null | grep -q 'LOWER_UP'; do sleep 3; done
+    log "mDNS: carrier appeared on $MDNS_INTERFACE -> probing for a DHCP server"
+  fi
+  # Waiting only helps if something is actually asking for a lease (a leftover
+  # profile can suppress NM's auto-default DHCP connection entirely).
+  start_dhcp_probe
   waited=0
   while ((waited < MDNS_NETWORK_WAIT_SEC)); do
     sleep 1
@@ -119,13 +150,17 @@ else
   # (action=boot) — no runtime hot-switch. A static-IP unit always has a routable
   # address, so it takes the network branch above and never serves DHCP; that is
   # the reason to give a unit that lives on a LAN a fixed address.
-  if [[ "$action" == "boot" && "$MDNS_DIRECT_DHCP" == "true" ]] \
+  if [[ ( "$action" == "boot" || "$action" == "carrier-wait" ) && "$MDNS_DIRECT_DHCP" == "true" ]] \
      && command -v nmcli >/dev/null 2>&1 && ! shared_active; then
     # Only if this interface is actually a DHCP client (not a deliberate static IP).
     con=$(nmcli -g GENERAL.CONNECTION device show "$MDNS_INTERFACE" 2>/dev/null || true)
     method=$(nmcli -g ipv4.method connection show "$con" 2>/dev/null || echo auto)
     if [[ "$method" == "auto" ]]; then
-      log "mDNS: direct 1-1 link at boot -> serving DHCP on $MDNS_INTERFACE (${MDNS_DIRECT_SUBNET}.1)"
+      log "mDNS: direct 1-1 link (${action}) -> serving DHCP on $MDNS_INTERFACE (${MDNS_DIRECT_SUBNET}.1)"
+      # The probe lost (no DHCP server answered); clear it so it cannot fight
+      # the shared connection for the interface.
+      nmcli connection down "$PROBE_CON" >/dev/null 2>&1 || true
+      nmcli connection delete "$PROBE_CON" >/dev/null 2>&1 || true
       nmcli connection up "$SHARED_CON" >/dev/null 2>&1 || true
     else
       log "mDNS: $MDNS_INTERFACE is $method (fixed IP) -> not serving DHCP"

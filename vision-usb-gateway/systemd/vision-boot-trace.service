@@ -1,0 +1,18 @@
+[Unit]
+Description=Boot-phase breadcrumb (start) on the FAT partition
+DefaultDependencies=no
+RequiresMountsFor=/boot/firmware
+Before=sysinit.target
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
+TimeoutStartSec=30
+ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/boot-trace.sh boot-start
+ExecStop=/bin/bash ${GATEWAY_HOME}/scripts/boot-trace.sh shutdown-begin
+
+[Install]
+WantedBy=sysinit.target

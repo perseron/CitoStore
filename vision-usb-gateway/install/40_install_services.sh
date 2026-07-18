@@ -75,6 +75,18 @@ if [[ -d "$SCRIPT_DIR/../systemd/system.conf.d" ]]; then
   install -m 0644 "$SCRIPT_DIR/../systemd/system.conf.d/"*.conf /etc/systemd/system.conf.d/
 fi
 
+# The sync's transient snapshot lives well under a second; udev's blkid probe
+# (queued by the dm change uevents of its activation) races the teardown and
+# logs a spurious "Buffer I/O error ... async page read" EVERY sync cycle
+# (~2900 journal lines/day at the 30s cadence). Nothing needs discovering on
+# it — skip scanning and watching. Must sort between 55-dm.rules (which sets
+# DM_NAME) and 60-persistent-storage-dm.rules (which honours DM_NOSCAN).
+log "installing snapshot udev rule"
+cat > /etc/udev/rules.d/59-citostore-snapshot.rules <<EOF
+SUBSYSTEM=="block", KERNEL=="dm-*", ENV{DM_NAME}=="${LVM_VG:-vg0}-${SYNC_SNAPSHOT_NAME:-usb_sync_snap}", ENV{DM_NOSCAN}="1", OPTIONS+="nowatch"
+EOF
+udevadm control --reload-rules >/dev/null 2>&1 || true
+
 # USB export: udev pulls citostore-usb-mount@.service in when a drive appears.
 # The template units above are installed by the systemd/*.service glob and must
 # NOT be enabled — udev instantiates them per device.
@@ -146,6 +158,7 @@ systemctl enable vision-nvme-health.timer
 systemctl enable vision-log-cleanup.timer
 systemctl enable vision-persist-boot-log.service
 systemctl enable vision-journal-persist.timer
+systemctl enable vision-boot-trace.service vision-boot-trace-done.service
 systemctl enable vision-update-reapply.service
 systemctl enable vision-rootfs-grow.service
 systemctl enable citostore-mdns.service

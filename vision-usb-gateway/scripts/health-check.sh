@@ -126,9 +126,15 @@ if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
     if [[ -f "$ACTIVE_FILE" ]]; then
       active=$(cat "$ACTIVE_FILE" | tr -d '[:space:]')
     fi
+    # At boot this service is ordered Before=usb-gadget, so the active LV is not
+    # exposed to the AOI yet — the one chance to repair a FAT the AOI was
+    # mid-write on when power was cut. Once the gadget is up, touching the
+    # active LV would corrupt the host's cached FAT, so it is skipped.
+    gadget_active=false
+    systemctl is-active --quiet usb-gadget.service 2>/dev/null && gadget_active=true
     for lv in "${USB_LVS[@]}"; do
       dev="/dev/$VG/$lv"
-      if [[ "$dev" == "$active" ]]; then
+      if [[ "$dev" == "$active" && "$gadget_active" == "true" ]]; then
         FSCK_RESULTS+=("{\"lv\":\"$lv\",\"status\":\"skipped (active)\"}")
         continue
       fi
