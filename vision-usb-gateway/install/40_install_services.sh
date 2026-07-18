@@ -62,6 +62,18 @@ if [[ -d "$SCRIPT_DIR/../systemd/NetworkManager-wait-online.service.d" ]]; then
   install -m 0644 "$SCRIPT_DIR/../systemd/NetworkManager-wait-online.service.d/"*.conf \
     /etc/systemd/system/NetworkManager-wait-online.service.d/
 fi
+# avahi keeps AOI1.local resolvable in the field; restart it if it ever crashes.
+if [[ -d "$SCRIPT_DIR/../systemd/avahi-daemon.service.d" ]]; then
+  mkdir -p /etc/systemd/system/avahi-daemon.service.d
+  install -m 0644 "$SCRIPT_DIR/../systemd/avahi-daemon.service.d/"*.conf \
+    /etc/systemd/system/avahi-daemon.service.d/
+fi
+# Hardware watchdog (PID 1 pets /dev/watchdog): a kernel hang must reboot the
+# unit, not leave it dead until a field visit.
+if [[ -d "$SCRIPT_DIR/../systemd/system.conf.d" ]]; then
+  mkdir -p /etc/systemd/system.conf.d
+  install -m 0644 "$SCRIPT_DIR/../systemd/system.conf.d/"*.conf /etc/systemd/system.conf.d/
+fi
 
 # USB export: udev pulls citostore-usb-mount@.service in when a drive appears.
 # The template units above are installed by the systemd/*.service glob and must
@@ -120,7 +132,11 @@ systemctl enable vision-gw-config.service
 systemctl enable vision-sync.timer mirror-retention.timer
 systemctl disable vision-sync-fast.timer >/dev/null 2>&1 || true
 systemctl stop vision-sync-fast.timer >/dev/null 2>&1 || true
-systemctl disable vision-monitor.timer vision-rotator.timer >/dev/null 2>&1 || true
+# The rotator runs only from vision-sync's ExecStopPost; the monitor ALSO runs
+# on its own timer so a hung sync (which never reaches ExecStopPost) still gets
+# detected and surfaced in health.
+systemctl disable vision-rotator.timer >/dev/null 2>&1 || true
+systemctl enable vision-monitor.timer
 systemctl enable vision-webui.service
 systemctl enable vision-shadow-config.service
 systemctl enable vision-rtc-boot.service
@@ -129,6 +145,7 @@ systemctl enable vision-snapshot-cleanup.timer
 systemctl enable vision-nvme-health.timer
 systemctl enable vision-log-cleanup.timer
 systemctl enable vision-persist-boot-log.service
+systemctl enable vision-journal-persist.timer
 systemctl enable vision-update-reapply.service
 systemctl enable vision-rootfs-grow.service
 systemctl enable citostore-mdns.service
@@ -143,5 +160,17 @@ systemctl disable vision-firstboot.service >/dev/null 2>&1 || true
 if [[ "${NAS_ENABLED:-false}" == "true" ]]; then
   systemctl enable mnt-nas.automount nas-sync.timer
 fi
+
+# Debian housekeeping that has no business on a read-only-overlay appliance:
+# apt-daily downloads ~136MB of package lists INTO THE RAM OVERLAY on any unit
+# with internet (and apt-daily-upgrade would unpack upgrades into tmpfs, lost at
+# reboot); man-db/dpkg-db-backup write useless data to tmpfs; e2scrub would
+# attempt a weekly LVM-snapshot scrub of the mounted mirror LV; nvmf-autoconnect
+# (NVMe-oF) just fails every boot on local-SSD hardware.
+log "masking distro housekeeping units"
+systemctl mask --now \
+  apt-daily.timer apt-daily-upgrade.timer man-db.timer dpkg-db-backup.timer \
+  e2scrub_all.timer e2scrub_reap.service nvmf-autoconnect.service \
+  >/dev/null 2>&1 || true
 
 log "systemd units installed and enabled"
