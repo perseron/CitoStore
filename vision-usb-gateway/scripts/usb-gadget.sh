@@ -106,10 +106,47 @@ unbind_gadget() {
   fi
 }
 
+# Wait for a write-idle window on the OUTGOING device before ejecting: a media
+# change that lands on an in-flight host write surfaces as one failed write on
+# the AOI (ERROR_WRONG_DISK) — measured on 2 of 5 rotations in the endurance
+# run at 1 write/s. The host's cadence leaves sub-second gaps between writes,
+# so a short quiet window is found almost immediately; if the host streams
+# with no gaps, give up after the timeout and switch anyway (old behaviour).
+wait_write_idle() {
+  local idle_ms="${SWITCH_IDLE_MS:-300}"
+  local timeout_sec="${SWITCH_IDLE_TIMEOUT_SEC:-5}"
+  [[ "$idle_ms" == "0" ]] && return 0
+  local cur
+  cur=$(readlink -f "$(cat "$ACTIVE_FILE" 2>/dev/null)" 2>/dev/null) || return 0
+  local stat="/sys/block/$(basename "$cur")/stat"
+  [[ -r "$stat" ]] || return 0
+  local deadline=$(( $(date +%s%3N) + timeout_sec * 1000 ))
+  local last quiet_since now cur_stat
+  last=$(awk '{print $5":"$7}' "$stat")
+  quiet_since=$(date +%s%3N)
+  while :; do
+    now=$(date +%s%3N)
+    if (( now >= deadline )); then
+      log "no write-idle window within ${timeout_sec}s; switching anyway"
+      return 0
+    fi
+    cur_stat=$(awk '{print $5":"$7}' "$stat")
+    if [[ "$cur_stat" == "$last" ]]; then
+      (( now - quiet_since >= idle_ms )) && return 0
+    else
+      last="$cur_stat"
+      quiet_since=$now
+    fi
+    sleep 0.05
+  done
+}
+
 seamless_switch() {
   local dev="$1"
   local lun_file="$GADGET_DIR/functions/mass_storage.0/lun.0/file"
   local force_eject="$GADGET_DIR/functions/mass_storage.0/lun.0/forced_eject"
+
+  wait_write_idle
 
   # Drop the kernel page cache for the new backing device so the
   # gadget never serves stale blocks (e.g. from a previous cycle

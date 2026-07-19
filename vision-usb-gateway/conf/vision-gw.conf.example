@@ -78,6 +78,12 @@ SWITCH_WINDOW_END=23:59
 # Delay (seconds) between forced_eject and new media presentation.
 # 0 = silent switch (relies on unique FAT serials), 1-2 = Windows SCSI gap.
 SWITCH_DELAY_SEC=0
+# Rotation waits for this long a write-quiet window on the outgoing LV before
+# the media change, so the switch cannot land on an in-flight AOI write (that
+# surfaces as one failed write on the host). 0 disables; if the host streams
+# without gaps, the switch proceeds anyway after SWITCH_IDLE_TIMEOUT_SEC.
+SWITCH_IDLE_MS=300
+SWITCH_IDLE_TIMEOUT_SEC=5
 
 # Mirror retention
 RETENTION_HI=90
