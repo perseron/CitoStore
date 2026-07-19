@@ -1,8 +1,10 @@
 # Endurance writer — plays the AOI: writes unique ~2MB "images" to the gadget
 # drive at a steady rate, forever (or -DurationHours), and records every file's
 # SHA256 so verify-mirror.sh can later prove the mirror captured everything.
-# The AOI only ever writes and retries after one failed write; errors here are
-# logged and retried the same way, never fatal.
+# The AOI only ever writes and retries after one failed write; NOTHING here may
+# be fatal. Log appends use FileShare.ReadWrite + retry because the monitor
+# (wc -l) and an alert tail read the same files concurrently — a plain
+# Add-Content dies on the sharing violation the moment the reads line up.
 param(
   [string]$Drive = "",           # auto-detect the VISIONUSB volume when empty
   [int]$IntervalMs = 1000,
@@ -10,7 +12,7 @@ param(
   [double]$DurationHours = 0,    # 0 = run until stopped
   [string]$OutDir = "D:\endurance-run"
 )
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 
 if (-not $Drive) {
   $vol = Get-Volume | Where-Object FileSystemLabel -eq "VISIONUSB" | Select-Object -First 1
@@ -20,7 +22,21 @@ if (-not $Drive) {
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $csv    = Join-Path $OutDir "writer.csv"
 $alerts = Join-Path $OutDir "alerts.log"
-if (-not (Test-Path $csv)) { "ts,name,sha256,bytes,write_ms" | Out-File -Encoding ascii $csv }
+
+function Append-Line([string]$path, [string]$line) {
+  for ($a = 0; $a -lt 5; $a++) {
+    try {
+      $fs = [IO.File]::Open($path, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+      $sw = New-Object IO.StreamWriter($fs, [Text.Encoding]::ASCII)
+      $sw.WriteLine($line)
+      $sw.Dispose()
+      return $true
+    } catch { Start-Sleep -Milliseconds 200 }
+  }
+  return $false
+}
+
+if (-not (Test-Path $csv)) { Append-Line $csv "ts,name,sha256,bytes,write_ms" | Out-Null }
 
 $rng  = [System.Security.Cryptography.RandomNumberGenerator]::Create()
 $body = New-Object byte[] ($SizeKB * 1024)
@@ -31,21 +47,24 @@ $deadline = if ($DurationHours -gt 0) { (Get-Date).AddHours($DurationHours) } el
 $i = 0
 Write-Host "endurance writer: $Drive every ${IntervalMs}ms, $SizeKB KB/file, log: $csv"
 while ((Get-Date) -lt $deadline) {
-  $i++
-  $ts   = Get-Date -Format "yyyyMMdd_HHmmss"
-  $name = "END_{0}_{1:D6}.jpg" -f $ts, $i
-  # 64-byte unique header over the shared random body -> every file hashes differently
-  $hdr = [Text.Encoding]::ASCII.GetBytes(("{0}|{1}" -f $name, [guid]::NewGuid()).PadRight(64).Substring(0, 64))
-  [Array]::Copy($hdr, 0, $body, 0, 64)
-  $hash = ([BitConverter]::ToString($sha.ComputeHash($body)) -replace "-", "").ToLower()
-  $t0 = Get-Date
   try {
-    [IO.File]::WriteAllBytes((Join-Path "$Drive\" $name), $body)
-    $ms = [int]((Get-Date) - $t0).TotalMilliseconds
-    "{0},{1},{2},{3},{4}" -f (Get-Date -Format o), $name, $hash, $body.Length, $ms | Add-Content -Encoding ascii $csv
+    $i++
+    $ts   = Get-Date -Format "yyyyMMdd_HHmmss"
+    $name = "END_{0}_{1:D6}.jpg" -f $ts, $i
+    $hdr = [Text.Encoding]::ASCII.GetBytes(("{0}|{1}" -f $name, [guid]::NewGuid()).PadRight(64).Substring(0, 64))
+    [Array]::Copy($hdr, 0, $body, 0, 64)
+    $hash = ([BitConverter]::ToString($sha.ComputeHash($body)) -replace "-", "").ToLower()
+    $t0 = Get-Date
+    try {
+      [IO.File]::WriteAllBytes((Join-Path "$Drive\" $name), $body)
+      $ms = [int]((Get-Date) - $t0).TotalMilliseconds
+      Append-Line $csv ("{0},{1},{2},{3},{4}" -f (Get-Date -Format o), $name, $hash, $body.Length, $ms) | Out-Null
+    } catch {
+      Append-Line $alerts ("{0} ALERT writer: write failed for {1}: {2}" -f (Get-Date -Format o), $name, $_.Exception.Message) | Out-Null
+      Start-Sleep -Seconds 3
+    }
   } catch {
-    "{0} ALERT writer: write failed for {1}: {2}" -f (Get-Date -Format o), $name, $_.Exception.Message |
-      Add-Content -Encoding ascii $alerts
+    # belt and braces: the writer must outlive any surprise
     Start-Sleep -Seconds 3
   }
   Start-Sleep -Milliseconds $IntervalMs
