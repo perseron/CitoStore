@@ -45,6 +45,7 @@ $sha  = [System.Security.Cryptography.SHA256]::Create()
 
 $deadline = if ($DurationHours -gt 0) { (Get-Date).AddHours($DurationHours) } else { [datetime]::MaxValue }
 $i = 0
+$failStreak = 0
 Write-Host "endurance writer: $Drive every ${IntervalMs}ms, $SizeKB KB/file, log: $csv"
 while ((Get-Date) -lt $deadline) {
   try {
@@ -59,8 +60,18 @@ while ((Get-Date) -lt $deadline) {
       [IO.File]::WriteAllBytes((Join-Path "$Drive\" $name), $body)
       $ms = [int]((Get-Date) - $t0).TotalMilliseconds
       Append-Line $csv ("{0},{1},{2},{3},{4}" -f (Get-Date -Format o), $name, $hash, $body.Length, $ms) | Out-Null
+      $failStreak = 0
     } catch {
-      Append-Line $alerts ("{0} ALERT writer: write failed for {1}: {2}" -f (Get-Date -Format o), $name, $_.Exception.Message) | Out-Null
+      # The drive can vanish for real (PC sleep, cable pulled) and come back
+      # under a different letter — re-detect it, and throttle the alert stream
+      # to one line per 30 consecutive failures so an unattended outage does
+      # not flood the log at the write cadence.
+      $failStreak++
+      if ($failStreak -eq 1 -or ($failStreak % 30) -eq 0) {
+        Append-Line $alerts ("{0} ALERT writer: write failed (streak {1}) for {2}: {3}" -f (Get-Date -Format o), $failStreak, $name, $_.Exception.Message) | Out-Null
+      }
+      $vol = Get-Volume -ErrorAction SilentlyContinue | Where-Object FileSystemLabel -eq "VISIONUSB" | Select-Object -First 1
+      if ($vol -and $vol.DriveLetter) { $Drive = "$($vol.DriveLetter):" }
       Start-Sleep -Seconds 3
     }
   } catch {
