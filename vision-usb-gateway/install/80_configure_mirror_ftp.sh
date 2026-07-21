@@ -49,6 +49,13 @@ configure_mirror_ftp() {
   # vsftpd's pam_shells rejects users whose login shell is not in /etc/shells;
   # SMB_USER intentionally uses nologin (set up by 50_configure_samba.sh).
   grep -qxF /usr/sbin/nologin /etc/shells 2>/dev/null || echo /usr/sbin/nologin >> /etc/shells
+  # vsftpd chdir()s to the account's real Unix home BEFORE chroot_local_user/
+  # local_root take over; SMB_USER's home from 50_configure_samba.sh's
+  # `useradd -M` is /home/$SMB_USER, which is never created, so login fails
+  # with "500 OOPS: cannot change directory". Same fix as the ingest FTP user
+  # in 70_configure_ingest.sh: point the home at the directory we actually
+  # serve.
+  usermod -d "$MIRROR_MOUNT" "$SMB_USER" >/dev/null 2>&1 || true
   local bind_ip
   bind_ip=$(iface_ipv4 "$MIRROR_FTP_BIND_INTERFACE")
   if [[ -z "$bind_ip" ]]; then
