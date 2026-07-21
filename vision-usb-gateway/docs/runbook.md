@@ -265,6 +265,13 @@ Samba + discovery
 - `NETBIOS_NAME`: NetBIOS name advertised by Samba/WSDD.
 - `SMB_WORKGROUP`: Windows workgroup name.
 
+Mirror FTP (eth0, read-only) — see `docs/mirror-ftp.md`
+- `MIRROR_FTP_ENABLED`: master switch (default `false`).
+- `MIRROR_FTP_BIND_INTERFACE`: interface to bind to (default `eth0`).
+- `MIRROR_FTP_PASV_MIN_PORT` / `MIRROR_FTP_PASV_MAX_PORT`: FTP passive port range.
+- Authenticates as `SMB_USER` with the SMB password — no separate login; set/change
+  it via the WebUI SMB password field.
+
 Web UI
 - `WEBUI_BIND`: IP to bind the Web UI (default `0.0.0.0`).
 - `WEBUI_PORT`: Port for the Web UI (default `80`).

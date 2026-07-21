@@ -1,0 +1,738 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CitoStore — Felhasználói kézikönyv</title>
+<style>
+  :root {
+    --paper:#EBEEF0; --surface:#FFFFFF; --surface-2:#F4F6F7;
+    --ink:#182126; --ink-soft:#57676F; --ink-faint:#849099;
+    --accent:#0B6E79; --accent-soft:#0B6E7914; --accent-line:#0B6E7933;
+    --line:#D2D9DC; --line-strong:#BCC5C9;
+    --ok:#1E8757; --ok-bg:#1E875714;
+    --warn:#B5760F; --warn-bg:#B5760F14;
+    --crit:#BB4238; --crit-bg:#BB423814;
+    --mono:ui-monospace,"Cascadia Code","Cascadia Mono","Consolas","Liberation Mono",monospace;
+    --sans:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    --maxw:74ch;
+    --rail:280px;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --paper:#0D1417; --surface:#131C21; --surface-2:#0F171B;
+      --ink:#DCE4E7; --ink-soft:#93A2AA; --ink-faint:#63737B;
+      --accent:#31AEBC; --accent-soft:#31AEBC1F; --accent-line:#31AEBC40;
+      --line:#25333A; --line-strong:#31424A;
+      --ok:#3FB983; --ok-bg:#3FB98318;
+      --warn:#D9992E; --warn-bg:#D9992E18;
+      --crit:#D96A60; --crit-bg:#D96A6018;
+    }
+  }
+  :root[data-theme="light"]{
+    --paper:#EBEEF0; --surface:#FFFFFF; --surface-2:#F4F6F7;
+    --ink:#182126; --ink-soft:#57676F; --ink-faint:#849099;
+    --accent:#0B6E79; --accent-soft:#0B6E7914; --accent-line:#0B6E7933;
+    --line:#D2D9DC; --line-strong:#BCC5C9;
+    --ok:#1E8757; --ok-bg:#1E875714; --warn:#B5760F; --warn-bg:#B5760F14;
+    --crit:#BB4238; --crit-bg:#BB423814;
+  }
+  :root[data-theme="dark"]{
+    --paper:#0D1417; --surface:#131C21; --surface-2:#0F171B;
+    --ink:#DCE4E7; --ink-soft:#93A2AA; --ink-faint:#63737B;
+    --accent:#31AEBC; --accent-soft:#31AEBC1F; --accent-line:#31AEBC40;
+    --line:#25333A; --line-strong:#31424A;
+    --ok:#3FB983; --ok-bg:#3FB98318; --warn:#D9992E; --warn-bg:#D9992E18;
+    --crit:#D96A60; --crit-bg:#D96A6018;
+  }
+
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  @media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+    font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility}
+
+  .layout{display:grid;grid-template-columns:var(--rail) minmax(0,1fr);gap:0;
+    max-width:1240px;margin:0 auto;align-items:start}
+
+  /* ---- Sidebar ---- */
+  .rail{position:sticky;top:0;height:100vh;overflow-y:auto;padding:34px 22px 40px;
+    border-right:1px solid var(--line);background:var(--surface-2)}
+  .brand{display:flex;flex-direction:column;gap:2px;margin-bottom:26px}
+  .brand .glyph{font-family:var(--mono);font-size:.66rem;letter-spacing:.22em;
+    color:var(--accent);font-weight:600}
+  .brand .name{font-size:1.32rem;font-weight:700;letter-spacing:-.01em}
+  .brand .model{font-family:var(--mono);font-size:.72rem;color:var(--ink-faint)}
+  nav.toc{font-size:.85rem}
+  nav.toc a{display:flex;gap:.6em;align-items:baseline;text-decoration:none;
+    color:var(--ink-soft);padding:5px 8px;border-radius:6px;line-height:1.35}
+  nav.toc a:hover{color:var(--ink);background:var(--accent-soft)}
+  nav.toc a .n{font-family:var(--mono);font-size:.72rem;color:var(--accent);
+    min-width:1.7em;font-variant-numeric:tabular-nums}
+  nav.toc a.spacer{margin-top:.5em}
+  nav.toc a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+
+  /* ---- Main ---- */
+  main{padding:0 clamp(20px,4vw,64px) 96px;min-width:0}
+  .masthead{padding:56px 0 34px;border-bottom:1px solid var(--line)}
+  .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.24em;
+    text-transform:uppercase;color:var(--accent);font-weight:600;margin:0 0 14px}
+  .masthead h1{font-size:clamp(2.1rem,5vw,3.05rem);line-height:1.05;margin:0;
+    font-weight:750;letter-spacing:-.02em;text-wrap:balance}
+  .masthead .lede{margin:18px 0 0;font-size:1.12rem;color:var(--ink-soft);
+    max-width:60ch}
+
+  .specstrip{display:flex;flex-wrap:wrap;gap:0;margin-top:30px;
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
+  .specstrip .cell{flex:1 1 140px;padding:14px 18px;border-right:1px solid var(--line)}
+  .specstrip .cell:last-child{border-right:0}
+  .specstrip .k{font-family:var(--mono);font-size:.64rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ink-faint);margin-bottom:5px}
+  .specstrip .v{font-size:.94rem;font-weight:600;line-height:1.25}
+
+  section{padding:52px 0 8px;border-bottom:1px solid var(--line);max-width:var(--maxw)}
+  section:last-of-type{border-bottom:0}
+  .sec-head{display:flex;align-items:baseline;gap:.7em;margin:0 0 6px}
+  .sec-head .num{font-family:var(--mono);font-size:.9rem;color:var(--accent);
+    font-weight:600;font-variant-numeric:tabular-nums}
+  h2{font-size:1.72rem;font-weight:700;letter-spacing:-.015em;margin:0;text-wrap:balance}
+  h3{font-size:1.12rem;font-weight:650;letter-spacing:-.01em;margin:34px 0 6px}
+  h4{font-size:.96rem;font-weight:650;margin:22px 0 4px;color:var(--ink)}
+  p{margin:12px 0}
+  a{color:var(--accent);text-decoration-thickness:1px;text-underline-offset:2px}
+  strong{font-weight:650}
+  ul,ol{margin:12px 0;padding-left:1.3em}
+  li{margin:6px 0}
+  li::marker{color:var(--accent)}
+  code{font-family:var(--mono);font-size:.86em;background:var(--surface-2);
+    border:1px solid var(--line);padding:.08em .38em;border-radius:5px;
+    color:var(--ink);white-space:nowrap}
+
+  .kbd{font-family:var(--mono);font-size:.82em;background:var(--surface);
+    border:1px solid var(--line-strong);border-bottom-width:2px;border-radius:5px;
+    padding:.08em .45em}
+
+  /* Callouts */
+  .note{border-left:3px solid var(--accent);background:var(--accent-soft);
+    padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0;font-size:.95rem}
+  .note.warn{border-color:var(--warn);background:var(--warn-bg)}
+  .note.crit{border-color:var(--crit);background:var(--crit-bg)}
+  .note .lab{font-family:var(--mono);font-size:.66rem;letter-spacing:.16em;
+    text-transform:uppercase;font-weight:600;display:block;margin-bottom:5px;color:var(--accent)}
+  .note.warn .lab{color:var(--warn)} .note.crit .lab{color:var(--crit)}
+  .note p{margin:6px 0} .note :first-child{margin-top:0} .note :last-child{margin-bottom:0}
+
+  /* Tables */
+  .tbl-wrap{overflow-x:auto;margin:20px 0;border:1px solid var(--line);border-radius:10px}
+  table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+  th,td{text-align:left;padding:11px 15px;border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{background:var(--surface-2);font-family:var(--mono);font-size:.66rem;
+    letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:600}
+  tbody tr:last-child td{border-bottom:0}
+  td.mono,td .mono{font-family:var(--mono);font-size:.85em;font-variant-numeric:tabular-nums}
+  td code{white-space:nowrap}
+  .def{font-family:var(--mono);font-size:.82em;color:var(--accent);
+    background:var(--accent-soft);padding:.05em .4em;border-radius:4px}
+
+  /* Steps */
+  ol.steps{counter-reset:step;list-style:none;padding:0;margin:22px 0}
+  ol.steps>li{counter-increment:step;position:relative;padding:2px 0 18px 46px;margin:0}
+  ol.steps>li::before{content:counter(step);position:absolute;left:0;top:0;
+    width:30px;height:30px;border-radius:8px;background:var(--accent);color:#fff;
+    font-family:var(--mono);font-size:.86rem;font-weight:600;
+    display:grid;place-items:center}
+  ol.steps>li:not(:last-child)::after{content:"";position:absolute;left:15px;top:34px;
+    bottom:2px;width:1px;background:var(--line-strong)}
+  ol.steps>li h4{margin:3px 0 2px}
+
+  /* Data-flow diagram */
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:0;margin:24px 0;
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface)}
+  .flow .node{flex:1 1 130px;padding:18px 16px;position:relative;min-width:130px}
+  .flow .node:not(:last-child)::after{content:"→";position:absolute;right:-.55em;top:50%;
+    transform:translateY(-50%);z-index:2;color:var(--accent);font-weight:700;
+    background:var(--surface);padding:0 .1em}
+  .flow .node .tag{font-family:var(--mono);font-size:.62rem;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:6px}
+  .flow .node .lab{font-weight:650;font-size:.98rem;line-height:1.2}
+  .flow .node .sub{font-size:.8rem;color:var(--ink-soft);margin-top:4px}
+  .flow .node.data{background:var(--accent-soft)}
+
+  /* Status legend chips */
+  .chips{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+  .chip{display:inline-flex;align-items:center;gap:.5em;font-size:.84rem;
+    border:1px solid var(--line);border-radius:20px;padding:5px 13px;background:var(--surface)}
+  .dot{width:9px;height:9px;border-radius:50%}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.crit{background:var(--crit)}
+
+  .lead-list{list-style:none;padding:0}
+  .lead-list li{display:flex;gap:.7em;padding:9px 0;border-bottom:1px solid var(--line)}
+  .lead-list li:last-child{border-bottom:0}
+  .lead-list .ic{font-family:var(--mono);color:var(--accent);font-weight:700}
+
+  footer{max-width:var(--maxw);padding:34px 0 0;color:var(--ink-faint);font-size:.82rem}
+  footer .rule{height:1px;background:var(--line);margin-bottom:20px}
+  footer code{font-size:.9em}
+
+  a.top{font-family:var(--mono);font-size:.7rem}
+
+  @media (max-width:900px){
+    .layout{grid-template-columns:1fr}
+    .rail{position:static;height:auto;border-right:0;border-bottom:1px solid var(--line);
+      padding:24px 20px}
+    nav.toc{columns:2;column-gap:20px}
+    main{padding:0 20px 72px}
+    .masthead{padding:36px 0 26px}
+  }
+</style>
+</head>
+<body>
+
+
+<div class="layout">
+  <aside class="rail">
+    <div class="brand">
+      <span class="glyph">◧ VISION USB GATEWAY</span>
+      <span class="name">CitoStore</span>
+      <span class="model">CM5 · felhasználói kézikönyv</span>
+    </div>
+    <nav class="toc" aria-label="Tartalomjegyzék">
+      <a href="#s1"><span class="n">1</span> Bevezetés</a>
+      <a href="#s2"><span class="n">2</span> Hogyan működik</a>
+      <a href="#s3"><span class="n">3</span> Csatlakozók &amp; hardver</a>
+      <a href="#s4"><span class="n">4</span> Telepítés &amp; bekötés</a>
+      <a href="#s5"><span class="n">5</span> Első üzembe helyezés</a>
+      <a href="#s6"><span class="n">6</span> Webes kezelőfelület</a>
+      <a href="#s7" class="spacer"><span class="n">7</span> USB AOI (OTG)</a>
+      <a href="#s8"><span class="n">8</span> Ethernet AOI (ingest)</a>
+      <a href="#s9"><span class="n">9</span> SMB megosztás</a>
+      <a href="#s10"><span class="n">10</span> NAS mentés</a>
+      <a href="#s11"><span class="n">11</span> Hálózat</a>
+      <a href="#s12" class="spacer"><span class="n">12</span> Karbantartás</a>
+      <a href="#s13"><span class="n">13</span> Egység cseréje</a>
+      <a href="#s14"><span class="n">14</span> Biztonság &amp; hozzáférés</a>
+      <a href="#s15"><span class="n">15</span> Hibaelhárítás</a>
+      <a href="#s16" class="spacer"><span class="n">16</span> Műszaki adatok</a>
+      <a href="#s17"><span class="n">17</span> Konfig-referencia</a>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="masthead">
+      <p class="eyebrow">Felhasználói kézikönyv · v1.0</p>
+      <h1>CitoStore Vision USB Gateway</h1>
+      <p class="lede">Autonóm adatgyűjtő és tár-mirror ipari képfeldolgozó (AOI)
+        rendszerekhez. A gépnek egyszerű USB-meghajtónak látszik — a háttérben az
+        adatok automatikusan NVMe-re másolódnak, hálózaton megoszthatók, és soha
+        nem telik meg a tár.</p>
+
+      <div class="specstrip">
+        <div class="cell"><div class="k">Platform</div><div class="v">Raspberry Pi CM5</div></div>
+        <div class="cell"><div class="k">Táplálás</div><div class="v">PoE+ / DC</div></div>
+        <div class="cell"><div class="k">Adattár</div><div class="v">NVMe · 100&nbsp;GB–több&nbsp;TB</div></div>
+        <div class="cell"><div class="k">AOI-bemenet</div><div class="v">USB-OTG + Ethernet</div></div>
+        <div class="cell"><div class="k">Megosztás</div><div class="v">SMB / opc. NAS</div></div>
+      </div>
+    </header>
+
+    <!-- 1 -->
+    <section id="s1">
+      <div class="sec-head"><span class="num">01</span><h2>Bevezetés</h2></div>
+      <p>A <strong>CitoStore</strong> egy ipari képfeldolgozó (AOI – Automated
+        Optical Inspection) gépek mellé tervezett adatgyűjtő appliance. A vizsgáló
+        gép a rögzített képeket egy közönséges USB-meghajtóra írja — ez a meghajtó
+        valójában a CitoStore. Az eszköz a beérkező adatokat folyamatosan, a
+        gyártás zavarása nélkül átmásolja a beépített NVMe SSD-re, ahonnan azok
+        azonnal elérhetők a hálózaton át (SMB), és igény szerint egy NAS-ra is
+        mentődnek.</p>
+
+      <h3>Milyen problémát old meg</h3>
+      <p>Az ipari hálózatok alacsony latenciájú vezérlésre (robot, I/O, kamera)
+        vannak kihegyezve — nagy mennyiségű képadat rájuk terhelése latenciát és
+        akár termeléskiesést okozhat. A CitoStore <strong>külön adatcsatornát</strong>
+        használ: a gyűjtés közvetlen USB-kapcsolaton át történik, a hálózati
+        megosztás pedig egy elkülönített interfészen. Így az adatmentés
+        <strong>nulla terhelést</strong> jelent a meglévő ipari hálózatra.</p>
+
+      <ul class="lead-list">
+        <li><span class="ic">01</span><span><strong>Plug-and-play a gép felől.</strong> A vizsgáló gépnek szabványos USB-meghajtó, nincs szükség illesztőprogramra vagy szoftverre.</span></li>
+        <li><span class="ic">02</span><span><strong>Felügyelet nélküli, 24/7 üzem.</strong> A szinkronizálás, a rotáció és a helyfelszabadítás teljesen automatikus.</span></li>
+        <li><span class="ic">03</span><span><strong>Kettős adatbiztonság.</strong> Helyi NVMe + opcionális távoli NAS; az OS csak olvasható, tápkimaradás-tűrő.</span></li>
+        <li><span class="ic">04</span><span><strong>Böngészőből kezelhető.</strong> Minden beállítás és állapot egy webes felületen — nincs parancssor.</span></li>
+      </ul>
+    </section>
+
+    <!-- 2 -->
+    <section id="s2">
+      <div class="sec-head"><span class="num">02</span><h2>Hogyan működik</h2></div>
+      <p>A CitoStore két, egymástól elválasztott tárolási szinttel dolgozik. A
+        vizsgáló gép mindig egy <strong>USB logikai kötetre (LV)</strong> ír; ezt a
+        rendszer soha nem csatlakoztatja közvetlenül, hanem csak olvasható
+        <strong>pillanatképet (snapshot)</strong> készít róla, és arról másol az
+        NVMe-re. Így az írás és a mentés soha nem ütközik, a FAT-fájlrendszer nem
+        sérülhet.</p>
+
+      <div class="flow" role="img" aria-label="Adatfolyam: vizsgáló gép, USB kötet, pillanatkép, NVMe, megosztás">
+        <div class="node"><div class="tag">Forrás</div><div class="lab">AOI gép</div><div class="sub">USB-re ír (FAT32)</div></div>
+        <div class="node"><div class="tag">Puffer</div><div class="lab">USB kötet</div><div class="sub">aktív LV a tárban</div></div>
+        <div class="node"><div class="tag">Izoláció</div><div class="lab">Pillanatkép</div><div class="sub">csak olvasható</div></div>
+        <div class="node data"><div class="tag">Tár</div><div class="lab">NVMe mirror</div><div class="sub">végleges adat</div></div>
+        <div class="node"><div class="tag">Elérés</div><div class="lab">SMB / NAS</div><div class="sub">hálózaton</div></div>
+      </div>
+
+      <h3>Az operációs rendszer és az adat elkülönül</h3>
+      <p>Az OS az eMMC-n fut <strong>csak olvasható (read-only overlay)</strong>
+        módban: minden írás egy ideiglenes RAM-rétegbe megy, és újraindításkor
+        eltűnik. Ez teszi tápkimaradás-tűrővé az eszközt. A <em>tartós</em> adat és a
+        konfiguráció kizárólag az NVMe-n él, így az OS független a tár terhelésétől.</p>
+
+      <h3>A tár soha nem telik meg</h3>
+      <p>Két automatizmus tartja karban a helyet: az <strong>USB-kötet rotáció</strong>
+        (a megtelt aktív kötetről a következőre vált, a régit offline feldolgozza és
+        újraformázza) és az <strong>NVMe retenció</strong> (ha a kihasználtság elér egy
+        felső küszöböt, a legrégebbi már mentett adatokat törli egy alsó küszöbig).
+        A részleteket lásd a <a href="#s7">7.</a> és <a href="#s17">17.</a> fejezetben.</p>
+    </section>
+
+    <!-- 3 -->
+    <section id="s3">
+      <div class="sec-head"><span class="num">03</span><h2>Csatlakozók &amp; hardver</h2></div>
+      <p>A CitoStore egy ipari minősítésű Raspberry Pi CM5 alapú egység. Az alábbi
+        csatlakozókkal találkozol a telepítéskor:</p>
+
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Csatlakozó</th><th>Szerep</th><th>Megjegyzés</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">USB-C (OTG)</td><td>Adatbemenet a vizsgáló géptől</td><td>Ide kötöd az AOI gépet; itt jelenik meg az „USB-meghajtó".</td></tr>
+          <tr><td class="mono">eth0</td><td>Menedzsment + SMB megosztás</td><td>Ezen éred el a webes felületet és a hálózati megosztást. PoE+ táplálás is ezen.</td></tr>
+          <tr><td class="mono">eth1</td><td>Ethernet AOI (opcionális)</td><td>Elkülönített hálózat egy FTP/SFTP-vel töltő AOI-nak. Alapértelmezett cím <code>192.168.100.1/24</code>.</td></tr>
+          <tr><td class="mono">DC be</td><td>Táplálás (alternatíva)</td><td>Ha nincs PoE+, külső tápegységről.</td></tr>
+          <tr><td class="mono">WiFi</td><td>Opcionális vezeték nélküli</td><td>Kliens vagy hotspot mód, ha az Ethernet nem elérhető.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <div class="note">
+        <span class="lab">Táplálás</span>
+        <p>PoE+ esetén egyetlen Ethernet-kábel elegendő az <code>eth0</code>-ra: az
+          adatátvitelt és az áramellátást is ellátja. Használj PoE+ (802.3at)
+          switchet vagy injektort.</p>
+      </div>
+    </section>
+
+    <!-- 4 -->
+    <section id="s4">
+      <div class="sec-head"><span class="num">04</span><h2>Telepítés &amp; bekötés</h2></div>
+      <ol class="steps">
+        <li><h4>Rögzítsd az egységet</h4>
+          Szereld fel a vezérlőszekrénybe vagy a vizsgáló gép mellé, jól szellőző helyre.</li>
+        <li><h4>Kösd be a menedzsment-hálózatot (eth0)</h4>
+          Csatlakoztasd az <code>eth0</code>-t a menedzsment-hálózathoz. PoE+ switch esetén
+          ez egyben a tápellátás is; egyébként add rá a DC tápot.</li>
+        <li><h4>Kösd rá a vizsgáló gépet (USB-C OTG)</h4>
+          Az AOI gép USB-portjából vezess kábelt a CitoStore <code>USB-C (OTG)</code>
+          csatlakozójába. A gépen néhány másodperc múlva megjelenik egy új USB-meghajtó.</li>
+        <li><h4>Opcionális: Ethernet AOI (eth1)</h4>
+          Ha a vizsgáló gép hálózaton (FTP/SFTP) tölt, kösd azt az <code>eth1</code>-re
+          egy külön kábellel/switchcsel. Ezt a <a href="#s8">8. fejezet</a> szerint kell
+          engedélyezni.</li>
+        <li><h4>Várd meg az indulást</h4>
+          Az első bekapcsolás egy egyszeri személyre szabást futtat (egyedi azonosítók,
+          tárhely-előkészítés), és egyszer újraindulhat. Ez néhány perc. Ezután folytasd az
+          <a href="#s5">5. fejezettel</a>.</li>
+      </ol>
+      <div class="note warn">
+        <span class="lab">Fontos</span>
+        <p>Ne csatlakoztass egyszerre két hosztot ugyanarra az USB-kötetre, és ne
+          próbáld a CitoStore-on „belülről" csatlakoztatni az aktív USB-meghajtót — a
+          rendszer szándékosan csak pillanatképet használ, hogy elkerülje a
+          FAT-fájlrendszer sérülését.</p>
+      </div>
+    </section>
+
+    <!-- 5 -->
+    <section id="s5">
+      <div class="sec-head"><span class="num">05</span><h2>Első üzembe helyezés</h2></div>
+      <ol class="steps">
+        <li><h4>Keresd meg az eszköz IP-címét</h4>
+          Az <code>eth0</code> alapból DHCP-t kér. Az IP-t a routered/DHCP-szervered
+          klienslistájában találod (a hostnév <code>citostore-XXXXXX</code> formájú), vagy
+          a hálózaton a NetBIOS-néven: <code>CITOSTORE</code>.</li>
+        <li><h4>Nyisd meg a webes felületet</h4>
+          Böngészőben: <code>http://&lt;IP-cím&gt;/</code> (a 80-as porton). Első
+          alkalommal egy beállító oldal fogad, ahol beállítod az adminisztrátori jelszót.</li>
+        <li><h4>Állítsd be a jelszavakat</h4>
+          A <em>System</em> szekcióban a WebUI-jelszót, az <em>SMB megosztás</em>
+          szekcióban a Samba-jelszót, és ha Ethernet AOI-t használsz, az
+          <em>Ethernet AOI</em> szekcióban az ingest (FTP/SFTP) jelszót.</li>
+        <li><h4>Ellenőrizd az állapotot</h4>
+          A <em>Status</em> panelen minden fő szolgáltatásnak zöldnek (fut) kell lennie:
+          USB-gadget, szinkronizáció, megosztás.</li>
+        <li><h4>Próbaírás</h4>
+          Írj egy tesztfájlt a vizsgáló gépről az USB-meghajtóra, majd 2-3 perc múlva
+          ellenőrizd, hogy megjelenik-e az SMB-megosztáson.</li>
+      </ol>
+      <div class="note">
+        <span class="lab">Munkamenet</span>
+        <p>A webes bejelentkezés 8 óráig érvényes, utána újra be kell jelentkezned.</p>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="s6">
+      <div class="sec-head"><span class="num">06</span><h2>Webes kezelőfelület</h2></div>
+      <p>A felület funkciónként csoportosított szekciókból áll. Minden beállító
+        szekciónak saját <strong>„Save + Apply"</strong> gombja van: ez elmenti az adott
+        szekció beállításait, és azonnal életbe is lépteti őket — csak azt érinti, amin
+        éppen dolgozol.</p>
+
+      <h3>Állapotjelzés</h3>
+      <div class="chips">
+        <span class="chip"><span class="dot ok"></span> fut / rendben</span>
+        <span class="chip"><span class="dot warn"></span> figyelmeztetés</span>
+        <span class="chip"><span class="dot crit"></span> hiba / leállt</span>
+      </div>
+
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Szekció</th><th>Mit állítasz be</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Status</strong></td><td>Élő szolgáltatás-, hálózat-, tárhely- és szinkronállapot.</td></tr>
+          <tr><td><strong>USB AOI (OTG)</strong></td><td>Szinkron-paraméterek, kötet-rotációs ablak, kézi szinkron/rotáció.</td></tr>
+          <tr><td><strong>Ethernet AOI</strong></td><td>eth1 hálózat, FTP/SFTP ingest, ingest-jelszó.</td></tr>
+          <tr><td><strong>SMB megosztás</strong></td><td>NetBIOS-név, munkacsoport, interfész-kötés, Samba-jelszó.</td></tr>
+          <tr><td><strong>NAS mentés</strong></td><td>Távoli NAS engedélyezése, útvonal, hitelesítés.</td></tr>
+          <tr><td><strong>Alaphálózat</strong></td><td>Menedzsment (eth0) DHCP vagy statikus IP.</td></tr>
+          <tr><td><strong>System</strong></td><td>WebUI cím/port, WebUI-jelszó, rendszeridő.</td></tr>
+          <tr><td><strong>Karbantartás</strong></td><td>Méretezés, kiegyenlítés, törlés, visszaállítás, leállítás, frissítés.</td></tr>
+          <tr><td><strong>Mentés &amp; csere</strong></td><td>Konfiguráció exportja/importja egység cseréjéhez.</td></tr>
+          <tr><td><strong>Naplók</strong></td><td>Szolgáltatás-naplók megtekintése és keresése.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <!-- 7 -->
+    <section id="s7">
+      <div class="sec-head"><span class="num">07</span><h2>USB AOI (OTG)</h2></div>
+      <p>Ez az elsődleges adatbemenet: a vizsgáló gép közvetlenül az USB-meghajtóra ír,
+        a CitoStore pedig ütemezetten az NVMe-re szinkronizál.</p>
+
+      <h3>Szinkronizálás</h3>
+      <p>A rendszer alapból kb. <strong>2 percenként</strong> futtat szinkron-ciklust,
+        aktív írás közben pedig gyors, <strong>~10 másodperces</strong> ütemre kapcsol. Egy
+        fájl csak akkor kerül másolásra, ha két egymást követő olvasáskor
+        <strong>változatlan</strong> a mérete és módosítási ideje — így félig kiírt fájl
+        soha nem másolódik. Azonos tartalmú fájlok csak egyszer tárolódnak (deduplikáció),
+        az új könyvtárak pedig elsőbbséget kapnak (hot-folder).</p>
+
+      <h3>Kötet-rotáció</h3>
+      <p>A tár több USB-kötetet (pl. <code>usb_0</code>, <code>usb_1</code>,
+        <code>usb_2</code>) kezel. Amikor az aktív kötet eléri a felső küszöböt (alapból
+        <span class="def">80%</span>), a rendszer a beállított <strong>időablakban</strong>
+        (alapból egész nap) átvált a következő kötetre; kritikus telítettségnél
+        (<span class="def">92%</span>) azonnal. A váltás a vizsgáló gép számára
+        észrevétlen — a meghajtó „kicserélődik" alatta.</p>
+      <p>A leváltott kötetet a rendszer offline feldolgozza: integritás-ellenőrzés
+        (fsck), a maradék adat szinkronizálása, opcionális biztonságos törlés,
+        újraformázás, majd az AOI-beállítások visszaállítása a meghajtóra.</p>
+
+      <div class="note">
+        <span class="lab">AOI-beállítások megőrzése</span>
+        <p>Az újraformázás egyébként törölne mindent a meghajtón. A CitoStore egy külön
+          mappát (<code>aoi_settings</code>) minden rotáció során megőriz és visszaír az új
+          kötetre, így a vizsgáló gép meghajtón tárolt beállításai nem vesznek el.</p>
+      </div>
+
+      <h4>Kézi műveletek</h4>
+      <ul>
+        <li><strong>Szinkron most</strong> — azonnali szinkron-ciklus indítása a következő ütem bevárása nélkül.</li>
+        <li><strong>Rotáció most</strong> — azonnali kötetváltás (pl. mielőtt kézzel kivennéd a régi adatot).</li>
+      </ul>
+    </section>
+
+    <!-- 8 -->
+    <section id="s8">
+      <div class="sec-head"><span class="num">08</span><h2>Ethernet AOI (FTP/SFTP ingest)</h2></div>
+      <p>Ha a vizsgáló gép nem USB-re, hanem hálózaton keresztül tölti a képeket, a
+        CitoStore egy elkülönített Ethernet-porton (<code>eth1</code>) fogadja őket
+        FTP-n vagy SFTP-n. A beérkező fájlok az NVMe-re kerülnek, megjelennek az
+        SMB-megosztáson, és rájuk is vonatkozik a retenció.</p>
+
+      <ol class="steps">
+        <li><h4>Kösd be az eth1-et</h4>
+          Csatlakoztasd a vizsgáló gépet az <code>eth1</code>-re. Ez egy izolált hálózat,
+          alapból <code>192.168.100.1/24</code> a CitoStore címe.</li>
+        <li><h4>Engedélyezd az Ethernet AOI-t</h4>
+          Az <em>Ethernet AOI</em> szekcióban kapcsold be az eth1-et és az ingestet,
+          válaszd ki az FTP és/vagy SFTP protokollt, és add meg a felhasználónevet
+          (alap: <code>aoiftp</code>).</li>
+        <li><h4>Állíts jelszót</h4>
+          Ugyanitt add meg az ingest-jelszót, majd <em>Save + Apply</em>.</li>
+        <li><h4>Állítsd be a vizsgáló gépet</h4>
+          A gépen add meg a CitoStore eth1-címét, a felhasználót és a jelszót. Passzív
+          FTP portok: <code>30000–30020</code>.</li>
+      </ol>
+
+      <div class="note">
+        <span class="lab">Hová kerülnek a fájlok</span>
+        <p>A feltöltött fájlok az ingest-mappába (<code>…/ingest/data</code>) kerülnek,
+          és ugyanúgy elérhetők az SMB-megosztáson, mint a többi mentett adat.</p>
+      </div>
+    </section>
+
+    <!-- 9 -->
+    <section id="s9">
+      <div class="sec-head"><span class="num">09</span><h2>SMB hálózati megosztás</h2></div>
+      <p>Az összes mentett adat azonnal elérhető a hálózaton egy Windows/Mac/Linux
+        kompatibilis SMB-megosztáson keresztül — még aktív szinkronizálás közben is.</p>
+
+      <h4>Elérés</h4>
+      <ul>
+        <li>Windows: <code>\\CITOSTORE\</code> vagy <code>\\&lt;IP&gt;\</code> a fájlkezelő címsorába.</li>
+        <li>macOS/Linux: <code>smb://&lt;IP&gt;/</code>.</li>
+        <li>Bejelentkezés a Samba-felhasználóval (alap: <code>smbuser</code>) és a beállított jelszóval.</li>
+      </ul>
+
+      <p>A megosztás neve (NetBIOS), a munkacsoport és az, hogy melyik interfészen
+        látszik (alapból <code>eth0</code>), az <em>SMB megosztás</em> szekcióban állítható.</p>
+
+      <div class="note">
+        <span class="lab">Miért megbízható</span>
+        <p>Mivel az adat az NVMe-n él, akkor is elérhető marad a megosztáson, ha az
+          USB-meghajtó megtelt, kicserélődött vagy sérült.</p>
+      </div>
+
+      <h4>Mirror FTP (opcionális, csak olvasható)</h4>
+      <p>Ugyanaz az adat FTP-n keresztül is elérhető — második, független protokoll
+        arra az esetre, ha egy adott kliensen az SMB nem elég stabil. Alapból ki van
+        kapcsolva, az <em>SMB megosztás</em> szekcióban kapcsolható be.</p>
+      <ul>
+        <li>Bejelentkezés: <strong>ugyanazzal a felhasználónévvel és jelszóval, mint
+          az SMB megosztás</strong> — nincs külön Mirror FTP jelszó, a jelszót a fenti
+          SMB-jelszó mezőben kell beállítani/megváltoztatni.</li>
+        <li>Csak olvasható: fájl feltöltése, törlése nem lehetséges rajta keresztül.</li>
+      </ul>
+      <div class="note">
+        <span class="lab">Figyelem</span>
+        <p>Az FTP titkosítás nélküli protokoll: a jelszó a hálózaton nyílt szövegként
+          utazik bejelentkezéskor. Mivel ugyanaz a jelszó nyitja az SMB-megosztást is,
+          ezt csak megbízható, belső hálózaton érdemes bekapcsolni.</p>
+      </div>
+    </section>
+
+    <!-- 10 -->
+    <section id="s10">
+      <div class="sec-head"><span class="num">10</span><h2>NAS biztonsági mentés</h2></div>
+      <p>Opcionálisan az összes mentett adat egy távoli hálózati NAS-ra is
+        replikálható, így az adat <strong>duplán</strong> biztos: helyi NVMe + távoli NAS.</p>
+      <ul>
+        <li>A <em>NAS mentés</em> szekcióban engedélyezd, add meg a távoli megosztás
+          útvonalát (pl. <code>//nas/vision</code>) és a csatolási pontot.</li>
+        <li>Add meg a hitelesítést (felhasználónév / jelszó / domain).</li>
+        <li><em>Save + Apply</em>.</li>
+      </ul>
+      <div class="note">
+        <span class="lab">Best-effort</span>
+        <p>A NAS-mentés a fő adatgyűjtést soha nem blokkolja: ha a NAS elérhetetlen, a
+          gyűjtés és a helyi mentés zavartalanul folytatódik, a rendszer pedig később
+          újrapróbálja a replikációt.</p>
+      </div>
+    </section>
+
+    <!-- 11 -->
+    <section id="s11">
+      <div class="sec-head"><span class="num">11</span><h2>Hálózat</h2></div>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Interfész</th><th>Szerep</th><th>Beállítás</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">eth0</td><td>Menedzsment + SMB</td><td>DHCP (alap) vagy statikus IP az <em>Alaphálózat</em> szekcióban. Az „Apply Network (live)" azonnal érvényesíti.</td></tr>
+          <tr><td class="mono">eth1</td><td>Ethernet AOI (izolált)</td><td>Statikus, alapból <code>192.168.100.1/24</code>, üres átjáróval. Az <em>Ethernet AOI</em> szekcióban.</td></tr>
+          <tr><td class="mono">WiFi</td><td>Opcionális</td><td>Kliens vagy hotspot mód.</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="note warn">
+        <span class="lab">Külön alhálózatok</span>
+        <p>Az <code>eth1</code>-nek adj a menedzsment-hálózattól (eth0) eltérő
+          alhálózatot. Így az Ethernet AOI forgalma teljesen elkülönül, és nem zavarja a
+          menedzsmentet.</p>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="s12">
+      <div class="sec-head"><span class="num">12</span><h2>Karbantartás</h2></div>
+      <p>A <em>Karbantartás</em> szekció a ritkábban használt, de fontos műveleteket
+        tartalmazza. A csillaggal (*) jelöltek visszafordíthatatlanok — kérnek megerősítést.</p>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Művelet</th><th>Mit csinál</th></tr></thead>
+        <tbody>
+          <tr><td><strong>USB-kötet méretezése</strong></td><td>Az USB logikai kötetek méretének megváltoztatása.</td></tr>
+          <tr><td><strong>Tárkiegyenlítés</strong></td><td>A tárhely újraelosztása a kötetek között.</td></tr>
+          <tr><td><strong>Szinkron most / Rotáció most</strong></td><td>Kézi szinkron-ciklus, illetve azonnali kötetváltás.</td></tr>
+          <tr><td><strong>Klón-formátum</strong></td><td>USB-kötet előkészítése/formázása.</td></tr>
+          <tr><td><strong>Karbantartó mód</strong></td><td>Az automatizmusok felfüggesztése kézi beavatkozáshoz.</td></tr>
+          <tr><td><strong>Frissítés</strong></td><td>Szoftverfrissítés telepítése.</td></tr>
+          <tr><td><strong>Összes adat törlése *</strong></td><td>Minden mentett adat biztonságos törlése.</td></tr>
+          <tr><td><strong>Alapértelmezések visszaállítása *</strong></td><td>A konfiguráció gyári alapra állítása.</td></tr>
+          <tr><td><strong>Biztonságos leállítás</strong></td><td>Az eszköz szabályos leállítása áramtalanítás előtt.</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="note crit">
+        <span class="lab">Vigyázat</span>
+        <p>Az <strong>Összes adat törlése</strong> és az <strong>Alapértelmezések
+          visszaállítása</strong> nem vonható vissza. Csak akkor futtasd, ha biztos vagy
+          benne, és van érvényes mentésed (SMB/NAS).</p>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section id="s13">
+      <div class="sec-head"><span class="num">13</span><h2>Egység cseréje</h2></div>
+      <p>Meghibásodás vagy tervezett csere esetén a <em>Mentés &amp; csere</em> szekció
+        segít átvinni a beállításokat egy másik egységre.</p>
+      <ol class="steps">
+        <li><h4>Exportáld a konfigurációt</h4>
+          A régi (vagy egy referencia-) egységen mentsd ki a konfigurációs csomagot.</li>
+        <li><h4>Készítsd elő az új egységet</h4>
+          Az új egység a gyári image-ből indul, első bekapcsoláskor egyedi azonosítót és
+          hostnevet kap, és felkészíti a saját NVMe-jét.</li>
+        <li><h4>Importáld a konfigurációt</h4>
+          Töltsd be a mentett csomagot az új egységre, majd alkalmazd. A beállítások
+          (hálózat, megosztás, szinkron, ingest) átkerülnek.</li>
+        <li><h4>Állítsd be újra a jelszavakat</h4>
+          Biztonsági okból a jelszavakat az új egységen külön állítsd be.</li>
+      </ol>
+    </section>
+
+    <!-- 14 -->
+    <section id="s14">
+      <div class="sec-head"><span class="num">14</span><h2>Biztonság &amp; hozzáférés</h2></div>
+      <ul class="lead-list">
+        <li><span class="ic">◆</span><span><strong>Csak olvasható OS.</strong> Az operációs rendszer overlay-védett; a rendszerfájlok nem módosulnak üzem közben, ami ellenállóvá teszi a tápkimaradással és a sérüléssel szemben.</span></li>
+        <li><span class="ic">◆</span><span><strong>Külön jelszavak.</strong> A WebUI, az SMB-megosztás és az FTP/SFTP-ingest külön-külön jelszóval védett, mind a webes felületről állítható.</span></li>
+        <li><span class="ic">◆</span><span><strong>Munkamenet-időkorlát.</strong> A webes bejelentkezés 8 óra után lejár.</span></li>
+        <li><span class="ic">◆</span><span><strong>Elkülönített ingest-hálózat.</strong> Az Ethernet AOI külön interfészen és alhálózaton van, elszigetelve a menedzsmenttől.</span></li>
+        <li><span class="ic">◆</span><span><strong>SSH karbantartáshoz.</strong> Szervizeléshez SSH-hozzáférés kulcs-alapú hitelesítéssel érhető el (a szolgáltató által kezelt kulccsal).</span></li>
+      </ul>
+      <div class="note warn">
+        <span class="lab">Éles üzem előtt</span>
+        <p>Üzembe helyezéskor cseréld le az összes alapértelmezett jelszót saját, erős
+          jelszóra: WebUI, SMB és (ha használod) ingest.</p>
+      </div>
+    </section>
+
+    <!-- 15 -->
+    <section id="s15">
+      <div class="sec-head"><span class="num">15</span><h2>Hibaelhárítás</h2></div>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Tünet</th><th>Lehetséges ok</th><th>Teendő</th></tr></thead>
+        <tbody>
+          <tr><td>A webes felület nem érhető el</td><td>Rossz IP / hálózati kábel / eth0 nincs bekötve</td><td>Ellenőrizd az <code>eth0</code> kábelt és a DHCP-lízinget; próbáld a <code>CITOSTORE</code> nevet vagy a router kliens-listáját.</td></tr>
+          <tr><td>A gép nem látja az USB-meghajtót</td><td>OTG-kábel / a gép még enumerál</td><td>Ellenőrizd az <code>USB-C (OTG)</code> kábelt; a <em>Status</em> panelen az USB-gadgetnek futnia kell.</td></tr>
+          <tr><td>Az új fájlok nem jelennek meg SMB-n</td><td>Fájl még íródik / szinkron-ütem</td><td>Egy fájl csak stabil állapotban másolódik; várd meg a következő ciklust, vagy nyomj <em>Szinkron most</em>-ot.</td></tr>
+          <tr><td>A vizsgáló gép „megtelt" meghajtót jelez</td><td>Rotációs ablakon kívül / küszöb</td><td>Ellenőrizd a rotációs időablakot; szükség esetén <em>Rotáció most</em>.</td></tr>
+          <tr><td>Nincs hely / NVMe magas</td><td>Retenció még nem futott</td><td>A retenció automatikus; ellenőrizd az SMB/NAS mentést, mielőtt bármit törölnél.</td></tr>
+          <tr><td>Az Ethernet AOI nem tud feltölteni</td><td>eth1 / jelszó / passzív portok</td><td>Ellenőrizd az eth1 bekötést és címet, az ingest engedélyezését, a jelszót és a <code>30000–30020</code> portokat.</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="note">
+        <span class="lab">Naplók</span>
+        <p>A legtöbb probléma a <em>Naplók</em> szekcióban gyorsan beazonosítható —
+          itt szolgáltatásonként megtekinthetők és kereshetők a naplóbejegyzések.</p>
+      </div>
+    </section>
+
+    <!-- 16 -->
+    <section id="s16">
+      <div class="sec-head"><span class="num">16</span><h2>Műszaki adatok</h2></div>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Jellemző</th><th>Érték</th></tr></thead>
+        <tbody>
+          <tr><td>Számítási platform</td><td class="mono">Raspberry Pi CM5 (ipari)</td></tr>
+          <tr><td>Rendszertár</td><td class="mono">eMMC, csak olvasható overlay</td></tr>
+          <tr><td>Adattár</td><td class="mono">NVMe SSD · 100 GB – több TB</td></tr>
+          <tr><td>Tárkezelés</td><td class="mono">LVM (thin pool + snapshot)</td></tr>
+          <tr><td>AOI-bemenet (USB)</td><td class="mono">USB-C OTG · mass-storage gadget · FAT32</td></tr>
+          <tr><td>AOI-bemenet (hálózat)</td><td class="mono">eth1 · FTP / SFTP</td></tr>
+          <tr><td>Megosztás</td><td class="mono">SMB (Samba) + opcionális NAS-replikáció</td></tr>
+          <tr><td>Menedzsment</td><td class="mono">Webes felület · HTTP · 80-as port</td></tr>
+          <tr><td>Táplálás</td><td class="mono">PoE+ (802.3at) vagy DC</td></tr>
+          <tr><td>Hálózat</td><td class="mono">2× Ethernet + opcionális WiFi</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <!-- 17 -->
+    <section id="s17">
+      <div class="sec-head"><span class="num">17</span><h2>Konfigurációs referencia</h2></div>
+      <p>A leggyakrabban hangolt paraméterek és gyári alapértékeik. Ezek a webes
+        felület megfelelő szekcióiban állíthatók.</p>
+
+      <h3>Szinkronizálás</h3>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Paraméter</th><th>Alap</th><th>Jelentés</th></tr></thead>
+        <tbody>
+          <tr><td>Szinkron-ciklus</td><td class="mono">2&nbsp;min</td><td>Normál ütem két szinkron-ciklus között.</td></tr>
+          <tr><td>Gyors ütem</td><td class="mono">10&nbsp;s</td><td>Aktív írás közben sűrűbb szinkron.</td></tr>
+          <tr><td>Stabilitási olvasások</td><td class="mono">2</td><td>Ennyi változatlan olvasás után másolható egy fájl.</td></tr>
+          <tr><td>Szkennelési mélység</td><td class="mono">1</td><td>Hány könyvtárszintet jár be prioritással.</td></tr>
+          <tr><td>Max. fájlméret</td><td class="mono">4&nbsp;GB</td><td>FAT32-kompatibilitási felső határ.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Kötet-rotáció &amp; retenció</h3>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Paraméter</th><th>Alap</th><th>Jelentés</th></tr></thead>
+        <tbody>
+          <tr><td>Rotáció felső küszöb</td><td class="mono">80%</td><td>Efölött vált a rendszer a következő kötetre (az ablakban).</td></tr>
+          <tr><td>Kritikus küszöb</td><td class="mono">92%</td><td>Ennél azonnali váltás, ablaktól függetlenül.</td></tr>
+          <tr><td>Váltási ablak</td><td class="mono">00:00–23:59</td><td>Mikor engedélyezett a normál kötetváltás.</td></tr>
+          <tr><td>Retenció felső</td><td class="mono">90%</td><td>Efölött kezd törölni a legrégebbi mentett adatból.</td></tr>
+          <tr><td>Retenció alsó</td><td class="mono">85%</td><td>Eddig a szintig szabadít fel helyet.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Hálózat &amp; ingest</h3>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Paraméter</th><th>Alap</th><th>Jelentés</th></tr></thead>
+        <tbody>
+          <tr><td>eth0 (menedzsment)</td><td class="mono">DHCP</td><td>Menedzsment + SMB interfész.</td></tr>
+          <tr><td>eth1 cím</td><td class="mono">192.168.100.1/24</td><td>Izolált Ethernet-AOI hálózat.</td></tr>
+          <tr><td>WebUI port</td><td class="mono">80</td><td>A webes felület HTTP-portja.</td></tr>
+          <tr><td>NetBIOS-név</td><td class="mono">CITOSTORE</td><td>Az SMB-megosztás hálózati neve.</td></tr>
+          <tr><td>Ingest-felhasználó</td><td class="mono">aoiftp</td><td>Az FTP/SFTP feltöltő fiók neve.</td></tr>
+          <tr><td>Passzív FTP portok</td><td class="mono">30000–30020</td><td>Az FTP passzív adatkapcsolat porttartománya.</td></tr>
+          <tr><td>Mirror FTP</td><td class="mono">kikapcsolva</td><td>Csak-olvasható FTP a mirror-adatra, eth0-n; bekapcsolásig inaktív.</td></tr>
+          <tr><td>Mirror FTP passzív portok</td><td class="mono">30021–30040</td><td>Elkülönítve az ingest-FTP porttartományától.</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <footer>
+      <div class="rule"></div>
+      <p><strong>CitoStore Vision USB Gateway</strong> — Felhasználói kézikönyv, v1.0.
+        A konkrét tárméretek, küszöbök és hálózati paraméterek a telepítéstől függően
+        eltérhetnek; az élő értékeket mindig a webes felület mutatja.</p>
+    </footer>
+  </main>
+</div>
+
+</body>
+</html>
