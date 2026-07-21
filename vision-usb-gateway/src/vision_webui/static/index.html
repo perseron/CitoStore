@@ -157,7 +157,7 @@
       <h3>SMB password</h3>
       <div class="grid">
         <label>New SMB Password <input id="SMB_PASS" type="password" data-validate="password">
-          <span class="hint">min 6 chars</span>
+          <span class="hint">min 6 chars — also used by Mirror FTP below</span>
         </label>
         <label>Confirm SMB Password <input id="SMB_PASS2" type="password" data-validate="match:SMB_PASS">
           <span class="hint">must match</span>
@@ -172,8 +172,8 @@
       <h2>Mirror FTP (eth0, read-only)</h2>
       <p class="hint">
         Read-only FTP access to the same mirror the SMB share exposes, on the
-        main LAN — for clients where SMB isn't reliable enough. Its own
-        user/password, separate from SMB and from the Ethernet-AOI ingest FTP.
+        main LAN — for clients where SMB isn't reliable enough. Uses the same
+        login as the SMB share (set the password in the SMB section above).
       </p>
       <div class="grid">
         <label>Mirror FTP enabled
@@ -182,22 +182,9 @@
         <label>Bind interface <input id="MIRROR_FTP_BIND_INTERFACE" data-validate="iface">
           <span class="hint">e.g. eth0</span>
         </label>
-        <label>FTP user <input id="MIRROR_FTP_USER" placeholder="mirrorftp"></label>
       </div>
       <div class="actions">
         <button id="save-mirror-ftp">Save + Apply</button>
-      </div>
-      <h3>Mirror FTP password</h3>
-      <div class="grid">
-        <label>New password <input id="MIRROR_FTP_PASS" type="password" data-validate="password">
-          <span class="hint">min 6 chars</span>
-        </label>
-        <label>Confirm <input id="MIRROR_FTP_PASS2" type="password" data-validate="match:MIRROR_FTP_PASS">
-          <span class="hint">must match</span>
-        </label>
-      </div>
-      <div class="actions">
-        <button id="set-mirror-ftp-password">Set Mirror FTP Password</button>
       </div>
     </section>
 

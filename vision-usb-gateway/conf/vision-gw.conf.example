@@ -186,12 +186,10 @@ FTP_PASV_MAX_PORT=30020
 
 # Read-only FTP export of the mirror on the MAIN LAN (eth0) — the same data
 # the [vision_mirror] SMB share exposes, offered over a second protocol for
-# operators whose SMB client is unreliable. A separate user/password from
-# both SMB and the Ethernet-AOI ingest FTP (deliberately not synced with the
-# SMB password: chpasswd/smbpasswd are independent stores on this box, and
-# auto-syncing them is a new class of silent-drift bug for no real benefit).
+# operators whose SMB client is unreliable. Authenticates as SMB_USER with the
+# SMB password (kept in sync by 50_configure_samba.sh / handle_smb_password) —
+# one credential for both protocols.
 MIRROR_FTP_ENABLED=false
-MIRROR_FTP_USER=mirrorftp
 MIRROR_FTP_BIND_INTERFACE=eth0
 MIRROR_FTP_PASV_MIN_PORT=30021
 MIRROR_FTP_PASV_MAX_PORT=30040

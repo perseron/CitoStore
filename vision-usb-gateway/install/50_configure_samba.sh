@@ -65,6 +65,9 @@ fi
 if [[ -n "$SMB_PASS" ]]; then
   printf '%s\n%s\n' "$SMB_PASS" "$SMB_PASS" | smbpasswd -s -a "$SMB_USER"
   smbpasswd -e "$SMB_USER"
+  # Mirror FTP (80_configure_mirror_ftp.sh) authenticates as this same user via
+  # PAM/chpasswd, not smbpasswd's own passdb — keep both in sync.
+  printf '%s:%s\n' "$SMB_USER" "$SMB_PASS" | chpasswd
 else
   log "SMB_PASS not set; skipping smbpasswd setup for $SMB_USER"
 fi

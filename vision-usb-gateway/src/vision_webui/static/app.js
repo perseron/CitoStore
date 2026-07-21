@@ -514,21 +514,6 @@ async function setFtpPassword() {
 document.getElementById("set-ftp-password").addEventListener("click",
   withLoading(document.getElementById("set-ftp-password"), setFtpPassword));
 
-async function setMirrorFtpPassword() {
-  const password = document.getElementById("MIRROR_FTP_PASS").value;
-  const confirm = document.getElementById("MIRROR_FTP_PASS2").value;
-  if (!password || password !== confirm) {
-    setStatus("Mirror FTP passwords do not match");
-    return;
-  }
-  await api("/api/password/mirror-ftp", { method: "POST", body: JSON.stringify({ password, confirm }) });
-  document.getElementById("MIRROR_FTP_PASS").value = "";
-  document.getElementById("MIRROR_FTP_PASS2").value = "";
-  setStatus("Mirror FTP password updated");
-}
-document.getElementById("set-mirror-ftp-password").addEventListener("click",
-  withLoading(document.getElementById("set-mirror-ftp-password"), setMirrorFtpPassword));
-
 async function setManualTime() {
   const dateEl = document.getElementById("MANUAL_DATE");
   const timeEl = document.getElementById("MANUAL_CLOCK");
@@ -599,7 +584,7 @@ const USB_KEYS = ["SYNC_INTERVAL_SEC", "SYNC_ONBOOT_SEC", "SYNC_ONACTIVE_SEC",
 const ETH_AOI_KEYS = ["ETH1_ENABLED", "ETH1_ADDRESS", "ETH1_PREFIX", "ETH1_GATEWAY",
   "INGEST_ENABLED", "FTP_ENABLED", "SFTP_ENABLED", "FTP_USER"];
 const SMB_KEYS = ["NETBIOS_NAME", "SMB_WORKGROUP", "SMB_BIND_INTERFACE"];
-const MIRROR_FTP_KEYS = ["MIRROR_FTP_ENABLED", "MIRROR_FTP_BIND_INTERFACE", "MIRROR_FTP_USER"];
+const MIRROR_FTP_KEYS = ["MIRROR_FTP_ENABLED", "MIRROR_FTP_BIND_INTERFACE"];
 const SYSTEM_KEYS = ["WEBUI_BIND", "WEBUI_PORT"];
 async function saveNas() {
   const cfgKeys = ["NAS_ENABLED", "NAS_REMOTE", "NAS_MOUNT"];
