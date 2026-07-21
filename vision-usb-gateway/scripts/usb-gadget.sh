@@ -106,35 +106,46 @@ unbind_gadget() {
   fi
 }
 
-# Wait for a write-idle window on the OUTGOING device before ejecting: a media
-# change that lands on an in-flight host write surfaces as one failed write on
-# the AOI (ERROR_WRONG_DISK) — measured on 2 of 5 rotations in the endurance
-# run at 1 write/s. The host's cadence leaves sub-second gaps between writes,
-# so a short quiet window is found almost immediately; if the host streams
-# with no gaps, give up after the timeout and switch anyway (old behaviour).
+# Wait for a write-idle window before ejecting: a media change that lands on
+# an in-flight host write surfaces as one failed write on the AOI. The signal
+# MUST be /proc/meminfo Dirty:, not the backing device's /sys/block/*/stat:
+# the LUN is opened with nofua=1 (see setup_gadget), so host writes land in
+# the page cache and only reach the block layer on the kernel's own writeback
+# timer (measured live: stat stayed frozen for 5-7s while Dirty: tracked every
+# write within ~50ms). A stat-based version of this check was shipped once and
+# measured to make no real difference (40% vs 50% collision rate over a small
+# sample) — it was comparing quiet windows against a counter that only moves
+# every few seconds, so it was satisfied almost immediately regardless of
+# real host activity. Dirty: is system-wide, not scoped to this one device,
+# but nothing else on the appliance dirties pages at meaningful volume during
+# normal operation, so "unchanged" is a reliable proxy for "no active host
+# write". If the host streams with no gaps, give up after the timeout and
+# switch anyway (old behaviour).
 wait_write_idle() {
   local idle_ms="${SWITCH_IDLE_MS:-300}"
   local timeout_sec="${SWITCH_IDLE_TIMEOUT_SEC:-5}"
   [[ "$idle_ms" == "0" ]] && return 0
-  local cur
-  cur=$(readlink -f "$(cat "$ACTIVE_FILE" 2>/dev/null)" 2>/dev/null) || return 0
-  local stat="/sys/block/$(basename "$cur")/stat"
-  [[ -r "$stat" ]] || return 0
-  local deadline=$(( $(date +%s%3N) + timeout_sec * 1000 ))
-  local last quiet_since now cur_stat
-  last=$(awk '{print $5":"$7}' "$stat")
-  quiet_since=$(date +%s%3N)
+  local meminfo="/proc/meminfo"
+  [[ -r "$meminfo" ]] || return 0
+  local start=$(date +%s%3N)
+  local deadline=$(( start + timeout_sec * 1000 ))
+  local last quiet_since now cur
+  last=$(awk '/^Dirty:/{print $2}' "$meminfo")
+  quiet_since=$start
   while :; do
     now=$(date +%s%3N)
     if (( now >= deadline )); then
       log "no write-idle window within ${timeout_sec}s; switching anyway"
       return 0
     fi
-    cur_stat=$(awk '{print $5":"$7}' "$stat")
-    if [[ "$cur_stat" == "$last" ]]; then
-      (( now - quiet_since >= idle_ms )) && return 0
+    cur=$(awk '/^Dirty:/{print $2}' "$meminfo")
+    if [[ "$cur" == "$last" ]]; then
+      if (( now - quiet_since >= idle_ms )); then
+        log "write-idle window found after $((now - start))ms"
+        return 0
+      fi
     else
-      last="$cur_stat"
+      last="$cur"
       quiet_since=$now
     fi
     sleep 0.05
