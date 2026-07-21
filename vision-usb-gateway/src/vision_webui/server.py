@@ -75,6 +75,9 @@ ALLOWED_CONFIG_KEYS = {
     "FTP_ENABLED",
     "SFTP_ENABLED",
     "FTP_USER",
+    "MIRROR_FTP_ENABLED",
+    "MIRROR_FTP_USER",
+    "MIRROR_FTP_BIND_INTERFACE",
 }
 
 SERVICES = [
@@ -1555,6 +1558,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_smb_password()
         if self.path == "/api/password/ftp":
             return self.handle_ftp_password()
+        if self.path == "/api/password/mirror-ftp":
+            return self.handle_mirror_ftp_password()
         if self.path == "/api/maintenance/wipe":
             return self.handle_maintenance(["wipe"])
         if self.path == "/api/maintenance/factory-reset":
@@ -1718,6 +1723,31 @@ class WebHandler(BaseHTTPRequestHandler):
         # Apply now if the ingest user already exists.
         run_privileged(["/usr/sbin/chpasswd"], input_text=f"{ftp_user}:{password}\n")
         log(f"ftp password changed for {ftp_user}")
+        return self.send_json({"ok": True})
+
+    def handle_mirror_ftp_password(self):
+        length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(length).decode("utf-8")
+        data = json.loads(body or "{}")
+        password = data.get("password", "")
+        confirm = data.get("confirm", "")
+        if not password or password != confirm:
+            return self.send_json({"ok": False, "error": "passwords do not match"}, status=400)
+        if not is_valid_password(password):
+            return self.send_json({"ok": False, "error": "invalid password"}, status=400)
+        cfg = parse_config(load_config_text())
+        ftp_user = cfg.get("MIRROR_FTP_USER", "mirrorftp")
+        # Persist on the NVMe (overlay-safe; re-applied on boot by
+        # 80_configure_mirror_ftp). Deliberately its own secret, not synced
+        # with the SMB password — those are independent credential stores
+        # (smbpasswd vs. chpasswd) and auto-syncing them would be a new class
+        # of silent-drift bug for no real benefit.
+        creds = STATE_DIR / "mirror_ftp.creds"
+        creds.write_text(f"password={password}\n", encoding="utf-8")
+        os.chmod(creds, 0o600)
+        # Apply now if the mirror-ftp user already exists.
+        run_privileged(["/usr/sbin/chpasswd"], input_text=f"{ftp_user}:{password}\n")
+        log(f"mirror ftp password changed for {ftp_user}")
         return self.send_json({"ok": True})
 
     def handle_network(self):

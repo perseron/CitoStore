@@ -36,6 +36,9 @@ fi
 # mDNS (.local) name advertising for router-free / field access.
 "$GATEWAY_HOME/install/75_configure_mdns.sh" || true
 
+# Read-only FTP export of the mirror on eth0 (alternative to SMB).
+"$GATEWAY_HOME/install/80_configure_mirror_ftp.sh" || true
+
 # Restart the WebUI only if its own bind/port changed, and do it out-of-band
 # (a transient timer 2s out) so a WebUI-triggered apply can still deliver its
 # HTTP response before we drop its listener. A same-cgroup restart here would

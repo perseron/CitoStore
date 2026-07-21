@@ -1,0 +1,20 @@
+[Unit]
+Description=vsftpd FTP server (read-only mirror export, eth0)
+# Same reasoning as the ingest vsftpd drop-in: this binds listen_address on a
+# specific interface, so it must wait for that address to exist, and must not
+# give up permanently if the cable/link is slow at boot.
+After=network-online.target vision-gw-config.service
+Wants=network-online.target
+Requires=vision-gw-config.service
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/vsftpd /etc/vsftpd-mirror.conf
+ExecReload=/bin/kill -HUP $MAINPID
+ExecStartPre=-/bin/mkdir -p /var/run/vsftpd/empty
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
