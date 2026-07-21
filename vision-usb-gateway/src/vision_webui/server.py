@@ -1698,8 +1698,15 @@ class WebHandler(BaseHTTPRequestHandler):
         if code != 0:
             return self.send_json({"ok": False, "error": err or out}, status=500)
         run_privileged(["/usr/bin/smbpasswd", "-e", smb_user])
-        # Mirror FTP (eth0) authenticates as this same Unix account via PAM, so
-        # the SMB password is the one password for both protocols.
+        # Mirror FTP (eth0) authenticates as this same Unix account via PAM, not
+        # Samba's own passdb -- and /etc/shadow lives on the overlay root, so
+        # unlike passdb.tdb (bind-mounted onto persistent storage by
+        # 50_configure_samba.sh) it does NOT survive a reboot. Persist on the
+        # NVMe so 80_configure_mirror_ftp.sh can re-apply it (chpasswd) on
+        # every boot -- same pattern as ftp.creds for the ingest FTP user.
+        creds = STATE_DIR / "smb_unix.creds"
+        creds.write_text(f"password={password}\n", encoding="utf-8")
+        os.chmod(creds, 0o600)
         run_privileged(["/usr/sbin/chpasswd"], input_text=f"{smb_user}:{password}\n")
         log(f"smb password changed for {smb_user}")
         return self.send_json({"ok": True})

@@ -28,12 +28,24 @@ load_config
 : "${MIRROR_FTP_PASV_MAX_PORT:=30040}"
 : "${MIRROR_MOUNT:=/srv/vision_mirror}"
 
+SMB_UNIX_CREDS="$MIRROR_MOUNT/.state/smb_unix.creds"
 VSFTPD_CONF=/etc/vsftpd-mirror.conf
 USERLIST=/etc/vsftpd-mirror.userlist
 UNIT=vsftpd-mirror.service
 
 iface_ipv4() {
   ip -o -4 addr show "$1" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1
+}
+
+# /etc/shadow lives on the overlay root and does not survive a reboot, unlike
+# Samba's passdb.tdb (bind-mounted onto the NVMe by 50_configure_samba.sh). The
+# WebUI's SMB-password handler drops the same value here so this account's
+# PAM-visible password can be re-applied on every boot.
+sync_unix_password() {
+  [[ -f "$SMB_UNIX_CREDS" ]] || return 0
+  local pw
+  pw=$(grep -E '^password=' "$SMB_UNIX_CREDS" | cut -d= -f2- || true)
+  [[ -n "$pw" ]] && printf '%s:%s\n' "$SMB_USER" "$pw" | chpasswd
 }
 
 configure_mirror_ftp() {
@@ -56,6 +68,7 @@ configure_mirror_ftp() {
   # in 70_configure_ingest.sh: point the home at the directory we actually
   # serve.
   usermod -d "$MIRROR_MOUNT" "$SMB_USER" >/dev/null 2>&1 || true
+  sync_unix_password
   local bind_ip
   bind_ip=$(iface_ipv4 "$MIRROR_FTP_BIND_INTERFACE")
   if [[ -z "$bind_ip" ]]; then
