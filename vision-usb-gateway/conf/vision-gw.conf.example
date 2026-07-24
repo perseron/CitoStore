@@ -57,6 +57,10 @@ COPY_CHUNK_BYTES=8388608
 SYNC_LOG_EVERY=0
 SYNC_SCAN_DEPTH=1
 SYNC_HOT_DIRS=1
+# Every leaf dir written within this window counts as hot (SYNC_HOT_DIRS is
+# only the floor). An AOI writing date/SceneGroup/Scene/OK-NG touches ~8
+# leaves concurrently; a fixed top-1 hot pick starves the rest. 0 disables.
+SYNC_HOT_WINDOW_SEC=300
 SYNC_COLD_AUDIT_DIRS_PER_RUN=1
 SYNC_DIR_INDEX_FILE=/srv/vision_mirror/.state/sync-dir-index.json
 RAW_APPEND_ALWAYS=false

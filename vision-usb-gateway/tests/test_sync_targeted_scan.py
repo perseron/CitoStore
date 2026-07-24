@@ -1,4 +1,5 @@
 import os
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,6 +21,7 @@ def _sync_cfg(mirror: Path, tmp_path: Path, depth: int) -> SimpleNamespace:
         sync_log_every=0,
         sync_scan_depth=depth,
         sync_hot_dirs=8,
+        sync_hot_window_sec=0,
         sync_cold_audit_dirs_per_run=8,
         sync_dir_index_file=tmp_path / "idx.json",
     )
@@ -167,3 +169,78 @@ def test_sync_is_idempotent_across_runs(tmp_path: Path):
         conn.close()
 
     assert count == 1
+
+
+def test_full_scan_selects_every_dir_and_leaves_cursor_alone(tmp_path: Path):
+    root = tmp_path / "snap"
+    root.mkdir()
+    for i in range(6):
+        _touch_dir(root / f"d{i}", 100 + i)
+
+    idx = tmp_path / "sync-dir-index-full.json"
+    cfg = SimpleNamespace(
+        sync_scan_depth=1,
+        sync_hot_dirs=1,
+        sync_hot_window_sec=0,
+        sync_cold_audit_dirs_per_run=1,
+        sync_dir_index_file=idx,
+    )
+
+    roots, plan = select_scan_roots(cfg, root, full_scan=True)
+    assert sorted(p.name for p in roots) == [f"d{i}" for i in range(6)]
+    assert sorted(plan["selected"]) == [f"d{i}" for i in range(6)]
+    # The offline pass must not advance the live round-robin state.
+    assert not idx.exists()
+
+
+def test_offline_full_scan_captures_dirs_the_live_selection_missed(tmp_path: Path):
+    """Regression for the rotation data-destruction bug: the offline export
+    inherited the live hot/cold 2-dir selection, so the reformat that follows
+    destroyed every file in the unselected directories (measured 46% total
+    loss under the real nested date/SceneGroup/Scene/OK-NG layout)."""
+    root = tmp_path / "snap"
+    for leaf in ["day/SG1/S1/OK", "day/SG1/S1/NG", "day/SG2/S1/OK", "day/SG2/S2/NG"]:
+        d = root / leaf
+        d.mkdir(parents=True)
+        (d / f"{leaf.replace('/', '_')}.jpg").write_bytes(leaf.encode())
+
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    cfg = _sync_cfg(mirror, tmp_path, depth=4)
+    cfg.sync_hot_dirs = 1
+    cfg.sync_cold_audit_dirs_per_run = 0  # live selection sees ONE leaf only
+    try:
+        stable_and_copy(cfg, root, conn)  # live pass: 1 of 4 leaves
+        live_count = conn.execute("SELECT COUNT(*) FROM synced_files").fetchone()[0]
+        assert live_count == 1
+        # offline-maint's pre-wipe export: must capture the other 3 leaves.
+        stable_and_copy(cfg, root, conn, force_stable=True, full_scan=True)
+        total = conn.execute("SELECT COUNT(*) FROM synced_files").fetchone()[0]
+    finally:
+        conn.close()
+
+    assert total == 4
+
+
+def test_hot_window_promotes_every_recently_written_dir(tmp_path: Path):
+    """A single AOI burst touches ~8 leaves; every dir written inside the hot
+    window must be hot, not just the single newest one."""
+    root = tmp_path / "snap"
+    root.mkdir()
+    now = int(time.time())
+    for i in range(5):
+        _touch_dir(root / f"active{i}", now - 10 - i)
+    _touch_dir(root / "closed", now - 7200)
+
+    cfg = SimpleNamespace(
+        sync_scan_depth=1,
+        sync_hot_dirs=1,
+        sync_hot_window_sec=300,
+        sync_cold_audit_dirs_per_run=1,
+        sync_dir_index_file=tmp_path / "sync-dir-index-hot.json",
+    )
+
+    roots, plan = select_scan_roots(cfg, root)
+    assert sorted(plan["hot"]) == [f"active{i}" for i in range(5)]
+    assert plan["audit"] == ["closed"]
+    assert len(roots) == 6

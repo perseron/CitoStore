@@ -24,6 +24,7 @@ class Config:
     sync_log_every: int
     sync_scan_depth: int
     sync_hot_dirs: int
+    sync_hot_window_sec: int
     sync_cold_audit_dirs_per_run: int
     sync_dir_index_file: Path
     mirror_free_min_mb: int
@@ -101,6 +102,7 @@ def get_config(path: str) -> Config:
     sync_log_every = int(data.get("SYNC_LOG_EVERY", "0"))
     sync_scan_depth = int(data.get("SYNC_SCAN_DEPTH", "1"))
     sync_hot_dirs = int(data.get("SYNC_HOT_DIRS", "1"))
+    sync_hot_window_sec = int(data.get("SYNC_HOT_WINDOW_SEC", "300"))
     sync_cold_audit_dirs_per_run = int(data.get("SYNC_COLD_AUDIT_DIRS_PER_RUN", "1"))
     sync_dir_index_file = Path(
         data.get("SYNC_DIR_INDEX_FILE", str(mirror_mount / ".state" / "sync-dir-index.json"))
@@ -127,6 +129,7 @@ def get_config(path: str) -> Config:
         sync_log_every=sync_log_every,
         sync_scan_depth=sync_scan_depth,
         sync_hot_dirs=sync_hot_dirs,
+        sync_hot_window_sec=sync_hot_window_sec,
         sync_cold_audit_dirs_per_run=sync_cold_audit_dirs_per_run,
         sync_dir_index_file=sync_dir_index_file,
         mirror_free_min_mb=mirror_free_min_mb,

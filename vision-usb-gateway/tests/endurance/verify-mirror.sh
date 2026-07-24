@@ -3,23 +3,34 @@
 # mirror (raw/), and a random sample must hash-match the writer's recorded
 # SHA256. Files written in the last GRACE seconds are excluded — the sync's
 # stability gate (2 stable scans) legitimately hasn't copied them yet.
+#
+# The grace cutoff is computed from THIS machine's clock (NOW below), never the
+# board's: the writer's timestamps are host-clock, and a board with a wrong
+# clock (no RTC cell + no NTP is the normal field state) once classified
+# 27,888 genuinely missing files as "too fresh" and reported missing: 0.
 set -euo pipefail
 
 BOARD=${BOARD:-192.168.2.162}
 OUT=${OUT:-/d/endurance-run}
 SAMPLE=${SAMPLE:-50}
 GRACE=${GRACE:-180}
+NOW=$(date +%s)
 
 SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8
           -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
 
 scp "${SSH_OPTS[@]}" "$OUT/writer.csv" "citostore@$BOARD:/tmp/endurance-writer.csv"
-ssh "${SSH_OPTS[@]}" "citostore@$BOARD" sudo GRACE="$GRACE" SAMPLE="$SAMPLE" python3 - <<'PY'
+ssh "${SSH_OPTS[@]}" "citostore@$BOARD" sudo GRACE="$GRACE" SAMPLE="$SAMPLE" NOW="$NOW" python3 - <<'PY'
 import csv, hashlib, os, random, sys, time
 from pathlib import Path
 
 grace = int(os.environ.get("GRACE", "180"))
 sample_n = int(os.environ.get("SAMPLE", "50"))
+host_now = int(os.environ.get("NOW") or time.time())
+skew = int(time.time()) - host_now
+if abs(skew) > 120:
+    print(f"WARNING: board clock is {skew:+d}s off the host clock -- "
+          f"board-side timestamps (bydate/, journals) are unreliable")
 raw = Path("/srv/vision_mirror/raw")
 
 on_disk = {}
@@ -27,7 +38,7 @@ for p in raw.rglob("END_*.jpg"):
     on_disk[p.name] = p
 
 rows = []
-cutoff = time.time() - grace
+cutoff = host_now - grace
 with open("/tmp/endurance-writer.csv", newline="") as f:
     for row in csv.DictReader(f):
         rows.append(row)

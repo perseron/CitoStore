@@ -21,9 +21,14 @@ PERSIST_MNT="/mnt/vision_persist_next"
 
 within_window() {
   local now start end
-  now=$(date +%H%M)
-  start=${SWITCH_WINDOW_START/:/}
-  end=${SWITCH_WINDOW_END/:/}
+  # 10# forces base-10: [[ -ge ]] evaluates operands arithmetically, and a
+  # leading zero makes bash read HHMM as octal — "0800".."0959" (digits 8/9)
+  # are then INVALID numbers, the comparison errors, and set -e kills the
+  # whole rotator, blocking every normal rotation for those two hours daily.
+  # Caught live: "[[: 0109: value too great for base".
+  now=$((10#$(date +%H%M)))
+  start=$((10#${SWITCH_WINDOW_START/:/}))
+  end=$((10#${SWITCH_WINDOW_END/:/}))
   if [[ $start -le $end ]]; then
     [[ $now -ge $start && $now -le $end ]]
   else

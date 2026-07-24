@@ -13,6 +13,14 @@
 # quiet windows between bursts are ~4s+, far longer than the ~0.85s gaps a
 # steady cadence gives the switch mechanism to work with. Pass -BurstSize 0
 # for the old steady-cadence behaviour (one file every -IntervalMs).
+#
+# Folder layout mirrors the real AOI (deployed units use this 4-level tree,
+# not a flat drop): <date>[_N]\<SceneGroup>\<Scene>\<OK|NG>\file.jpg. The
+# date-folder is capped at -MaxPerDateFolder images TOTAL across every
+# scene/OK-NG combination under it; once full, a new suffixed sibling
+# (_2, _3, ...) opens for the rest of that day. This depth is why
+# SYNC_SCAN_DEPTH matters here — verify it matches this layout before trusting
+# a run against a real-shaped drive.
 param(
   [string]$Drive = "",           # auto-detect the VISIONUSB volume when empty
   [int]$IntervalMs = 1000,       # steady-cadence gap; only used when BurstSize = 0
@@ -20,7 +28,11 @@ param(
   [double]$BurstPeriodSec = 6,   # wall-clock time from one burst start to the next
   [int]$SizeKB = 2048,
   [double]$DurationHours = 0,    # 0 = run until stopped
-  [string]$OutDir = "D:\endurance-run"
+  [string]$OutDir = "D:\endurance-run",
+  [string[]]$SceneGroups = @("SG1", "SG2"),
+  [string[]]$Scenes = @("Scene1", "Scene2"),
+  [double]$OkRatio = 0.9,        # fraction classified OK vs NG
+  [int]$MaxPerDateFolder = 1000  # cap per date-folder (all scenes/OK-NG combined)
 )
 $ErrorActionPreference = "Continue"
 
@@ -46,7 +58,7 @@ function Append-Line([string]$path, [string]$line) {
   return $false
 }
 
-if (-not (Test-Path $csv)) { Append-Line $csv "ts,name,sha256,bytes,write_ms" | Out-Null }
+if (-not (Test-Path $csv)) { Append-Line $csv "ts,name,sha256,bytes,write_ms,relpath" | Out-Null }
 
 $rng  = [System.Security.Cryptography.RandomNumberGenerator]::Create()
 $body = New-Object byte[] ($SizeKB * 1024)
@@ -55,6 +67,28 @@ $sha  = [System.Security.Cryptography.SHA256]::Create()
 
 $script:i = 0
 $script:failStreak = 0
+$script:dateFolder = ""
+$script:dateSuffix = 1
+$script:dateFolderCount = 0
+
+# Picks (and rolls over) the date-folder: a fresh unsuffixed folder each real
+# calendar day, or an incrementing _N sibling the same day once the previous
+# one hit -MaxPerDateFolder (total images, all scenes/OK-NG combined — this
+# is a whole-day-folder cap, not a per-leaf one).
+function Get-DateFolder {
+  $today = Get-Date -Format "yyyy-MM-dd"
+  if ($script:dateFolder -notlike "$today*") {
+    $script:dateFolder = $today
+    $script:dateSuffix = 1
+    $script:dateFolderCount = 0
+  }
+  if ($script:dateFolderCount -ge $MaxPerDateFolder) {
+    $script:dateSuffix++
+    $script:dateFolder = "{0}_{1}" -f $today, $script:dateSuffix
+    $script:dateFolderCount = 0
+  }
+  return $script:dateFolder
+}
 
 function Write-OneProbe {
   $script:i++
@@ -63,11 +97,21 @@ function Write-OneProbe {
   $hdr = [Text.Encoding]::ASCII.GetBytes(("{0}|{1}" -f $name, [guid]::NewGuid()).PadRight(64).Substring(0, 64))
   [Array]::Copy($hdr, 0, $body, 0, 64)
   $hash = ([BitConverter]::ToString($sha.ComputeHash($body)) -replace "-", "").ToLower()
+
+  $dateFolder = Get-DateFolder
+  $sg    = $SceneGroups[$script:i % $SceneGroups.Count]
+  $scene = $Scenes[[math]::Floor($script:i / $SceneGroups.Count) % $Scenes.Count]
+  $okng  = if ((Get-Random -Minimum 0.0 -Maximum 1.0) -lt $OkRatio) { "OK" } else { "NG" }
+  $relDir = Join-Path (Join-Path (Join-Path $dateFolder $sg) $scene) $okng
+  $destDir = Join-Path "$Drive\" $relDir
+
   $t0 = Get-Date
   try {
-    [IO.File]::WriteAllBytes((Join-Path "$Drive\" $name), $body)
+    New-Item -ItemType Directory -Force $destDir | Out-Null
+    [IO.File]::WriteAllBytes((Join-Path $destDir $name), $body)
     $ms = [int]((Get-Date) - $t0).TotalMilliseconds
-    Append-Line $csv ("{0},{1},{2},{3},{4}" -f (Get-Date -Format o), $name, $hash, $body.Length, $ms) | Out-Null
+    $script:dateFolderCount++
+    Append-Line $csv ("{0},{1},{2},{3},{4},{5}" -f (Get-Date -Format o), $name, $hash, $body.Length, $ms, (Join-Path $relDir $name)) | Out-Null
     $script:failStreak = 0
   } catch {
     # The drive can vanish for real (PC sleep, cable pulled) and come back

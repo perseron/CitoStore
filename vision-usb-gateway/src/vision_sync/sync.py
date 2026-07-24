@@ -111,7 +111,19 @@ def iter_root_files(root: Path) -> Iterator[tuple[Path, os.stat_result]]:
         return
 
 
-def select_scan_roots(cfg, mount_root: Path) -> tuple[list[Path], dict]:
+# A single writer burst touches every leaf it classifies into (e.g. an AOI
+# writing date/SceneGroup/Scene/OK-NG touches ~8 leaves per cycle), so "hot"
+# must mean "every recently-written dir", not "the single newest one" — with
+# a fixed top-1 the other concurrently-active leaves starve behind the cold
+# cursor and the backlog grows without bound. Bounded so a pathological
+# mtime spread (host/board clock skew makes everything look recent) degrades
+# to a large-but-finite scan instead of an unbounded one.
+HOT_WINDOW_MAX_DIRS = 64
+
+
+def select_scan_roots(
+    cfg, mount_root: Path, full_scan: bool = False
+) -> tuple[list[Path], dict]:
     scan_depth = max(1, int(getattr(cfg, "sync_scan_depth", 1)))
     dirs, shallow = scan_dirs_by_depth(mount_root, scan_depth)
     if not dirs and scan_depth > 1:
@@ -119,8 +131,31 @@ def select_scan_roots(cfg, mount_root: Path) -> tuple[list[Path], dict]:
         dirs, shallow = scan_dirs_by_depth(mount_root, 1)
         scan_depth = 1
     dir_names = [name for name, _ in dirs]
+
+    if full_scan:
+        # Offline export before a wipe: every directory, no cursor state
+        # touched. The hot/cold selection exists to keep the ~30s live cycle
+        # cheap; a final pass before the LV is destroyed must see everything.
+        return [mount_root / name for name in dir_names], {
+            "top_dirs": len(dir_names),
+            "depth": scan_depth,
+            "hot": dir_names,
+            "audit": [],
+            "selected": dir_names,
+            "shallow": shallow,
+        }
+
     hot_n = max(0, int(getattr(cfg, "sync_hot_dirs", 1)))
     audit_n = max(0, int(getattr(cfg, "sync_cold_audit_dirs_per_run", 1)))
+
+    # Everything written within the hot window is hot (dirs is sorted newest
+    # first); SYNC_HOT_DIRS remains the floor so the newest dirs are always
+    # scanned even when nothing is recent.
+    hot_window = max(0, int(getattr(cfg, "sync_hot_window_sec", 300)))
+    if hot_window:
+        cutoff = int(time.time()) - hot_window
+        recent_n = sum(1 for _, mtime in dirs if mtime >= cutoff)
+        hot_n = min(max(hot_n, recent_n), HOT_WINDOW_MAX_DIRS)
 
     hot_names = dir_names[:hot_n]
     cold_names = dir_names[hot_n:]
@@ -610,7 +645,9 @@ def check_mirror_free_space(cfg) -> bool:
     return True
 
 
-def stable_and_copy(cfg, mount_root: Path, conn, force_stable: bool = False) -> None:
+def stable_and_copy(
+    cfg, mount_root: Path, conn, force_stable: bool = False, full_scan: bool = False
+) -> None:
     if not check_mirror_free_space(cfg):
         return
     raw_dir = cfg.mirror_mount / "raw"
@@ -622,8 +659,13 @@ def stable_and_copy(cfg, mount_root: Path, conn, force_stable: bool = False) -> 
         "skipped_large": 0,
         "log_every": max(0, int(getattr(cfg, "sync_log_every", 0))),
     }
-    selected_roots, scan_plan = select_scan_roots(cfg, mount_root)
-    if scan_plan["selected"]:
+    selected_roots, scan_plan = select_scan_roots(cfg, mount_root, full_scan=full_scan)
+    if full_scan:
+        log(
+            f"sync plan: FULL (offline export) depth={scan_plan['depth']}"
+            f" dirs={scan_plan['top_dirs']}"
+        )
+    elif scan_plan["selected"]:
         log(
             "sync plan: "
             f"depth={scan_plan['depth']} "
@@ -681,9 +723,14 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
         mount_ro(dev, cfg.snapshot_mount, active_offset)
         try:
             record_snapshot_usage(cfg.snapshot_mount, dev)
-            # Detached LV (offline-maint before wipe): copy every file, no
-            # stability gate, so nothing written just before rotation is lost.
-            stable_and_copy(cfg, cfg.snapshot_mount, conn, force_stable=True)
+            # Detached LV (offline-maint before wipe): copy every file from
+            # EVERY directory (full_scan), no stability gate. Without
+            # full_scan this inherited the live hot/cold 2-dir selection and
+            # the subsequent reformat silently destroyed everything else —
+            # measured 46% total loss under the real nested AOI layout.
+            stable_and_copy(
+                cfg, cfg.snapshot_mount, conn, force_stable=True, full_scan=True
+            )
         finally:
             umount(cfg.snapshot_mount)
         return
