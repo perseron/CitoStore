@@ -49,7 +49,20 @@ OnActiveSec=$SYNC_HI_INTERVAL_SEC
 OnUnitActiveSec=$SYNC_HI_INTERVAL_SEC
 EOF
 
+# The RTC/clock-persist cadence must be re-applied from config on every boot
+# too — 40_install_services.sh only writes it at install time, so a config
+# change (or the overlay dropping the tmpfs copy) silently reverted it.
+RTC_TIMER_DIR=/etc/systemd/system/vision-rtc-sync.timer.d
+RTC_TIMER_OVERRIDE=$RTC_TIMER_DIR/override.conf
+mkdir -p "$RTC_TIMER_DIR"
+cat > "$RTC_TIMER_OVERRIDE" <<EOF
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=$RTC_SYNC_INTERVAL
+EOF
+
 systemctl daemon-reload
 systemctl restart vision-sync.timer
+systemctl try-restart vision-rtc-sync.timer 2>/dev/null || true
 systemctl restart vision-sync-fast.timer >/dev/null 2>&1 || true
 systemctl restart vision-rtc-sync.timer || true
