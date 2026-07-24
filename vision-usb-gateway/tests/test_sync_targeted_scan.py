@@ -41,9 +41,11 @@ def test_select_scan_roots_hot_plus_round_robin(tmp_path: Path):
     root = tmp_path / "snap"
     root.mkdir()
 
+    # Spread far wider than the hot window so only "new" is recent relative
+    # to the newest observed mtime.
     _touch_dir(root / "old", 100)
-    _touch_dir(root / "mid", 200)
-    _touch_dir(root / "new", 300)
+    _touch_dir(root / "mid", 100_000)
+    _touch_dir(root / "new", 200_000)
 
     cfg = SimpleNamespace(
         sync_scan_depth=1,
@@ -244,3 +246,27 @@ def test_hot_window_promotes_every_recently_written_dir(tmp_path: Path):
     assert sorted(plan["hot"]) == [f"active{i}" for i in range(5)]
     assert plan["audit"] == ["closed"]
     assert len(roots) == 6
+
+
+def test_hot_window_is_clock_independent(tmp_path: Path):
+    """The window is measured against the newest OBSERVED mtime, never this
+    machine's clock — an AOI host's clock can be decades wrong (dead CMOS on
+    a Win98-era PC) and recent-relative-to-itself must still mean hot."""
+    root = tmp_path / "snap"
+    root.mkdir()
+    base = 883_612_800  # 1998-01-01, decades behind any board clock
+    for i in range(4):
+        _touch_dir(root / f"active{i}", base - 10 - i)
+    _touch_dir(root / "closed", base - 7200)
+
+    cfg = SimpleNamespace(
+        sync_scan_depth=1,
+        sync_hot_dirs=1,
+        sync_hot_window_sec=300,
+        sync_cold_audit_dirs_per_run=1,
+        sync_dir_index_file=tmp_path / "sync-dir-index-1998.json",
+    )
+
+    roots, plan = select_scan_roots(cfg, root)
+    assert sorted(plan["hot"]) == [f"active{i}" for i in range(4)]
+    assert plan["audit"] == ["closed"]

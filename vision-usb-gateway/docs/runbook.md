@@ -238,7 +238,12 @@ RTC
 - `RTC_ENABLED`: Enable RTC sync on boot and periodically.
 - `RTC_DEVICE`: RTC device (default `/dev/rtc0`).
 - `RTC_UTC`: `true` for UTC, `false` for localtime.
-- `RTC_SYNC_INTERVAL`: Periodic sync interval (systemd time format).
+- `RTC_SYNC_INTERVAL`: Periodic sync interval (systemd time format); also the
+  clock-persist save cadence (default `10min`).
+- `CLOCK_PERSIST_ENABLED` / `CLOCK_PERSIST_FILE`: monotonic clock persistence —
+  last known time saved to the NVMe, restored forward-only at boot, so a unit
+  with no RTC cell and no NTP only loses its powered-off duration. No external
+  clock (the AOI host's included) is trusted.
 - `RTC_CHARGE_ENABLED`: Trickle-charge the backup cell (`install/15_configure_rtc.sh`).
   Rechargeable cells only (ML2032 / LIR / supercap) — never a primary CR2032.
 - `RTC_CHARGE_UV`: Charge voltage in microvolts (default `3000000` = 3.0 V, the

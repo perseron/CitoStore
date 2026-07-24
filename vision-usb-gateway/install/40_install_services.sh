@@ -18,7 +18,7 @@ load_config
 : "${SYNC_ONACTIVE_SEC:=2min}"
 : "${SYNC_INTERVAL_SEC:=2min}"
 : "${SYNC_HI_INTERVAL_SEC:=10s}"
-: "${RTC_SYNC_INTERVAL:=1h}"
+: "${RTC_SYNC_INTERVAL:=10min}"
 
 write_gateway_env
 

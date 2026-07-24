@@ -1,13 +1,21 @@
 [Unit]
 Description=RTC to System Clock
-After=local-fs.target
-ConditionPathExists=/dev/rtc0
+# After the mirror mount so the clock-persist file on the NVMe is readable;
+# no Requires — rtc-sync.sh degrades gracefully when either is missing. No
+# ConditionPathExists=/dev/rtc0 anymore: the monotonic clock-persist restore
+# must run on RTC-less units too.
+After=local-fs.target srv-vision_mirror.mount
 
 [Service]
 Type=oneshot
+# RemainAfterExit keeps the unit "active" so ExecStop really runs at
+# shutdown: a clean shutdown saves the clock (and refreshes the RTC), so the
+# next boot resumes from it instead of the image's bake date.
+RemainAfterExit=yes
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/rtc-sync.sh --if-ntp-missing
+ExecStop=/bin/bash ${GATEWAY_HOME}/scripts/rtc-sync.sh --systohc
 
 [Install]
 WantedBy=multi-user.target

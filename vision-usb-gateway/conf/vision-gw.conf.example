@@ -104,7 +104,7 @@ NAS_RSYNC_OPTS="-aH --partial --inplace --timeout=30"
 NAS_RETRY_MAX=5
 NAS_RETRY_BACKOFF=10
 
-# RTC
+# RTC + clock persistence
 # The unit is offline by design, so the RTC is its only source of wall-clock time
 # across a power cut — without it the clock rewinds to whatever was baked into the
 # image and files land under the wrong bydate/ folder. Needs a backup cell on the
@@ -114,9 +114,19 @@ NAS_RETRY_BACKOFF=10
 RTC_ENABLED=true
 RTC_DEVICE=/dev/rtc0
 RTC_UTC=true
-RTC_SYNC_INTERVAL=1h
+# Also the clock-persist save cadence (see below): a power cut loses at most
+# this much of the monotonic clock's progress.
+RTC_SYNC_INTERVAL=10min
 RTC_CHARGE_ENABLED=true
 RTC_CHARGE_UV=3000000
+# Monotonic clock persistence — works with no cell and no NTP: the last known
+# time is saved to the NVMe periodically and at clean shutdown, and each boot
+# steps the clock FORWARD to it (never backward), so a battery-less unit only
+# ever loses its powered-off duration and timestamps stay monotonic. A
+# battery-backed RTC remains authoritative; this covers no-cell and
+# flat-cell units. No external clock (AOI host included) is ever trusted.
+CLOCK_PERSIST_ENABLED=true
+CLOCK_PERSIST_FILE=/srv/vision_mirror/.state/last-known-time
 
 # USB export: plug a drive into one of the HOST ports (NOT the AOI's OTG port) and
 # it is mounted here automatically, so mirror data can be copied off by hand. The

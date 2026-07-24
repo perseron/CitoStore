@@ -3,7 +3,9 @@ Description=Periodic RTC Sync
 
 [Timer]
 OnBootSec=5min
-OnUnitActiveSec=1h
+# Also the clock-persist save cadence: a power cut loses at most this much
+# of the monotonic clock's progress (a clean shutdown saves via ExecStop).
+OnUnitActiveSec=10min
 
 [Install]
 WantedBy=timers.target

@@ -150,10 +150,15 @@ def select_scan_roots(
 
     # Everything written within the hot window is hot (dirs is sorted newest
     # first); SYNC_HOT_DIRS remains the floor so the newest dirs are always
-    # scanned even when nothing is recent.
+    # scanned even when nothing is recent. The reference point is the newest
+    # OBSERVED mtime, never this machine's clock: FAT mtimes are stamped by
+    # the AOI host, whose clock can be decades wrong (dead CMOS cell on a
+    # Win98-era PC, no NTP anywhere) — only recency RELATIVE to the host's
+    # own newest write is meaningful, and that stays correct under any skew
+    # in either direction.
     hot_window = max(0, int(getattr(cfg, "sync_hot_window_sec", 300)))
-    if hot_window:
-        cutoff = int(time.time()) - hot_window
+    if hot_window and dirs:
+        cutoff = dirs[0][1] - hot_window
         recent_n = sum(1 for _, mtime in dirs if mtime >= cutoff)
         hot_n = min(max(hot_n, recent_n), HOT_WINDOW_MAX_DIRS)
 
