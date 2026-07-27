@@ -287,6 +287,50 @@ def test_prefix_dirs_are_skipped_and_granularity_preserved(tmp_path: Path):
     assert "VisionData/Line1" in plan["shallow"]
 
 
+def test_prefix_skip_fires_next_to_the_persist_folder(tmp_path: Path):
+    """Every fresh volume carries the appliance's aoi_settings folder next to
+    the customer's tree — it must not veto the prefix skip, and its (flat)
+    content must stay on the shallow scan list so it is still captured."""
+    root = tmp_path / "snap"
+    base = 883_612_800
+    leaves = ["d1/SG1/S1/OK", "d2/SG1/S1/NG"]
+    for leaf in leaves:
+        d = root / "VisionData" / "Line1" / leaf
+        d.mkdir(parents=True)
+        (d / f"{leaf.replace('/', '_')}.jpg").write_bytes(leaf.encode())
+        os.utime(d, (base, base))
+    persist = root / "aoi_settings"
+    persist.mkdir()
+    (persist / "config.ini").write_bytes(b"cfg")
+
+    cfg = SimpleNamespace(
+        sync_scan_depth=4,
+        sync_hot_dirs=1,
+        sync_hot_window_sec=300,
+        sync_cold_audit_dirs_per_run=1,
+        sync_dir_index_file=tmp_path / "sync-dir-index-persist.json",
+        usb_persist_dir="aoi_settings",
+    )
+
+    roots, plan = select_scan_roots(cfg, root)
+    assert plan["prefix"] == "VisionData/Line1"
+    assert sorted(plan["hot"]) == ["d1/SG1/S1/OK", "d2/SG1/S1/NG"]
+    assert "aoi_settings" in plan["shallow"]
+
+    # And end-to-end: the persist folder's flat file is captured too.
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    copy_cfg = _sync_cfg(mirror, tmp_path, depth=4)
+    copy_cfg.usb_persist_dir = "aoi_settings"
+    try:
+        stable_and_copy(copy_cfg, root, conn)
+        got = _synced_paths(conn)
+    finally:
+        conn.close()
+    assert "aoi_settings/config.ini" in got
+    assert len(got) == 3
+
+
 def test_single_date_folder_edge_stays_fully_covered(tmp_path: Path):
     """Early in an LV's life only ONE date folder exists, so the prefix skip
     descends into it too — the granularity shifts but every file must still

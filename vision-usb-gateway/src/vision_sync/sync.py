@@ -167,7 +167,11 @@ HOT_WINDOW_MAX_DIRS = 64
 PREFIX_SKIP_MAX = 3
 
 
-def _skip_prefix_dirs(mount_root: Path, max_skip: int = PREFIX_SKIP_MAX) -> tuple[Path, list[str]]:
+def _skip_prefix_dirs(
+    mount_root: Path,
+    exempt_scan: frozenset = frozenset(),
+    max_skip: int = PREFIX_SKIP_MAX,
+) -> tuple[Path, list[str], list[str]]:
     """Descend through leading single-directory, file-free levels.
 
     When the AOI's save path gains fixed prefix folders (VisionData/Line1/...)
@@ -176,28 +180,51 @@ def _skip_prefix_dirs(mount_root: Path, max_skip: int = PREFIX_SKIP_MAX) -> tupl
     the hot/cold behaviour identical with no config change. Only levels with
     exactly one directory and zero files qualify — anything else is real
     layout, not prefix.
+
+    `exempt_scan` names appliance-managed constant dirs (the aoi_settings
+    persist folder) that sit NEXT to the customer's tree on every volume —
+    they must not veto the skip, but they fall outside the rebased subtree,
+    so each one seen at a skipped level is returned for the caller to keep
+    on the non-recursive shallow list (its content is flat by design).
+    Returns (base, prefix_chain, exempted mount_root-relative names).
     """
     base = mount_root
     chain: list[str] = []
+    exempted: list[str] = []
     for _ in range(max_skip):
         try:
             entries = [e for e in os.scandir(base) if e.name not in SKIP_DIRS]
         except FileNotFoundError:
             break
+        exempt_here = [
+            e for e in entries
+            if e.name in exempt_scan and e.is_dir(follow_symlinks=False)
+        ]
+        entries = [e for e in entries if e.name not in exempt_scan]
         subdirs = [e for e in entries if e.is_dir(follow_symlinks=False)]
         has_files = any(e.is_file(follow_symlinks=False) for e in entries)
         if len(subdirs) != 1 or has_files:
             break
+        exempted.extend(
+            "/".join(chain + [e.name]) for e in exempt_here
+        )
         chain.append(subdirs[0].name)
         base = Path(subdirs[0].path)
-    return base, chain
+    return base, chain, exempted
 
 
 def select_scan_roots(
     cfg, mount_root: Path, full_scan: bool = False
 ) -> tuple[list[Path], dict]:
     scan_depth = max(1, int(getattr(cfg, "sync_scan_depth", 1)))
-    scan_base, prefix_chain = _skip_prefix_dirs(mount_root)
+    # The persist folder (aoi_settings) is restored onto EVERY fresh volume
+    # right next to the customer's tree; without exempting it the "single
+    # directory" prefix test would never fire on a real unit.
+    persist_dir = str(getattr(cfg, "usb_persist_dir", "aoi_settings") or "")
+    exempt_scan = (
+        frozenset({persist_dir}) if persist_dir and persist_dir != "none" else frozenset()
+    )
+    scan_base, prefix_chain, exempted = _skip_prefix_dirs(mount_root, exempt_scan)
     dirs, shallow = scan_dirs_by_depth(scan_base, scan_depth)
     if not dirs and scan_depth > 1:
         # Safety fallback for shallower layouts.
@@ -208,11 +235,13 @@ def select_scan_roots(
     # Everything in the plan stays mount_root-relative: the prefix chain and
     # each level of it must keep getting the non-recursive shallow scan (a
     # file dropped next to the prefix folders must still be captured), and
-    # stable_and_copy builds its shallow roots from mount_root.
+    # stable_and_copy builds its shallow roots from mount_root. Exempted
+    # appliance dirs (aoi_settings) live outside the rebased subtree, so
+    # they ride the shallow list too.
     prefix_levels = [
         "/".join(prefix_chain[: i + 1]) for i in range(len(prefix_chain))
     ]
-    shallow_rel = prefix_levels + [
+    shallow_rel = prefix_levels + exempted + [
         f"{prefix}/{name}" if prefix else name for name in shallow
     ]
 

@@ -1,6 +1,12 @@
 [Unit]
 Description=Vision Gateway Health Check
-After=local-fs.target
+# The mirror mounts with nofail, so local-fs.target does NOT wait for it —
+# ordering on the mount unit itself is what actually serialises us behind
+# the LVM activation (seen failing at cold boot: "mirror not mounted").
+# Wants (not Requires): if the mirror really is gone, the health check must
+# still run and say so.
+After=local-fs.target srv-vision_mirror.mount
+Wants=srv-vision_mirror.mount
 Before=vision-gw-config.service usb-gadget.service vision-sync.service vision-monitor.service vision-rotator.service vision-webui.service
 
 [Service]
