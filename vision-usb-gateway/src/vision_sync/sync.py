@@ -21,9 +21,21 @@ def log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def _clean_file_mtimes(raw) -> dict:
+    if not isinstance(raw, dict):
+        return {}
+    out = {}
+    for k, v in raw.items():
+        try:
+            out[str(k)] = int(v)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 def load_dir_index(path: Path) -> dict:
     if not path.exists():
-        return {"version": SYNC_INDEX_VERSION, "cursor": 0}
+        return {"version": SYNC_INDEX_VERSION, "cursor": 0, "file_mtimes": {}}
     try:
         raw = json.loads(path.read_text())
         if not isinstance(raw, dict):
@@ -31,9 +43,10 @@ def load_dir_index(path: Path) -> dict:
         return {
             "version": int(raw.get("version", SYNC_INDEX_VERSION)),
             "cursor": int(raw.get("cursor", 0)),
+            "file_mtimes": _clean_file_mtimes(raw.get("file_mtimes")),
         }
     except Exception:
-        return {"version": SYNC_INDEX_VERSION, "cursor": 0}
+        return {"version": SYNC_INDEX_VERSION, "cursor": 0, "file_mtimes": {}}
 
 
 def save_dir_index(path: Path, state: dict) -> None:
@@ -44,12 +57,39 @@ def save_dir_index(path: Path, state: dict) -> None:
                 {
                     "version": SYNC_INDEX_VERSION,
                     "cursor": int(state.get("cursor", 0)),
+                    "file_mtimes": _clean_file_mtimes(state.get("file_mtimes")),
                     "ts": datetime.now().isoformat(timespec="seconds"),
                 }
             )
         )
     except Exception:
         return
+
+
+def update_dir_file_mtimes(path: Path, observed: dict) -> None:
+    """Merge per-dir newest OBSERVED file mtimes into the persisted index.
+
+    Directory mtimes only change when a DIRECT child is created, so on a
+    deeper-than-SYNC_SCAN_DEPTH layout an actively-written subtree's scan
+    unit looks stale within minutes and falls out of the hot window. The
+    newest file mtime each scan actually saw is the depth-proof hotness
+    signal; select_scan_roots folds it into the ordering next cycle. (The
+    map is pruned to the currently-existing dirs at every selection, so it
+    cannot grow without bound.)
+    """
+    if not observed:
+        return
+    state = load_dir_index(path)
+    merged = state.get("file_mtimes", {})
+    for name, mtime in observed.items():
+        try:
+            mtime = int(mtime)
+        except (TypeError, ValueError):
+            continue
+        if mtime > merged.get(name, 0):
+            merged[name] = mtime
+    state["file_mtimes"] = merged
+    save_dir_index(path, state)
 
 
 def scan_dirs_by_depth(root: Path, depth: int) -> tuple[list[tuple[str, int]], list[str]]:
@@ -120,30 +160,91 @@ def iter_root_files(root: Path) -> Iterator[tuple[Path, os.stat_result]]:
 # to a large-but-finite scan instead of an unbounded one.
 HOT_WINDOW_MAX_DIRS = 64
 
+# How many leading constant folders _skip_prefix_dirs may descend through. A
+# customer repointing the AOI's save path just prepends fixed folders; more
+# than a few constant levels is no longer a prefix but a layout we should
+# scan as-is.
+PREFIX_SKIP_MAX = 3
+
+
+def _skip_prefix_dirs(mount_root: Path, max_skip: int = PREFIX_SKIP_MAX) -> tuple[Path, list[str]]:
+    """Descend through leading single-directory, file-free levels.
+
+    When the AOI's save path gains fixed prefix folders (VisionData/Line1/...)
+    the depth-based scan units would silently shift up to intermediate levels
+    and lose granularity. Rebasing the scan below the constant prefix keeps
+    the hot/cold behaviour identical with no config change. Only levels with
+    exactly one directory and zero files qualify — anything else is real
+    layout, not prefix.
+    """
+    base = mount_root
+    chain: list[str] = []
+    for _ in range(max_skip):
+        try:
+            entries = [e for e in os.scandir(base) if e.name not in SKIP_DIRS]
+        except FileNotFoundError:
+            break
+        subdirs = [e for e in entries if e.is_dir(follow_symlinks=False)]
+        has_files = any(e.is_file(follow_symlinks=False) for e in entries)
+        if len(subdirs) != 1 or has_files:
+            break
+        chain.append(subdirs[0].name)
+        base = Path(subdirs[0].path)
+    return base, chain
+
 
 def select_scan_roots(
     cfg, mount_root: Path, full_scan: bool = False
 ) -> tuple[list[Path], dict]:
     scan_depth = max(1, int(getattr(cfg, "sync_scan_depth", 1)))
-    dirs, shallow = scan_dirs_by_depth(mount_root, scan_depth)
+    scan_base, prefix_chain = _skip_prefix_dirs(mount_root)
+    dirs, shallow = scan_dirs_by_depth(scan_base, scan_depth)
     if not dirs and scan_depth > 1:
         # Safety fallback for shallower layouts.
-        dirs, shallow = scan_dirs_by_depth(mount_root, 1)
+        dirs, shallow = scan_dirs_by_depth(scan_base, 1)
         scan_depth = 1
-    dir_names = [name for name, _ in dirs]
+
+    prefix = "/".join(prefix_chain)
+    # Everything in the plan stays mount_root-relative: the prefix chain and
+    # each level of it must keep getting the non-recursive shallow scan (a
+    # file dropped next to the prefix folders must still be captured), and
+    # stable_and_copy builds its shallow roots from mount_root.
+    prefix_levels = [
+        "/".join(prefix_chain[: i + 1]) for i in range(len(prefix_chain))
+    ]
+    shallow_rel = prefix_levels + [
+        f"{prefix}/{name}" if prefix else name for name in shallow
+    ]
 
     if full_scan:
         # Offline export before a wipe: every directory, no cursor state
         # touched. The hot/cold selection exists to keep the ~30s live cycle
         # cheap; a final pass before the LV is destroyed must see everything.
-        return [mount_root / name for name in dir_names], {
+        dir_names = [name for name, _ in dirs]
+        return [scan_base / name for name in dir_names], {
             "top_dirs": len(dir_names),
             "depth": scan_depth,
+            "base": str(scan_base),
+            "prefix": prefix,
             "hot": dir_names,
             "audit": [],
             "selected": dir_names,
-            "shallow": shallow,
+            "shallow": shallow_rel,
         }
+
+    state = load_dir_index(cfg.sync_dir_index_file)
+
+    # Fold in the newest file mtime each dir's last scan observed: directory
+    # mtimes only move when a DIRECT child appears, so on deeper-than-depth
+    # layouts an actively-written subtree otherwise looks stale within
+    # minutes and starves behind the cold cursor.
+    file_mtimes = state.get("file_mtimes", {})
+    if file_mtimes:
+        dirs = [
+            (name, max(mtime, file_mtimes.get(name, 0))) for name, mtime in dirs
+        ]
+        dirs.sort(key=lambda x: (x[1], x[0]), reverse=True)
+    dir_names = [name for name, _ in dirs]
 
     hot_n = max(0, int(getattr(cfg, "sync_hot_dirs", 1)))
     audit_n = max(0, int(getattr(cfg, "sync_cold_audit_dirs_per_run", 1)))
@@ -165,7 +266,6 @@ def select_scan_roots(
     hot_names = dir_names[:hot_n]
     cold_names = dir_names[hot_n:]
 
-    state = load_dir_index(cfg.sync_dir_index_file)
     cursor = int(state.get("cursor", 0))
     audit_names: list[str] = []
     if cold_names and audit_n > 0:
@@ -177,6 +277,12 @@ def select_scan_roots(
         state["cursor"] = (start + take) % len(cold_names)
     else:
         state["cursor"] = 0
+    # Prune the observed-mtime map to dirs that still exist so it stays
+    # bounded across rotations/reformats.
+    existing = set(dir_names)
+    state["file_mtimes"] = {
+        k: v for k, v in file_mtimes.items() if k in existing
+    }
     save_dir_index(cfg.sync_dir_index_file, state)
 
     selected_names: list[str] = []
@@ -187,14 +293,16 @@ def select_scan_roots(
         seen.add(name)
         selected_names.append(name)
 
-    roots = [mount_root / name for name in selected_names]
+    roots = [scan_base / name for name in selected_names]
     plan = {
         "top_dirs": len(dir_names),
         "depth": scan_depth,
+        "base": str(scan_base),
+        "prefix": prefix,
         "hot": hot_names,
         "audit": audit_names,
         "selected": selected_names,
-        "shallow": shallow,
+        "shallow": shallow_rel,
     }
     return roots, plan
 
@@ -665,29 +773,32 @@ def stable_and_copy(
         "log_every": max(0, int(getattr(cfg, "sync_log_every", 0))),
     }
     selected_roots, scan_plan = select_scan_roots(cfg, mount_root, full_scan=full_scan)
+    prefix_note = f" prefix={scan_plan['prefix']}" if scan_plan.get("prefix") else ""
     if full_scan:
         log(
             f"sync plan: FULL (offline export) depth={scan_plan['depth']}"
-            f" dirs={scan_plan['top_dirs']}"
+            f" dirs={scan_plan['top_dirs']}{prefix_note}"
         )
     elif scan_plan["selected"]:
         log(
             "sync plan: "
             f"depth={scan_plan['depth']} "
-            f"top_dirs={scan_plan['top_dirs']} "
+            f"top_dirs={scan_plan['top_dirs']}{prefix_note} "
             f"hot={','.join(scan_plan['hot']) if scan_plan['hot'] else '-'} "
             f"audit={','.join(scan_plan['audit']) if scan_plan['audit'] else '-'}"
         )
     else:
         log(
             f"sync plan: depth={scan_plan['depth']}"
-            f" top_dirs={scan_plan['top_dirs']} root-files-only"
+            f" top_dirs={scan_plan['top_dirs']}{prefix_note} root-files-only"
         )
 
     # Files parked above SYNC_SCAN_DEPTH (snapshot root included) never appear
     # under a selected root, so scan those levels non-recursively every run.
     shallow_roots = [mount_root] + [mount_root / name for name in scan_plan["shallow"]]
 
+    scan_base = Path(scan_plan.get("base", str(mount_root)))
+    observed_mtimes: dict[str, int] = {}
     try:
         # Every level from the root down to SYNC_SCAN_DEPTH, non-recursive.
         for shallow in shallow_roots:
@@ -700,15 +811,25 @@ def stable_and_copy(
         for root in selected_roots:
             if not root.exists():
                 continue
+            root_name = root.relative_to(scan_base).as_posix()
+            newest = 0
             for path, st in iter_files(root):
+                if st.st_mtime > newest:
+                    newest = int(st.st_mtime)
                 _process_file(
                     path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now,
                     counters, force_stable,
                 )
+            if newest:
+                observed_mtimes[root_name] = newest
         conn.commit()
     except Exception:
         conn.rollback()
         raise
+    # Feed the depth-proof hotness signal back for the next selection (the
+    # live path only — the offline export has no next cycle).
+    if not full_scan:
+        update_dir_file_mtimes(cfg.sync_dir_index_file, observed_mtimes)
     log(
         f"sync summary: scanned={counters['scanned']}"
         f" synced={counters['synced']}"

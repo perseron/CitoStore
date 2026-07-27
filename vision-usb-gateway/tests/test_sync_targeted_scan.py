@@ -81,12 +81,16 @@ def test_select_scan_roots_uses_depth_and_skips_system_dirs(tmp_path: Path):
     )
 
     roots, plan = select_scan_roots(cfg, root)
-    assert plan["depth"] == 4
+    # The single-child, file-free cv-x/image/SD1_000 chain is treated as a
+    # constant prefix (System Volume Information is ignored for that
+    # decision); the sessions become depth-1 units below it — same scan
+    # units as the old explicit-depth behaviour reached.
+    assert plan["prefix"] == "cv-x/image/SD1_000"
     assert [p.as_posix() for p in roots] == [
         (root / "cv-x/image/SD1_000/session_new").as_posix(),
         (root / "cv-x/image/SD1_000/session_old").as_posix(),
     ]
-    # Every level above SYNC_SCAN_DEPTH must still be scanned non-recursively.
+    # Every level above the units must still be scanned non-recursively.
     assert plan["shallow"] == ["cv-x", "cv-x/image", "cv-x/image/SD1_000"]
 
 
@@ -199,9 +203,11 @@ def test_offline_full_scan_captures_dirs_the_live_selection_missed(tmp_path: Pat
     """Regression for the rotation data-destruction bug: the offline export
     inherited the live hot/cold 2-dir selection, so the reformat that follows
     destroyed every file in the unselected directories (measured 46% total
-    loss under the real nested date/SceneGroup/Scene/OK-NG layout)."""
+    loss under the real nested date/SceneGroup/Scene/OK-NG layout). Two date
+    folders so the top level is not a skippable single-dir prefix."""
     root = tmp_path / "snap"
-    for leaf in ["day/SG1/S1/OK", "day/SG1/S1/NG", "day/SG2/S1/OK", "day/SG2/S2/NG"]:
+    leaves = ["day1/SG1/S1/OK", "day1/SG1/S1/NG", "day2/SG2/S1/OK", "day2/SG2/S2/NG"]
+    for leaf in leaves:
         d = root / leaf
         d.mkdir(parents=True)
         (d / f"{leaf.replace('/', '_')}.jpg").write_bytes(leaf.encode())
@@ -246,6 +252,129 @@ def test_hot_window_promotes_every_recently_written_dir(tmp_path: Path):
     assert sorted(plan["hot"]) == [f"active{i}" for i in range(5)]
     assert plan["audit"] == ["closed"]
     assert len(roots) == 6
+
+
+def test_prefix_dirs_are_skipped_and_granularity_preserved(tmp_path: Path):
+    """A customer repointing the AOI save path prepends constant folders
+    (VisionData/Line1/...). The scan must rebase below them so the depth-4
+    units stay date/SG/Scene/OK-NG — with no config change. Two date folders,
+    as in any real run: the skip must stop at the constant prefix and not
+    consume the date level."""
+    root = tmp_path / "snap"
+    base = 883_612_800
+    leaves = ["d1/SG1/S1/OK", "d1/SG1/S1/NG", "d2/SG2/S1/OK"]
+    for leaf in leaves:
+        d = root / "VisionData" / "Line1" / leaf
+        d.mkdir(parents=True)
+        (d / f"{leaf.replace('/', '_')}.jpg").write_bytes(leaf.encode())
+        os.utime(d, (base, base))
+
+    cfg = SimpleNamespace(
+        sync_scan_depth=4,
+        sync_hot_dirs=1,
+        sync_hot_window_sec=300,
+        sync_cold_audit_dirs_per_run=1,
+        sync_dir_index_file=tmp_path / "sync-dir-index-prefix.json",
+    )
+
+    roots, plan = select_scan_roots(cfg, root)
+    assert plan["prefix"] == "VisionData/Line1"
+    # Units are the OK/NG leaves below the prefix, not intermediate dirs.
+    assert sorted(plan["hot"]) == ["d1/SG1/S1/NG", "d1/SG1/S1/OK", "d2/SG2/S1/OK"]
+    # The prefix levels themselves stay on the shallow (non-recursive) list
+    # so a stray file dropped next to them is still captured.
+    assert "VisionData" in plan["shallow"]
+    assert "VisionData/Line1" in plan["shallow"]
+
+
+def test_single_date_folder_edge_stays_fully_covered(tmp_path: Path):
+    """Early in an LV's life only ONE date folder exists, so the prefix skip
+    descends into it too — the granularity shifts but every file must still
+    be captured by the recursive unit scans."""
+    root = tmp_path / "snap"
+    leaves = ["only-day/SG1/S1/OK", "only-day/SG2/S1/NG"]
+    for leaf in leaves:
+        d = root / "Vision" / leaf
+        d.mkdir(parents=True)
+        (d / f"{leaf.replace('/', '_')}.jpg").write_bytes(leaf.encode())
+
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    cfg = _sync_cfg(mirror, tmp_path, depth=4)
+    try:
+        stable_and_copy(cfg, root, conn)
+        got = _synced_paths(conn)
+    finally:
+        conn.close()
+
+    assert got == sorted(
+        f"Vision/{leaf}/{leaf.replace('/', '_')}.jpg" for leaf in leaves
+    )
+
+
+def test_deep_prefixed_layout_full_copy_and_offline_export(tmp_path: Path):
+    """End-to-end with 2 extra leading levels: the live pass and the offline
+    full export must both capture every file, mirrored under the FULL
+    original path (prefix included)."""
+    root = tmp_path / "snap"
+    leaves = ["d1/SG1/S1/OK", "d1/SG1/S1/NG", "d1/SG2/S1/OK", "d1/SG2/S2/NG"]
+    for leaf in leaves:
+        d = root / "Vision" / "L1" / leaf
+        d.mkdir(parents=True)
+        (d / f"{leaf.replace('/', '_')}.jpg").write_bytes(leaf.encode())
+
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    cfg = _sync_cfg(mirror, tmp_path, depth=4)
+    try:
+        stable_and_copy(cfg, root, conn, force_stable=True, full_scan=True)
+        got = _synced_paths(conn)
+    finally:
+        conn.close()
+
+    assert got == sorted(
+        f"Vision/L1/{leaf}/{leaf.replace('/', '_')}.jpg" for leaf in leaves
+    )
+
+
+def test_observed_file_mtime_keeps_deep_subtree_hot(tmp_path: Path):
+    """Directory mtimes only move when a DIRECT child appears; on a layout
+    deeper than SYNC_SCAN_DEPTH the scan unit is an intermediate dir whose
+    mtime goes stale while files pour in below it. The newest file mtime a
+    scan observed must keep that unit hot on the next selection."""
+    root = tmp_path / "snap"
+    base = 883_612_800
+    # Two units at depth 1; "active" has a subdir with a FRESH file but a
+    # STALE dir mtime, "idle" has newer dir mtime than active's dir.
+    active_leaf = root / "active" / "deep"
+    active_leaf.mkdir(parents=True)
+    f = active_leaf / "fresh.jpg"
+    f.write_bytes(b"x")
+    os.utime(f, (base + 10_000, base + 10_000))
+    os.utime(active_leaf, (base, base))
+    os.utime(root / "active", (base, base))
+    idle = root / "idle"
+    idle.mkdir()
+    os.utime(idle, (base + 500, base + 500))
+
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    cfg = _sync_cfg(mirror, tmp_path, depth=1)
+    cfg.sync_hot_dirs = 1
+    cfg.sync_hot_window_sec = 300
+    cfg.sync_cold_audit_dirs_per_run = 1
+    try:
+        # Without the observed-mtime signal, "idle" (newer dir mtime) wins
+        # the hot slot...
+        _, plan_before = select_scan_roots(cfg, root)
+        assert plan_before["hot"] == ["idle"]
+        # ...but a scan pass records active's fresh FILE mtime...
+        stable_and_copy(cfg, root, conn)
+        # ...so the next selection puts "active" on top.
+        _, plan_after = select_scan_roots(cfg, root)
+        assert plan_after["hot"][0] == "active"
+    finally:
+        conn.close()
 
 
 def test_hot_window_is_clock_independent(tmp_path: Path):

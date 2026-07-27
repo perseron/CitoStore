@@ -60,8 +60,13 @@ SYNC_HOT_DIRS=1
 # Every leaf dir written within this window counts as hot (SYNC_HOT_DIRS is
 # only the floor). An AOI writing date/SceneGroup/Scene/OK-NG touches ~8
 # leaves concurrently; a fixed top-1 hot pick starves the rest. 0 disables.
+# Note: constant prefix folders prepended to the AOI's save path (e.g.
+# VisionData/Line1/) are skipped automatically — SYNC_SCAN_DEPTH counts from
+# below them, so a repointed save path needs no config change.
 SYNC_HOT_WINDOW_SEC=300
-SYNC_COLD_AUDIT_DIRS_PER_RUN=1
+# 4 (not 1): with nested layouts a closed date-folder's tail waits for this
+# round-robin; at 4/cycle the tail drains in ~10-15 min instead of 35+.
+SYNC_COLD_AUDIT_DIRS_PER_RUN=4
 SYNC_DIR_INDEX_FILE=/srv/vision_mirror/.state/sync-dir-index.json
 RAW_APPEND_ALWAYS=false
 BYDATE_USE_FILE_TIME=false

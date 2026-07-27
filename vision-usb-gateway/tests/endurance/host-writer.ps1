@@ -32,7 +32,8 @@ param(
   [string[]]$SceneGroups = @("SG1", "SG2"),
   [string[]]$Scenes = @("Scene1", "Scene2"),
   [double]$OkRatio = 0.9,        # fraction classified OK vs NG
-  [int]$MaxPerDateFolder = 1000  # cap per date-folder (all scenes/OK-NG combined)
+  [int]$MaxPerDateFolder = 1000, # cap per date-folder (all scenes/OK-NG combined)
+  [string]$PrefixPath = ""       # constant leading folders, e.g. "VisionData\Line1" — emulates a repointed AOI save path
 )
 $ErrorActionPreference = "Continue"
 
@@ -103,6 +104,7 @@ function Write-OneProbe {
   $scene = $Scenes[[math]::Floor($script:i / $SceneGroups.Count) % $Scenes.Count]
   $okng  = if ((Get-Random -Minimum 0.0 -Maximum 1.0) -lt $OkRatio) { "OK" } else { "NG" }
   $relDir = Join-Path (Join-Path (Join-Path $dateFolder $sg) $scene) $okng
+  if ($PrefixPath) { $relDir = Join-Path $PrefixPath $relDir }
   $destDir = Join-Path "$Drive\" $relDir
 
   $t0 = Get-Date

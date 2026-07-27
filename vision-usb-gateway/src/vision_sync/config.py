@@ -103,7 +103,7 @@ def get_config(path: str) -> Config:
     sync_scan_depth = int(data.get("SYNC_SCAN_DEPTH", "1"))
     sync_hot_dirs = int(data.get("SYNC_HOT_DIRS", "1"))
     sync_hot_window_sec = int(data.get("SYNC_HOT_WINDOW_SEC", "300"))
-    sync_cold_audit_dirs_per_run = int(data.get("SYNC_COLD_AUDIT_DIRS_PER_RUN", "1"))
+    sync_cold_audit_dirs_per_run = int(data.get("SYNC_COLD_AUDIT_DIRS_PER_RUN", "4"))
     sync_dir_index_file = Path(
         data.get("SYNC_DIR_INDEX_FILE", str(mirror_mount / ".state" / "sync-dir-index.json"))
     )
