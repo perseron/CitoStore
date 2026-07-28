@@ -103,6 +103,9 @@ def usage_pct():
     total, used, _ = shutil.disk_usage(mirror)
     return int(used * 100 / total)
 
+def free_bytes():
+    return shutil.disk_usage(mirror)[2]
+
 def remove_empty_ancestors(path: Path, stop: Path) -> None:
     d = path.parent
     for _ in range(8):
@@ -209,7 +212,18 @@ if not dry:
 
 progress_failures = 0
 while usage_pct() >= ret_hi:
-    before = usage_pct()
+    # Progress is measured in FREE BYTES, not integer percent: one 2 MB image
+    # off an 842 GB mirror does not move the integer percent at all, so the
+    # old `after_pct >= before_pct` check counted EVERY single-file delete as
+    # "no progress". After 3 of them it fell to file_fallback_delete_one(),
+    # which walks the entire raw+bydate tree (~hundreds of thousands of stats)
+    # to delete ONE more file — then did it again 3 deletes later. Reaching
+    # RETENTION_LO from a full mirror is ~50k deletes, i.e. ~12k full-tree
+    # walks: a run that should take seconds ran 15+ min at 100% CPU with the
+    # mirror barely moving. Free bytes moves on every real delete, so the
+    # fallback now only fires on genuine no-ops (an orphaned DB row whose file
+    # is already gone), which is what it was always meant for.
+    before_free = free_bytes()
     # Walk oldest-first and skip anything an operator protected. SQL cannot know
     # about the protected roots, so ask for a window rather than a single row —
     # otherwise one protected file at the head of the queue stalls the whole run.
@@ -259,13 +273,13 @@ while usage_pct() >= ret_hi:
     if usage_pct() <= ret_lo:
         break
 
-    after = usage_pct()
-    if after >= before:
+    if free_bytes() <= before_free:
         progress_failures += 1
     else:
         progress_failures = 0
 
-    # DB says we deleted, but usage didn't move; use file fallback.
+    # DB says we deleted, but no space was actually freed (orphaned row whose
+    # file is already gone); use the file fallback to make real progress.
     if progress_failures >= 3:
         if file_fallback_delete_one():
             progress_failures = 0
