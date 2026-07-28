@@ -103,9 +103,6 @@ def usage_pct():
     total, used, _ = shutil.disk_usage(mirror)
     return int(used * 100 / total)
 
-def free_bytes():
-    return shutil.disk_usage(mirror)[2]
-
 def remove_empty_ancestors(path: Path, stop: Path) -> None:
     d = path.parent
     for _ in range(8):
@@ -210,48 +207,48 @@ if not dry:
     conn.execute("DELETE FROM file_state WHERE last_seen < ?", (now - ttl,))
     conn.commit()
 
-progress_failures = 0
-while usage_pct() >= ret_hi:
-    # Progress is measured in FREE BYTES, not integer percent: one 2 MB image
-    # off an 842 GB mirror does not move the integer percent at all, so the
-    # old `after_pct >= before_pct` check counted EVERY single-file delete as
-    # "no progress". After 3 of them it fell to file_fallback_delete_one(),
-    # which walks the entire raw+bydate tree (~hundreds of thousands of stats)
-    # to delete ONE more file — then did it again 3 deletes later. Reaching
-    # RETENTION_LO from a full mirror is ~50k deletes, i.e. ~12k full-tree
-    # walks: a run that should take seconds ran 15+ min at 100% CPU with the
-    # mirror barely moving. Free bytes moves on every real delete, so the
-    # fallback now only fires on genuine no-ops (an orphaned DB row whose file
-    # is already gone), which is what it was always meant for.
-    before_free = free_bytes()
-    # Walk oldest-first and skip anything an operator protected. SQL cannot know
-    # about the protected roots, so ask for a window rather than a single row —
-    # otherwise one protected file at the head of the queue stalls the whole run.
-    row = None
-    for cand in conn.execute(
+# We are here only because the bash gate above already saw usage >=
+# RETENTION_HI. Delete oldest-first down to RETENTION_LO (the target; the old
+# `while usage_pct() >= ret_hi` exited the instant usage dropped below HI, so
+# it only ever freed to ~HI and re-triggered on the next timer). Process in
+# batches with ONE commit per batch, and NEVER walk the whole tree per file:
+# an orphaned DB row (file already gone, e.g. a killed earlier run deleted the
+# file but never blanked the row) is blanked here just like a real delete —
+# self-clearing in O(1) — instead of dropping to the O(whole-tree) fallback
+# every few rows, which is what pinned a real run at 100% CPU for 15+ minutes
+# while the mirror barely moved off 97%.
+BATCH = 500
+while usage_pct() > ret_lo:
+    rows = conn.execute(
         "SELECT id, raw_path, bydate_path FROM synced_files "
         "WHERE raw_path != '' OR bydate_path != '' "
-        "ORDER BY synced_at ASC LIMIT 200"
-    ):
-        paths = [Path(p) for p in (cand["raw_path"], cand["bydate_path"]) if p]
-        if any(is_protected(p) for p in paths):
-            continue
-        row = cand
-        break
-    if row is None:
+        "ORDER BY synced_at ASC LIMIT ?",
+        (BATCH,),
+    ).fetchall()
+
+    if not rows:
+        # DB has no more deletable rows; reclaim any non-DB data (e.g. FTP/SFTP
+        # ingest, which isn't tracked in synced_files) directly. Stops when it
+        # can free nothing more.
         if not file_fallback_delete_one():
-            break
-        progress_failures = 0
-        if usage_pct() <= ret_lo:
             break
         continue
 
-    raw = Path(row["raw_path"]) if row["raw_path"] else None
-    bydate = Path(row["bydate_path"]) if row["bydate_path"] else None
-
-    if dry:
-        print(f"DRY delete: {raw} and {bydate}")
-    else:
+    blanked = []
+    for row in rows:
+        if protected:
+            # SQL can't know the protected roots; skip them here. (is_protected
+            # short-circuits to False when nothing is protected, so this whole
+            # branch is free in the common case.)
+            paths = [Path(p) for p in (row["raw_path"], row["bydate_path"]) if p]
+            if any(is_protected(p) for p in paths):
+                continue
+        if dry:
+            print(f"DRY delete: {row['raw_path']} and {row['bydate_path']}")
+            blanked.append(row["id"])
+            continue
+        bydate = Path(row["bydate_path"]) if row["bydate_path"] else None
+        raw = Path(row["raw_path"]) if row["raw_path"] else None
         for p in (bydate, raw):
             if p is None:
                 continue
@@ -259,32 +256,28 @@ while usage_pct() >= ret_hi:
                 p.unlink(missing_ok=True)
             except OSError:
                 pass
-        # Keep the identity row (blank its paths) so the same file still on the
-        # active USB LV is not re-synced back into the mirror; age-prune clears
-        # it later. This is what stops the retention<->sync re-copy churn.
-        conn.execute(
-            "UPDATE synced_files SET raw_path='', bydate_path='' WHERE id=?",
-            (row["id"],),
-        )
-        conn.commit()
         if bydate is not None:
             remove_empty_ancestors(bydate, Path(mirror) / "bydate")
+        blanked.append(row["id"])
 
-    if usage_pct() <= ret_lo:
-        break
+    # Keep the identity rows (blank their paths, not delete) so a file still on
+    # the active USB LV is not re-synced back into the mirror; the age-prune
+    # above clears them later. One executemany+commit per batch, not per file.
+    if not dry and blanked:
+        conn.executemany(
+            "UPDATE synced_files SET raw_path='', bydate_path='' WHERE id=?",
+            [(i,) for i in blanked],
+        )
+        conn.commit()
 
-    if free_bytes() <= before_free:
-        progress_failures += 1
-    else:
-        progress_failures = 0
-
-    # DB says we deleted, but no space was actually freed (orphaned row whose
-    # file is already gone); use the file fallback to make real progress.
-    if progress_failures >= 3:
-        if file_fallback_delete_one():
-            progress_failures = 0
-        else:
+    if not blanked:
+        # Every row in this window was protected; the DB can't free anything.
+        # Direct file deletion (also protection-aware) handles the rest.
+        if not file_fallback_delete_one():
             break
+
+    if dry:
+        break
 
 # Protection holds: protected data is never deleted to make room. But retention
 # giving up quietly is how the mirror fills, the sync's free-space guard trips,
