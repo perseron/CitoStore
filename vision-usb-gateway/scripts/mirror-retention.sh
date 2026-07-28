@@ -83,6 +83,16 @@ def load_protected() -> list:
 protected = load_protected()
 
 def is_protected(path: Path) -> bool:
+    # path.resolve() walks and stats EVERY path component from / down (Python
+    # checks each one for a symlink) -- ~30 syscalls per call at this mirror's
+    # path depth, x2 (raw_path + bydate_path) per file the delete loop looks
+    # at. With no protected folders configured (the common case) this bought
+    # nothing: caught live on the endurance board, a retention run that
+    # should free ~100GB (tens of thousands of files) never got past 100%
+    # CPU in resolve() after 15+ minutes. Skip it entirely when there is
+    # nothing to protect against.
+    if not protected:
+        return False
     try:
         rp = path.resolve()
     except OSError:
