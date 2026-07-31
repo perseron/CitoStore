@@ -41,6 +41,31 @@ else
   mkdir -p "$STATE_DIR"
 fi
 
+# Self-heal an incomplete NVMe layout. A factory reset / provision creates the
+# USB LVs LAST, so if that step is interrupted the unit can boot with the thin
+# pool present but usb_0..2 missing — seen for real when a power loss (no
+# supplementary supply) hit mid-wipe: usb-gadget then cannot open its backing
+# files and there was no automatic way back, only manual repair. We run
+# Before=usb-gadget.service, so complete the layout here via the idempotent
+# 30_setup (no --wipe: it only creates what is missing and never repartitions).
+# Gated on the pool existing + at least one USB LV missing, so a healthy boot
+# does nothing.
+THINPOOL_LV="${THINPOOL_LV:-usbpool}"
+if lvs "$VG/$THINPOOL_LV" >/dev/null 2>&1; then
+  usb_lv_missing=false
+  for _lv in "${USB_LVS[@]}"; do
+    lvs "$VG/$_lv" >/dev/null 2>&1 || usb_lv_missing=true
+  done
+  if [[ "$usb_lv_missing" == true ]]; then
+    log "USB LV(s) missing under existing pool; completing NVMe layout (interrupted-rebuild recovery)"
+    if bash "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" >/dev/null 2>&1; then
+      health_warn "USB LV(s) were missing; NVMe layout auto-completed"
+    else
+      health_warn "USB LV(s) missing and auto-complete failed"
+    fi
+  fi
+fi
+
 # Ensure shadow config exists; fall back to default.
 if [[ ! -f "$STATE_DIR/vision-gw.conf" && -f "$DEFAULT_CONF" ]]; then
   log "shadow config missing; restoring default"
