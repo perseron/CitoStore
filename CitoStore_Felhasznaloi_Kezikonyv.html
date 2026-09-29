@@ -185,6 +185,47 @@
     main{padding:0 20px 72px}
     .masthead{padding:36px 0 26px}
   }
+
+  /* ---- v1.1 additions ---- */
+  nav.toc .grp{font-family:var(--mono);font-size:.6rem;letter-spacing:.18em;
+    text-transform:uppercase;color:var(--ink-faint);margin:16px 8px 4px;font-weight:600;
+    break-after:avoid}
+  nav.toc .grp:first-child{margin-top:0}
+  .new{display:inline-block;font-family:var(--mono);font-size:.56rem;letter-spacing:.12em;
+    text-transform:uppercase;font-weight:700;color:var(--ok);border:1px solid var(--ok);
+    border-radius:4px;padding:0 .38em;line-height:1.55;vertical-align:.18em;margin-left:.5em;
+    white-space:nowrap}
+  nav.toc .new{font-size:.5rem;margin-left:auto;vertical-align:0}
+  .ui{font-family:var(--mono);font-size:.8em;color:var(--ink-faint);font-weight:400;
+    white-space:nowrap}
+  .whatsnew{margin-top:26px;border:1px solid var(--line);border-radius:10px;
+    background:var(--surface);padding:18px 22px}
+  .whatsnew .k{font-family:var(--mono);font-size:.64rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--ok);font-weight:600;margin-bottom:6px}
+  .whatsnew ul{margin:6px 0 0;columns:2 280px;column-gap:28px;font-size:.92rem}
+  .whatsnew li{margin:4px 0;break-inside:avoid}
+  .route{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin:22px 0}
+  .route .card{border:1px solid var(--line);border-radius:10px;background:var(--surface);
+    padding:16px 18px}
+  .route .card .tag{font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:4px}
+  .route .card .lab{font-weight:650;font-size:1.02rem;line-height:1.25}
+  .route .card p{margin:6px 0 0;font-size:.9rem;color:var(--ink-soft)}
+  .addr{display:block;font-family:var(--mono);font-size:.9rem;background:var(--surface-2);
+    border:1px solid var(--line);border-radius:6px;padding:8px 12px;margin:8px 0;
+    overflow-x:auto;white-space:nowrap}
+  td .addr{margin:0;padding:3px 8px;font-size:.84rem;display:inline-block}
+  .flow .node{flex-basis:108px;min-width:108px}
+
+  @media print{
+    html{scroll-behavior:auto}
+    body{background:#fff}
+    .rail{background:#fff}
+    .sec-head,h2,h3,h4{break-after:avoid}
+    .note,.flow,.route .card,.whatsnew,tr,ol.steps>li,.specstrip,.chips{break-inside:avoid}
+    a{text-decoration:none}
+    .addr{white-space:pre-wrap;overflow-wrap:anywhere;overflow:visible}
+  }
 </style>
 </head>
 <body>
@@ -195,32 +236,42 @@
     <div class="brand">
       <span class="glyph">◧ VISION USB GATEWAY</span>
       <span class="name">CitoStore</span>
-      <span class="model">CM5 · felhasználói kézikönyv</span>
+      <span class="model">CM5 · felhasználói kézikönyv · v1.1</span>
     </div>
     <nav class="toc" aria-label="Tartalomjegyzék">
+      <div class="grp">Alapok</div>
       <a href="#s1"><span class="n">1</span> Bevezetés</a>
       <a href="#s2"><span class="n">2</span> Hogyan működik</a>
       <a href="#s3"><span class="n">3</span> Csatlakozók &amp; hardver</a>
       <a href="#s4"><span class="n">4</span> Telepítés &amp; bekötés</a>
-      <a href="#s5"><span class="n">5</span> Első üzembe helyezés</a>
-      <a href="#s6"><span class="n">6</span> Webes kezelőfelület</a>
-      <a href="#s7" class="spacer"><span class="n">7</span> USB AOI (OTG)</a>
-      <a href="#s8"><span class="n">8</span> Ethernet AOI (ingest)</a>
-      <a href="#s9"><span class="n">9</span> SMB megosztás</a>
-      <a href="#s10"><span class="n">10</span> NAS mentés</a>
-      <a href="#s11"><span class="n">11</span> Hálózat</a>
-      <a href="#s12" class="spacer"><span class="n">12</span> Karbantartás</a>
-      <a href="#s13"><span class="n">13</span> Egység cseréje</a>
-      <a href="#s14"><span class="n">14</span> Biztonság &amp; hozzáférés</a>
-      <a href="#s15"><span class="n">15</span> Hibaelhárítás</a>
-      <a href="#s16" class="spacer"><span class="n">16</span> Műszaki adatok</a>
-      <a href="#s17"><span class="n">17</span> Konfig-referencia</a>
+      <a href="#s5"><span class="n">5</span> Csatlakozási útmutató <span class="new">új</span></a>
+      <a href="#s6"><span class="n">6</span> Első üzembe helyezés</a>
+      <a href="#s7"><span class="n">7</span> Webes kezelőfelület</a>
+      <div class="grp">Adatgyűjtés</div>
+      <a href="#s8"><span class="n">8</span> USB AOI (OTG)</a>
+      <a href="#s9"><span class="n">9</span> Ethernet AOI (ingest)</a>
+      <div class="grp">Adatelérés</div>
+      <a href="#s10"><span class="n">10</span> SMB megosztás &amp; FTP</a>
+      <a href="#s11"><span class="n">11</span> Kimásolás USB-re <span class="new">új</span></a>
+      <a href="#s12"><span class="n">12</span> Védett mappák <span class="new">új</span></a>
+      <a href="#s13"><span class="n">13</span> NAS mentés</a>
+      <div class="grp">Rendszer</div>
+      <a href="#s14"><span class="n">14</span> Hálózat</a>
+      <a href="#s15"><span class="n">15</span> Rendszeridő <span class="new">új</span></a>
+      <a href="#s16"><span class="n">16</span> Karbantartás</a>
+      <a href="#s17"><span class="n">17</span> Egység cseréje</a>
+      <a href="#s18"><span class="n">18</span> 24/7 üzem &amp; önjavítás <span class="new">új</span></a>
+      <a href="#s19"><span class="n">19</span> Biztonság &amp; hozzáférés</a>
+      <a href="#s20"><span class="n">20</span> Hibaelhárítás</a>
+      <div class="grp">Referencia</div>
+      <a href="#s21"><span class="n">21</span> Műszaki adatok</a>
+      <a href="#s22"><span class="n">22</span> Konfig-referencia</a>
     </nav>
   </aside>
 
   <main>
     <header class="masthead">
-      <p class="eyebrow">Felhasználói kézikönyv · v1.0</p>
+      <p class="eyebrow">Felhasználói kézikönyv · v1.1</p>
       <h1>CitoStore Vision USB Gateway</h1>
       <p class="lede">Autonóm adatgyűjtő és tár-mirror ipari képfeldolgozó (AOI)
         rendszerekhez. A gépnek egyszerű USB-meghajtónak látszik — a háttérben az
@@ -232,7 +283,23 @@
         <div class="cell"><div class="k">Táplálás</div><div class="v">PoE+ / DC</div></div>
         <div class="cell"><div class="k">Adattár</div><div class="v">NVMe · 100&nbsp;GB–több&nbsp;TB</div></div>
         <div class="cell"><div class="k">AOI-bemenet</div><div class="v">USB-OTG + Ethernet</div></div>
-        <div class="cell"><div class="k">Megosztás</div><div class="v">SMB / opc. NAS</div></div>
+        <div class="cell"><div class="k">Adatelérés</div><div class="v">SMB · FTP · USB · NAS</div></div>
+      </div>
+
+      <div class="whatsnew">
+        <div class="k">Újdonságok a v1.1-ben</div>
+        <ul>
+          <li><a href="#s5">Csatlakozási útmutató</a> — WebUI és Samba elérése hálózaton és közvetlen laptop-kábellel</li>
+          <li><a href="#s5-name">Névvel elérhető egység</a> (<code>CITOSTORE.local</code>), router nélkül is</li>
+          <li><a href="#s7">Kezdőoldal</a> három belépési ponttal</li>
+          <li><a href="#s11">Kimásolás USB-meghajtóra</a> böngészőből vagy fájlkezelőből</li>
+          <li><a href="#s12">Védett mappák</a> — soha nem törlődő adatok</li>
+          <li><a href="#s16-reset">Gyári visszaállítás</a> (Factory Reset)</li>
+          <li><a href="#s17">Konfig-csomag (.citostore)</a> egyetlen fájlos egységcseréhez</li>
+          <li><a href="#s15">Óra-védelem</a> elem nélkül is, visszaugrás nélkül</li>
+          <li><a href="#s18">Önjavítás</a> — hardveres watchdog, indításkori ellenőrzés</li>
+          <li><a href="#s8">Okosabb szinkron és rotáció</a> mély mappaszerkezetekhez</li>
+        </ul>
       </div>
     </header>
 
@@ -244,8 +311,8 @@
         gép a rögzített képeket egy közönséges USB-meghajtóra írja — ez a meghajtó
         valójában a CitoStore. Az eszköz a beérkező adatokat folyamatosan, a
         gyártás zavarása nélkül átmásolja a beépített NVMe SSD-re, ahonnan azok
-        azonnal elérhetők a hálózaton át (SMB), és igény szerint egy NAS-ra is
-        mentődnek.</p>
+        azonnal elérhetők a hálózaton át (SMB, opcionálisan FTP), kimásolhatók egy
+        bedugott USB-meghajtóra, és igény szerint egy NAS-ra is mentődnek.</p>
 
       <h3>Milyen problémát old meg</h3>
       <p>Az ipari hálózatok alacsony latenciájú vezérlésre (robot, I/O, kamera)
@@ -259,7 +326,8 @@
         <li><span class="ic">01</span><span><strong>Plug-and-play a gép felől.</strong> A vizsgáló gépnek szabványos USB-meghajtó, nincs szükség illesztőprogramra vagy szoftverre.</span></li>
         <li><span class="ic">02</span><span><strong>Felügyelet nélküli, 24/7 üzem.</strong> A szinkronizálás, a rotáció és a helyfelszabadítás teljesen automatikus.</span></li>
         <li><span class="ic">03</span><span><strong>Kettős adatbiztonság.</strong> Helyi NVMe + opcionális távoli NAS; az OS csak olvasható, tápkimaradás-tűrő.</span></li>
-        <li><span class="ic">04</span><span><strong>Böngészőből kezelhető.</strong> Minden beállítás és állapot egy webes felületen — nincs parancssor.</span></li>
+        <li><span class="ic">04</span><span><strong>Böngészőből kezelhető.</strong> Minden beállítás és állapot egy webes felületen — nincs parancssor. Név alapján is elérhető (<code>CITOSTORE.local</code>).</span></li>
+        <li><span class="ic">05</span><span><strong>Önjavító.</strong> Hardveres watchdog és indításkori állapotellenőrzés: lefagyás vagy megszakadt művelet után magától helyreáll.</span></li>
       </ul>
     </section>
 
@@ -278,35 +346,38 @@
         <div class="node"><div class="tag">Puffer</div><div class="lab">USB kötet</div><div class="sub">aktív LV a tárban</div></div>
         <div class="node"><div class="tag">Izoláció</div><div class="lab">Pillanatkép</div><div class="sub">csak olvasható</div></div>
         <div class="node data"><div class="tag">Tár</div><div class="lab">NVMe mirror</div><div class="sub">végleges adat</div></div>
-        <div class="node"><div class="tag">Elérés</div><div class="lab">SMB / NAS</div><div class="sub">hálózaton</div></div>
+        <div class="node"><div class="tag">Elérés</div><div class="lab">SMB / FTP / USB / NAS</div><div class="sub">hálózaton vagy pendrive-ra</div></div>
       </div>
 
       <h3>Az operációs rendszer és az adat elkülönül</h3>
       <p>Az OS az eMMC-n fut <strong>csak olvasható (read-only overlay)</strong>
         módban: minden írás egy ideiglenes RAM-rétegbe megy, és újraindításkor
         eltűnik. Ez teszi tápkimaradás-tűrővé az eszközt. A <em>tartós</em> adat és a
-        konfiguráció kizárólag az NVMe-n él, így az OS független a tár terhelésétől.</p>
+        konfiguráció (a jelszavakkal együtt) kizárólag az NVMe-n él, így az OS
+        független a tár terhelésétől.</p>
 
       <h3>A tár soha nem telik meg</h3>
       <p>Két automatizmus tartja karban a helyet: az <strong>USB-kötet rotáció</strong>
         (a megtelt aktív kötetről a következőre vált, a régit offline feldolgozza és
         újraformázza) és az <strong>NVMe retenció</strong> (ha a kihasználtság elér egy
         felső küszöböt, a legrégebbi már mentett adatokat törli egy alsó küszöbig).
-        A részleteket lásd a <a href="#s7">7.</a> és <a href="#s17">17.</a> fejezetben.</p>
+        A retenció a <a href="#s12">védett mappákhoz</a> soha nem nyúl. A részleteket
+        lásd a <a href="#s8">8.</a>, <a href="#s12">12.</a> és <a href="#s22">22.</a> fejezetben.</p>
     </section>
 
     <!-- 3 -->
     <section id="s3">
       <div class="sec-head"><span class="num">03</span><h2>Csatlakozók &amp; hardver</h2></div>
       <p>A CitoStore egy ipari minősítésű Raspberry Pi CM5 alapú egység. Az alábbi
-        csatlakozókkal találkozol a telepítéskor:</p>
+        csatlakozókkal találkozol a telepítéskor és a használat során:</p>
 
       <div class="tbl-wrap">
       <table>
         <thead><tr><th>Csatlakozó</th><th>Szerep</th><th>Megjegyzés</th></tr></thead>
         <tbody>
           <tr><td class="mono">USB-C (OTG)</td><td>Adatbemenet a vizsgáló géptől</td><td>Ide kötöd az AOI gépet; itt jelenik meg az „USB-meghajtó".</td></tr>
-          <tr><td class="mono">eth0</td><td>Menedzsment + SMB megosztás</td><td>Ezen éred el a webes felületet és a hálózati megosztást. PoE+ táplálás is ezen.</td></tr>
+          <tr><td class="mono">USB-A (host)</td><td>Adatkimásolás <span class="new">új</span></td><td>Ide dugd a pendrive-ot / külső lemezt, amire adatot másolnál ki (<a href="#s11">11. fejezet</a>). <strong>Soha ne az OTG-portba.</strong></td></tr>
+          <tr><td class="mono">eth0</td><td>Menedzsment + SMB megosztás</td><td>Ezen éred el a webes felületet és a hálózati megosztást — hálózaton vagy közvetlenül egy laptopról. PoE+ táplálás is ezen.</td></tr>
           <tr><td class="mono">eth1</td><td>Ethernet AOI (opcionális)</td><td>Elkülönített hálózat egy FTP/SFTP-vel töltő AOI-nak. Alapértelmezett cím <code>192.168.100.1/24</code>.</td></tr>
           <tr><td class="mono">DC be</td><td>Táplálás (alternatíva)</td><td>Ha nincs PoE+, külső tápegységről.</td></tr>
           <tr><td class="mono">WiFi</td><td>Opcionális vezeték nélküli</td><td>Kliens vagy hotspot mód, ha az Ethernet nem elérhető.</td></tr>
@@ -320,6 +391,15 @@
           adatátvitelt és az áramellátást is ellátja. Használj PoE+ (802.3at)
           switchet vagy injektort.</p>
       </div>
+      <div class="note warn">
+        <span class="lab">Nagy NVMe-műveletek</span>
+        <p>A <strong>gyári visszaállítás</strong> és a <strong>csere-provizionálás</strong>
+          a teljes NVMe-t újraépíti, ami tartósan nagy áramfelvétellel jár. Ezeket csak
+          stabil, elegendő teljesítményű tápellátással futtasd (ne gyenge PoE-forrásról).
+          Ha a művelet mégis megszakad, a rendszer a következő indításkor megpróbálja
+          automatikusan befejezni (pl. pótolja a hiányzó USB-köteteket,
+          <a href="#s18">18. fejezet</a>).</p>
+      </div>
     </section>
 
     <!-- 4 -->
@@ -330,18 +410,21 @@
           Szereld fel a vezérlőszekrénybe vagy a vizsgáló gép mellé, jól szellőző helyre.</li>
         <li><h4>Kösd be a menedzsment-hálózatot (eth0)</h4>
           Csatlakoztasd az <code>eth0</code>-t a menedzsment-hálózathoz. PoE+ switch esetén
-          ez egyben a tápellátás is; egyébként add rá a DC tápot.</li>
+          ez egyben a tápellátás is; egyébként add rá a DC tápot. Ha az első beállítást
+          hálózat nélkül, egy laptopról végzed, kösd a laptopot közvetlenül az
+          <code>eth0</code>-ra (<a href="#s5-direct">5. fejezet, B</a>).</li>
         <li><h4>Kösd rá a vizsgáló gépet (USB-C OTG)</h4>
           Az AOI gép USB-portjából vezess kábelt a CitoStore <code>USB-C (OTG)</code>
           csatlakozójába. A gépen néhány másodperc múlva megjelenik egy új USB-meghajtó.</li>
         <li><h4>Opcionális: Ethernet AOI (eth1)</h4>
           Ha a vizsgáló gép hálózaton (FTP/SFTP) tölt, kösd azt az <code>eth1</code>-re
-          egy külön kábellel/switchcsel. Ezt a <a href="#s8">8. fejezet</a> szerint kell
+          egy külön kábellel/switchcsel. Ezt a <a href="#s9">9. fejezet</a> szerint kell
           engedélyezni.</li>
         <li><h4>Várd meg az indulást</h4>
           Az első bekapcsolás egy egyszeri személyre szabást futtat (egyedi azonosítók,
-          tárhely-előkészítés), és egyszer újraindulhat. Ez néhány perc. Ezután folytasd az
-          <a href="#s5">5. fejezettel</a>.</li>
+          tárhely-előkészítés), és egyszer újraindulhat. Ez néhány perc. Ezután
+          csatlakozz a <a href="#s5">5. fejezet</a> szerint, és folytasd a
+          <a href="#s6">6. fejezettel</a>.</li>
       </ol>
       <div class="note warn">
         <span class="lab">Fontos</span>
@@ -354,25 +437,205 @@
 
     <!-- 5 -->
     <section id="s5">
-      <div class="sec-head"><span class="num">05</span><h2>Első üzembe helyezés</h2></div>
+      <div class="sec-head"><span class="num">05</span><h2>Csatlakozási útmutató<span class="new">új</span></h2></div>
+      <p>A CitoStore két dolgot kínál a számítógéped felé, mindkettőt az
+        <code>eth0</code> porton:</p>
+      <ul>
+        <li><strong>Webes felület (WebUI)</strong> — böngészőből: beállítások, állapot,
+          adatkimásolás, védett mappák.</li>
+        <li><strong>Hálózati megosztás (Samba / SMB)</strong> — a mentett képek
+          böngészése és másolása a Windows fájlkezelőből (vagy macOS/Linux alól).</li>
+      </ul>
+      <p>Két tipikus helyzet van: az egység egy <strong>hálózaton</strong> van
+        (router / DHCP-szerver osztja a címeket), vagy egy <strong>laptopot közvetlenül</strong>
+        kötsz rá egy kábellel, router nélkül. Mindkettő működik, beállítás nélkül.</p>
+
+      <h3 id="s5-name">Címek egy pillantásra</h3>
+      <p>Az egység a saját <strong>NetBIOS-nevén</strong> hirdeti magát a hálózaton
+        (gyári alap: <code>CITOSTORE</code>). Ha átnevezted (pl. <code>AOI1</code>), az
+        alábbiakban mindenhol ezt a nevet használd: <code>AOI1.local</code>,
+        <code>\\AOI1</code>.</p>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Mit érsz el</th><th>A) Hálózaton</th><th>B) Közvetlen laptop-kábellel</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Webes felület</strong></td><td><span class="addr">http://CITOSTORE.local/</span><br>vagy <code>http://&lt;IP-cím&gt;/</code></td><td><span class="addr">http://CITOSTORE.local/</span><br>vagy <code>http://10.10.10.1/</code></td></tr>
+          <tr><td><strong>Megosztás — Windows</strong></td><td><span class="addr">\\CITOSTORE</span><br>vagy <code>\\CITOSTORE.local</code>, <code>\\&lt;IP-cím&gt;</code></td><td><span class="addr">\\CITOSTORE.local</span><br>vagy <code>\\10.10.10.1</code></td></tr>
+          <tr><td><strong>Megosztás — macOS / Linux</strong></td><td><code>smb://CITOSTORE.local/</code></td><td><code>smb://10.10.10.1/</code></td></tr>
+          <tr><td><strong>Mirror FTP</strong> <span class="ui">(ha be van kapcsolva)</span></td><td><code>ftp://CITOSTORE.local/</code></td><td>— <span class="ui">(hálózati használatra)</span></td></tr>
+        </tbody>
+      </table>
+      </div>
+      <div class="note">
+        <span class="lab">A .local név</span>
+        <p>A <code>.local</code> nevet a Windows 10/11 és a macOS külön szoftver és
+          beállítás nélkül feloldja (mDNS). Ha egy vállalati gépen mégsem működik (pl.
+          VPN vagy tűzfal-házirend tiltja), használd az IP-címet.</p>
+      </div>
+
+      <h3 id="s5-lan">A) Csatlakozás hálózaton keresztül</h3>
       <ol class="steps">
-        <li><h4>Keresd meg az eszköz IP-címét</h4>
-          Az <code>eth0</code> alapból DHCP-t kér. Az IP-t a routered/DHCP-szervered
-          klienslistájában találod (a hostnév <code>citostore-XXXXXX</code> formájú), vagy
-          a hálózaton a NetBIOS-néven: <code>CITOSTORE</code>.</li>
+        <li><h4>Kösd az eth0-t a hálózatra</h4>
+          Az egység alapból DHCP-vel kér címet. Bekapcsolás után 1–2 perc az indulás.</li>
         <li><h4>Nyisd meg a webes felületet</h4>
-          Böngészőben: <code>http://&lt;IP-cím&gt;/</code> (a 80-as porton). Első
-          alkalommal egy beállító oldal fogad, ahol beállítod az adminisztrátori jelszót.</li>
-        <li><h4>Állítsd be a jelszavakat</h4>
-          A <em>System</em> szekcióban a WebUI-jelszót, az <em>SMB megosztás</em>
-          szekcióban a Samba-jelszót, és ha Ethernet AOI-t használsz, az
-          <em>Ethernet AOI</em> szekcióban az ingest (FTP/SFTP) jelszót.</li>
-        <li><h4>Ellenőrizd az állapotot</h4>
-          A <em>Status</em> panelen minden fő szolgáltatásnak zöldnek (fut) kell lennie:
-          USB-gadget, szinkronizáció, megosztás.</li>
+          Egy ugyanazon a hálózaton lévő gépen, böngészőben:
+          <span class="addr">http://CITOSTORE.local/</span></li>
+        <li><h4>Ha a név nem működik: keresd meg az IP-címet</h4>
+          <ul>
+            <li>A router / DHCP-szerver klienslistájában — a hostnév
+              <code>citostore-XXXXXX</code> formájú (a hat karakter egységenként egyedi).</li>
+            <li>Windows fájlkezelő → <em>Hálózat</em>: az egység itt a NetBIOS-nevével
+              megjelenik, a megosztás innen közvetlenül megnyitható.</li>
+          </ul>
+          Az IP-cím ismeretében: <code>http://&lt;IP-cím&gt;/</code>.</li>
+      </ol>
+      <div class="note">
+        <span class="lab">Tartós hálózati telepítés</span>
+        <p>Ha az egység végleg egy hálózaton él, adj neki <strong>fix IP-címet</strong>
+          (<em>Alaphálózat</em> szekció, <a href="#s14">14. fejezet</a>). Így mindig
+          ugyanazon a címen éred el, és soha nem kapcsol át a közvetlen laptopos módba
+          (lásd lent). Ha több CitoStore van egy hálózaton, mindegyiknek adj
+          <strong>egyedi NetBIOS-nevet</strong> (pl. <code>AOI1</code>, <code>AOI2</code>).</p>
+      </div>
+
+      <h3 id="s5-direct">B) Közvetlen laptop-kapcsolat (router nélkül)</h3>
+      <p>Üzembe helyezéshez vagy helyszíni ellenőrzéshez elég egy laptop és egy
+        Ethernet-kábel — nem kell hozzá hálózat, és a laptopon semmit nem kell átállítani.</p>
+      <ol class="steps">
+        <li><h4>Laptop: automatikus IP-cím</h4>
+          A laptop vezetékes hálózati kártyája legyen „IP-cím automatikus kérése" (DHCP)
+          módban — ez a Windows alapbeállítása.</li>
+        <li><h4>Kösd össze a laptopot és az eth0-t</h4>
+          Egy sima Ethernet-kábel elég (switch nem kell; egy PoE-injektor közé kerülhet).</li>
+        <li><h4>Várj kb. 1 percet</h4>
+          Az egység kb. 45 másodpercig keres DHCP-szervert. Ha nem talál, maga lesz az:
+          felveszi a <code>10.10.10.1</code> címet, és a laptopnak egy
+          <code>10.10.10.x</code> címet ad.</li>
+        <li><h4>Nyisd meg a webes felületet</h4>
+          <span class="addr">http://CITOSTORE.local/</span>
+          vagy <code>http://10.10.10.1/</code>. A megosztás: <code>\\10.10.10.1</code>.</li>
+      </ol>
+      <div class="note warn">
+        <span class="lab">Közvetlen módban figyelj</span>
+        <p><strong>Ne húzd ki a kábelt</strong>, ha a laptop nem kap címet (169.254.x.x
+          cím látszik): futtasd inkább a laptopon a <code>ipconfig /renew</code> parancsot.</p>
+        <p>A kábel kihúzásakor az egység szándékosan leállítja a címosztást, hogy egy
+          később rákötött valódi hálózatot ne zavarjon. Ha ugyanazon bekapcsolás alatt
+          újra laptopot kötnél rá közvetlenül, <strong>indítsd újra az egységet</strong>.</p>
+        <p>Fix IP-re állított egység nem oszt címet: ilyenkor a laptopnak kézzel adj
+          címet az egység alhálózatából.</p>
+      </div>
+
+      <h3 id="s5-home">A kezdőoldal: melyik jelszó kell?</h3>
+      <p>A <code>http://CITOSTORE.local/</code> cím egy kezdőoldalt nyit három
+        kártyával. Nem kell hozzá jelszó — a kártyák a megfelelő bejelentkezéshez visznek:</p>
+      <div class="route">
+        <div class="card"><div class="tag">/export</div><div class="lab">Copy files to USB</div>
+          <p>Képek kimásolása egy bedugott pendrive-ra. <strong>SMB-jelszó.</strong></p></div>
+        <div class="card"><div class="tag">/protected</div><div class="lab">Keep folders</div>
+          <p>Soha nem törlődő mappák kijelölése. <strong>SMB-jelszó.</strong></p></div>
+        <div class="card"><div class="tag">/admin</div><div class="lab">Settings</div>
+          <p>Beállítások, állapot, karbantartás. <strong>Adminisztrátori (WebUI) jelszó.</strong></p></div>
+      </div>
+      <p>Az operátoroknak tehát elég az SMB-jelszó ismerete: adatot kimásolni és
+        mappát védetté tenni az adminisztrátori jelszó nélkül is tudnak.</p>
+
+      <h3 id="s5-smb">A hálózati megosztás (Samba) csatlakoztatása</h3>
+      <p>Bejelentkezés: felhasználónév <code>smbuser</code>, jelszó az
+        <em>SMB share</em> szekcióban beállított SMB-jelszó. Két megosztást látsz:</p>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Megosztás</th><th>Tartalom</th><th>Jog</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">vision_mirror</td><td>Az összes mentett kép (<a href="#s10">10. fejezet</a>).</td><td>csak olvasható</td></tr>
+          <tr><td class="mono">usb_backup</td><td>Az egység USB-A portjába dugott pendrive / lemez (<a href="#s11">11. fejezet</a>). Üres, ha nincs bedugva semmi.</td><td>írható</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h4>Windows — egyszeri megnyitás</h4>
+      <ol>
+        <li>Nyisd meg a Fájlkezelőt, és a címsorba írd: <code>\\CITOSTORE.local</code>
+          (vagy <code>\\CITOSTORE</code>, <code>\\&lt;IP-cím&gt;</code>), majd Enter.</li>
+        <li>A felugró ablakban: felhasználónév <code>smbuser</code>, jelszó az SMB-jelszó.
+          A „Hitelesítő adatok megjegyzése" bejelölésével legközelebb nem kérdezi.</li>
+        <li>Megjelenik a <code>vision_mirror</code> és a <code>usb_backup</code> mappa.</li>
+      </ol>
+
+      <h4>Windows — állandó hálózati meghajtó (pl. Z:)</h4>
+      <ol>
+        <li>Fájlkezelő → jobb klikk az <em>Ez a gép</em>-en → <em>Hálózati meghajtó
+          csatlakoztatása</em>.</li>
+        <li>Meghajtó: <code>Z:</code>, mappa: <code>\\CITOSTORE.local\vision_mirror</code>.</li>
+        <li>Pipáld be: <em>Csatlakozás bejelentkezéskor</em> és <em>Csatlakozás más
+          hitelesítő adatokkal</em> → <em>Befejezés</em> → <code>smbuser</code> + SMB-jelszó.</li>
+      </ol>
+      <p>Ugyanez parancssorból (a jelszót bekéri):</p>
+      <span class="addr">net use Z: \\CITOSTORE.local\vision_mirror /user:smbuser * /persistent:yes</span>
+      <p>Tartományba (domain) léptetett gépen, ha a bejelentkezést elutasítja, a
+        felhasználót az egység nevével add meg: <code>CITOSTORE\smbuser</code>.</p>
+
+      <h4>macOS</h4>
+      <p>Finder → <em>Ugrás</em> → <em>Kapcsolódás szerverhez</em> (<span class="kbd">⌘</span> <span class="kbd">K</span>)
+        → <code>smb://CITOSTORE.local</code> → <em>Regisztrált felhasználó</em>:
+        <code>smbuser</code> + SMB-jelszó → válaszd ki a megosztást.</p>
+
+      <h4>Linux</h4>
+      <p>A fájlkezelő címsorába: <code>smb://CITOSTORE.local/vision_mirror</code>. Parancssorból:</p>
+      <span class="addr">sudo mount -t cifs //&lt;IP-cím&gt;/vision_mirror /mnt/citostore -o username=smbuser,vers=3.0,ro</span>
+
+      <h4>Mirror FTP (ha be van kapcsolva)</h4>
+      <p>Bármely FTP-klienssel (pl. FileZilla): kiszolgáló <code>CITOSTORE.local</code>
+        (vagy IP), port <code>21</code>, felhasználó <code>smbuser</code>, jelszó az
+        SMB-jelszó, <strong>passzív mód</strong>. Csak olvasható. Részletek:
+        <a href="#s10-ftp">10. fejezet</a>.</p>
+
+      <h3>Gyakori csatlakozási hibák</h3>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Tünet</th><th>Teendő</th></tr></thead>
+        <tbody>
+          <tr><td>A <code>CITOSTORE.local</code> nem nyílik meg</td><td>Használd az IP-címet (router klienslista, vagy közvetlen módban <code>10.10.10.1</code>). Ellenőrizd, hogy a gép ugyanazon a hálózaton van-e, és nincs-e bekapcsolva VPN.</td></tr>
+          <tr><td>Windows: „Nem engedélyezett több kapcsolat ugyanahhoz a kiszolgálóhoz…" (1219-es hiba)</td><td>A gépen már van egy kapcsolat az egységhez más felhasználóval. Bontsd: <code>net use \\CITOSTORE.local /delete</code> (vagy az összeset: <code>net use * /delete</code>), majd csatlakozz újra.</td></tr>
+          <tr><td>Jelszócsere után a Windows nem enged be</td><td>A régi jelszó el van mentve: <em>Vezérlőpult → Hitelesítőadat-kezelő → Windows-hitelesítő adatok</em> — töröld a CITOSTORE bejegyzést, majd csatlakozz újra.</td></tr>
+          <tr><td>„Hozzáférés megtagadva" íráskor a <code>vision_mirror</code>-on</td><td>Szándékos: a mirror csak olvasható. Adatot kimásolni lehet belőle; pendrive-ra a <code>usb_backup</code> megosztáson vagy a <a href="#s11">kimásoló oldalon</a> írhatsz.</td></tr>
+          <tr><td>Régi (csak SMB1-et ismerő) kliens nem csatlakozik</td><td>A megosztás biztonsági okból SMB2/SMB3 protokollt használ. Használj újabb klienst, vagy a Mirror FTP-t.</td></tr>
+          <tr><td>Közvetlen kábelnél a laptop 169.254.x.x címet kap</td><td>Várj még egy percet, majd <code>ipconfig /renew</code>. Ha közben kihúztad a kábelt, indítsd újra az egységet (lásd <a href="#s5-direct">B)</a>).</td></tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+
+    <!-- 6 -->
+    <section id="s6">
+      <div class="sec-head"><span class="num">06</span><h2>Első üzembe helyezés</h2></div>
+      <ol class="steps">
+        <li><h4>Csatlakozz az egységhez</h4>
+          Az <a href="#s5">5. fejezet</a> szerint, hálózaton vagy közvetlen laptop-kábellel.
+          Böngészőben: <code>http://CITOSTORE.local/</code>.</li>
+        <li><h4>Állítsd be az adminisztrátori jelszót</h4>
+          A kezdőoldalon válaszd a <em>Settings</em> kártyát. Első alkalommal a rendszer
+          egy beállító oldalra visz, ahol megadod az adminisztrátori (WebUI) jelszót.</li>
+        <li><h4>Állítsd be a többi jelszót</h4>
+          Az <em>SMB share</em> szekcióban az SMB-jelszót — ez nyitja a hálózati
+          megosztást, a Mirror FTP-t, a kimásoló és a védett mappák oldalt is. Ha
+          Ethernet AOI-t használsz, az <em>Ethernet AOI</em> szekcióban az ingest
+          (FTP/SFTP) jelszót.</li>
+        <li><h4>Adj egyedi nevet az egységnek</h4>
+          Az <em>SMB share</em> szekcióban a NetBIOS-név (pl. <code>AOI1</code>) lesz a
+          megosztás neve és a <code>.local</code> név is. Több egységnél kötelező, hogy
+          mindegyik egyedi legyen.</li>
+        <li><h4>Ellenőrizd az állapotot és az órát</h4>
+          A <em>Status</em> panelen minden fő szolgáltatásnak futnia kell (USB-gadget,
+          szinkron, megosztás), és a lap tetején nem lehet figyelmeztető sáv. A
+          <em>System → Time</em> résznél ellenőrizd a dátumot és az időt
+          (<a href="#s15">15. fejezet</a>).</li>
         <li><h4>Próbaírás</h4>
           Írj egy tesztfájlt a vizsgáló gépről az USB-meghajtóra, majd 2-3 perc múlva
           ellenőrizd, hogy megjelenik-e az SMB-megosztáson.</li>
+        <li><h4>Mentsd el a konfig-csomagot</h4>
+          <em>Backup &amp; Replacement → Download Config Bundle</em>. Ezzel a fájllal egy
+          csereegység percek alatt pontos másolattá tehető (<a href="#s17">17. fejezet</a>).</li>
       </ol>
       <div class="note">
         <span class="lab">Munkamenet</span>
@@ -380,13 +643,39 @@
       </div>
     </section>
 
-    <!-- 6 -->
-    <section id="s6">
-      <div class="sec-head"><span class="num">06</span><h2>Webes kezelőfelület</h2></div>
-      <p>A felület funkciónként csoportosított szekciókból áll. Minden beállító
+    <!-- 7 -->
+    <section id="s7">
+      <div class="sec-head"><span class="num">07</span><h2>Webes kezelőfelület</h2></div>
+      <p>A felület három részből áll: a jelszó nélküli <strong>kezdőoldalból</strong>
+        (<code>/</code>), az operátori oldalakból (<a href="#s11">kimásolás</a>,
+        <a href="#s12">védett mappák</a> — SMB-jelszóval) és az adminisztrátori
+        <strong>beállításokból</strong> (<code>/admin</code>). A felület angol nyelvű;
+        az alábbiakban a gombok és szekciók nevét a felületen látható formában is megadjuk.</p>
+
+      <h3>Beállítások (/admin)</h3>
+      <p>A beállítások funkciónként csoportosított szekciókból állnak. Minden beállító
         szekciónak saját <strong>„Save + Apply"</strong> gombja van: ez elmenti az adott
         szekció beállításait, és azonnal életbe is lépteti őket — csak azt érinti, amin
         éppen dolgozol.</p>
+
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Szekció</th><th>Mit állítasz be</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Állapot</strong> <span class="ui">Status</span></td><td>Élő szolgáltatás-, hálózat-, tárhely-, szinkron-, NVMe-, USB-, NAS- és óraállapot.</td></tr>
+          <tr><td><strong>USB AOI</strong> <span class="ui">USB AOI</span></td><td>Szinkron-paraméterek, kötet-rotációs ablak és késleltetés, kézi szinkron/rotáció.</td></tr>
+          <tr><td><strong>Ethernet AOI</strong> <span class="ui">Ethernet AOI</span></td><td>eth1 hálózat, FTP/SFTP ingest, ingest-jelszó.</td></tr>
+          <tr><td><strong>SMB megosztás</strong> <span class="ui">SMB share</span></td><td>NetBIOS-név, munkacsoport, interfész-kötés, SMB-jelszó.</td></tr>
+          <tr><td><strong>Mirror FTP</strong> <span class="ui">Mirror FTP</span></td><td>Csak olvasható FTP be/ki, interfész.</td></tr>
+          <tr><td><strong>NAS mentés</strong> <span class="ui">NAS backup</span></td><td>Távoli NAS engedélyezése, útvonal, hitelesítés.</td></tr>
+          <tr><td><strong>Alaphálózat</strong> <span class="ui">Base network</span></td><td>Menedzsment (eth0) DHCP vagy statikus IP.</td></tr>
+          <tr><td><strong>Rendszer</strong> <span class="ui">System</span></td><td>WebUI cím/port, WebUI-jelszó, rendszeridő.</td></tr>
+          <tr><td><strong>Karbantartás</strong> <span class="ui">Maintenance</span></td><td>Méretezés, kiegyenlítés, törlés, visszaállítás, gyári visszaállítás, leállítás, karbantartó mód, frissítés.</td></tr>
+          <tr><td><strong>Mentés &amp; csere</strong> <span class="ui">Backup &amp; Replacement</span></td><td>Konfiguráció export/import, konfig-csomag letöltése, csereegység provizionálása.</td></tr>
+          <tr><td><strong>Naplók</strong> <span class="ui">Logs</span></td><td>Szolgáltatás-naplók megtekintése.</td></tr>
+        </tbody>
+      </table>
+      </div>
 
       <h3>Állapotjelzés</h3>
       <div class="chips">
@@ -394,29 +683,38 @@
         <span class="chip"><span class="dot warn"></span> figyelmeztetés</span>
         <span class="chip"><span class="dot crit"></span> hiba / leállt</span>
       </div>
-
+      <p>Ha az egység önellenőrzése valamit talált (pl. automatikusan kijavított egy
+        hibát, vagy a szinkron elakadt), a lap tetején egy <strong>figyelmeztető sáv</strong>
+        jelenik meg a probléma rövid leírásával (<a href="#s18">18. fejezet</a>). A
+        <em>Status</em> panel sorai:</p>
       <div class="tbl-wrap">
       <table>
-        <thead><tr><th>Szekció</th><th>Mit állítasz be</th></tr></thead>
+        <thead><tr><th>Sor</th><th>Mit mutat</th></tr></thead>
         <tbody>
-          <tr><td><strong>Status</strong></td><td>Élő szolgáltatás-, hálózat-, tárhely- és szinkronállapot.</td></tr>
-          <tr><td><strong>USB AOI (OTG)</strong></td><td>Szinkron-paraméterek, kötet-rotációs ablak, kézi szinkron/rotáció.</td></tr>
-          <tr><td><strong>Ethernet AOI</strong></td><td>eth1 hálózat, FTP/SFTP ingest, ingest-jelszó.</td></tr>
-          <tr><td><strong>SMB megosztás</strong></td><td>NetBIOS-név, munkacsoport, interfész-kötés, Samba-jelszó.</td></tr>
-          <tr><td><strong>NAS mentés</strong></td><td>Távoli NAS engedélyezése, útvonal, hitelesítés.</td></tr>
-          <tr><td><strong>Alaphálózat</strong></td><td>Menedzsment (eth0) DHCP vagy statikus IP.</td></tr>
-          <tr><td><strong>System</strong></td><td>WebUI cím/port, WebUI-jelszó, rendszeridő.</td></tr>
-          <tr><td><strong>Karbantartás</strong></td><td>Méretezés, kiegyenlítés, törlés, visszaállítás, leállítás, frissítés.</td></tr>
-          <tr><td><strong>Mentés &amp; csere</strong></td><td>Konfiguráció exportja/importja egység cseréjéhez.</td></tr>
-          <tr><td><strong>Naplók</strong></td><td>Szolgáltatás-naplók megtekintése és keresése.</td></tr>
+          <tr><td>Szolgáltatások</td><td>A fő szolgáltatások futnak-e (USB-gadget, szinkron, rotáció, megosztás, felügyelet).</td></tr>
+          <tr><td>Hálózat</td><td>Az interfészek címei.</td></tr>
+          <tr><td>USB</td><td>Az aktív USB-kötet és telítettsége.</td></tr>
+          <tr><td>Sync</td><td>A legutóbbi szinkron-ciklus eredménye.</td></tr>
+          <tr><td>NVMe</td><td>SSD-egészség: hőmérséklet, kopás (%), üzemórák, médiahibák, váratlan leállások. <em>WARN</em>: ≥ 70 °C vagy ≥ 90% kopás; <em>ERROR</em>: médiahiba.</td></tr>
+          <tr><td>USB health</td><td>Az USB-kötetek legutóbbi fájlrendszer-ellenőrzésének eredménye.</td></tr>
+          <tr><td>NAS</td><td>A legutóbbi NAS-replikáció állapota (ha be van kapcsolva).</td></tr>
+          <tr><td>Time</td><td>Rendszeridő, RTC-állapot.</td></tr>
         </tbody>
       </table>
       </div>
+
+      <div class="note">
+        <span class="lab">Veszélyes műveletek</span>
+        <p>A visszafordíthatatlan műveletek (pl. <em>Wipe All Data</em>, <em>Factory
+          Reset</em>) megerősítő ablakot nyitnak, ahol a megadott szöveget (pl.
+          <code>FACTORY RESET</code>) be kell gépelni — így véletlen kattintással nem
+          indíthatók.</p>
+      </div>
     </section>
 
-    <!-- 7 -->
-    <section id="s7">
-      <div class="sec-head"><span class="num">07</span><h2>USB AOI (OTG)</h2></div>
+    <!-- 8 -->
+    <section id="s8">
+      <div class="sec-head"><span class="num">08</span><h2>USB AOI (OTG)</h2></div>
       <p>Ez az elsődleges adatbemenet: a vizsgáló gép közvetlenül az USB-meghajtóra ír,
         a CitoStore pedig ütemezetten az NVMe-re szinkronizál.</p>
 
@@ -425,8 +723,30 @@
         aktív írás közben pedig gyors, <strong>~10 másodperces</strong> ütemre kapcsol. Egy
         fájl csak akkor kerül másolásra, ha két egymást követő olvasáskor
         <strong>változatlan</strong> a mérete és módosítási ideje — így félig kiírt fájl
-        soha nem másolódik. Azonos tartalmú fájlok csak egyszer tárolódnak (deduplikáció),
-        az új könyvtárak pedig elsőbbséget kapnak (hot-folder).</p>
+        soha nem másolódik. Azonos tartalmú fájlok csak egyszer tárolódnak (deduplikáció).</p>
+
+      <h4>Forró és hideg mappák</h4>
+      <p>Hogy a friss képek gyorsan megjelenjenek, a rendszer nem jár be minden
+        ciklusban minden mappát:</p>
+      <ul>
+        <li><strong>Forró mappák</strong> — minden mappa, amelybe az utolsó
+          <strong>5 percben</strong> írás történt, minden ciklusban átnéződik. Egy AOI,
+          amely egyszerre sok almappába ír (pl. <code>dátum/SceneGroup/Scene/OK-NG</code>),
+          így egyik mappájával sem marad le.</li>
+        <li><strong>Hideg mappák</strong> — a régebbi mappákat körbeforgó ellenőrzés
+          (alapból 4 mappa/ciklus) nézi át, így egy lezárt mappa utolsó fájljai is
+          biztosan átkerülnek.</li>
+      </ul>
+
+      <h4>Szkennelési mélység és mappaszerkezet</h4>
+      <p>A <em>Scan depth</em> azt mondja meg, milyen mélyen vannak a „munkamappák" az
+        AOI mappaszerkezetében (1 = a meghajtó gyökerében lévő mappák; mélyebb,
+        pl. <code>dátum/SceneGroup/Scene/OK-NG</code> szerkezetnél 4). Az
+        <strong>állandó előtag-mappákat</strong> (pl. ha az AOI mentési útvonala
+        <code>VisionData/Line1/…</code> alá kerül) a rendszer automatikusan átlépi, legfeljebb
+        3 szintig — ha az AOI mentési helyét egy mélyebb mappába teszik át, nem kell
+        beállítást módosítani. A beállítás sosem okoz adatvesztést: rossz érték esetén
+        is minden fájl átkerül, legfeljebb lassabban.</p>
 
       <h3>Kötet-rotáció</h3>
       <p>A tár több USB-kötetet (pl. <code>usb_0</code>, <code>usb_1</code>,
@@ -435,6 +755,15 @@
         (alapból egész nap) átvált a következő kötetre; kritikus telítettségnél
         (<span class="def">92%</span>) azonnal. A váltás a vizsgáló gép számára
         észrevétlen — a meghajtó „kicserélődik" alatta.</p>
+      <ul>
+        <li><strong>Írásszünetre vár.</strong> A váltás előtt a rendszer kivár egy rövid
+          írásmentes pillanatot (legfeljebb 5 másodpercig), így a csere nem eshet egy
+          folyamatban lévő írás közepére.</li>
+        <li><strong>Váltási késleltetés</strong> <span class="ui">Switch delay</span> —
+          <code>0</code> (alap) = a gép nem érzékeli a cserét; <code>1–2</code> másodperc
+          = a gép egy rövid „kihúzás–bedugás"-t lát, ha az adott AOI-szoftvernek erre
+          van szüksége.</li>
+      </ul>
       <p>A leváltott kötetet a rendszer offline feldolgozza: integritás-ellenőrzés
         (fsck), a maradék adat szinkronizálása, opcionális biztonságos törlés,
         újraformázás, majd az AOI-beállítások visszaállítása a meghajtóra.</p>
@@ -448,14 +777,14 @@
 
       <h4>Kézi műveletek</h4>
       <ul>
-        <li><strong>Szinkron most</strong> — azonnali szinkron-ciklus indítása a következő ütem bevárása nélkül.</li>
-        <li><strong>Rotáció most</strong> — azonnali kötetváltás (pl. mielőtt kézzel kivennéd a régi adatot).</li>
+        <li><strong>Szinkron most</strong> <span class="ui">Sync Now</span> — azonnali szinkron-ciklus indítása a következő ütem bevárása nélkül.</li>
+        <li><strong>Rotáció most</strong> <span class="ui">Rotate USB Now</span> — azonnali kötetváltás (pl. mielőtt kézzel kivennéd a régi adatot).</li>
       </ul>
     </section>
 
-    <!-- 8 -->
-    <section id="s8">
-      <div class="sec-head"><span class="num">08</span><h2>Ethernet AOI (FTP/SFTP ingest)</h2></div>
+    <!-- 9 -->
+    <section id="s9">
+      <div class="sec-head"><span class="num">09</span><h2>Ethernet AOI (FTP/SFTP ingest)</h2></div>
       <p>Ha a vizsgáló gép nem USB-re, hanem hálózaton keresztül tölti a képeket, a
         CitoStore egy elkülönített Ethernet-porton (<code>eth1</code>) fogadja őket
         FTP-n vagy SFTP-n. A beérkező fájlok az NVMe-re kerülnek, megjelennek az
@@ -470,7 +799,7 @@
           válaszd ki az FTP és/vagy SFTP protokollt, és add meg a felhasználónevet
           (alap: <code>aoiftp</code>).</li>
         <li><h4>Állíts jelszót</h4>
-          Ugyanitt add meg az ingest-jelszót, majd <em>Save + Apply</em>.</li>
+          Ugyanitt add meg az ingest-jelszót (<em>Set Ingest Password</em>), majd <em>Save + Apply</em>.</li>
         <li><h4>Állítsd be a vizsgáló gépet</h4>
           A gépen add meg a CitoStore eth1-címét, a felhasználót és a jelszót. Passzív
           FTP portok: <code>30000–30020</code>.</li>
@@ -478,26 +807,45 @@
 
       <div class="note">
         <span class="lab">Hová kerülnek a fájlok</span>
-        <p>A feltöltött fájlok az ingest-mappába (<code>…/ingest/data</code>) kerülnek,
+        <p>A feltöltött fájlok az ingest-mappába (<code>ingest/data</code>) kerülnek,
           és ugyanúgy elérhetők az SMB-megosztáson, mint a többi mentett adat.</p>
       </div>
     </section>
 
-    <!-- 9 -->
-    <section id="s9">
-      <div class="sec-head"><span class="num">09</span><h2>SMB hálózati megosztás</h2></div>
+    <!-- 10 -->
+    <section id="s10">
+      <div class="sec-head"><span class="num">10</span><h2>SMB hálózati megosztás &amp; Mirror FTP</h2></div>
       <p>Az összes mentett adat azonnal elérhető a hálózaton egy Windows/Mac/Linux
-        kompatibilis SMB-megosztáson keresztül — még aktív szinkronizálás közben is.</p>
+        kompatibilis SMB-megosztáson keresztül — még aktív szinkronizálás közben is. A
+        csatlakozás lépéseit az <a href="#s5-smb">5. fejezet</a> írja le.</p>
 
-      <h4>Elérés</h4>
+      <h3>Mit találsz a megosztáson</h3>
+      <p>A <code>vision_mirror</code> megosztás ugyanazokat a képeket kétféle
+        nézetben mutatja:</p>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Mappa</th><th>Tartalom</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">raw/</td><td>A vizsgáló gép eredeti mappaszerkezete, ahogy az USB-meghajtóra írta.</td></tr>
+          <tr><td class="mono">bydate/ÉÉÉÉ/HH/NN/</td><td>Ugyanazok a képek napokra bontva. Nem foglal plusz helyet — ugyanarra a fájlra mutat, mint a <code>raw/</code>.</td></tr>
+          <tr><td class="mono">ingest/data/</td><td>Az Ethernet AOI (FTP/SFTP) által feltöltött fájlok (<a href="#s9">9. fejezet</a>).</td></tr>
+        </tbody>
+      </table>
+      </div>
       <ul>
-        <li>Windows: <code>\\CITOSTORE\</code> vagy <code>\\&lt;IP&gt;\</code> a fájlkezelő címsorába.</li>
-        <li>macOS/Linux: <code>smb://&lt;IP&gt;/</code>.</li>
-        <li>Bejelentkezés a Samba-felhasználóval (alap: <code>smbuser</code>) és a beállított jelszóval.</li>
+        <li><strong>Névütközés:</strong> ha az AOI egy már mentett fájlnevet újra, más
+          tartalommal ír, a régi nem íródik felül — az új példány a nevéhez fűzött
+          időbélyeggel és rövid azonosítóval kerül mellé (pl.
+          <code>kep_1727600000_a1b2c3d4.jpg</code>). A <em>Always append raw filenames</em>
+          beállítással ez minden fájlra alkalmazható.</li>
+        <li><strong>Dátum szerinti besorolás:</strong> a <code>bydate/</code> alapból a
+          mentés ideje szerint rendez; a <em>Bydate uses file time</em> beállítással a
+          fájl saját módosítási ideje szerint. Mindkettőhöz pontos óra kell
+          (<a href="#s15">15. fejezet</a>).</li>
       </ul>
 
       <p>A megosztás neve (NetBIOS), a munkacsoport és az, hogy melyik interfészen
-        látszik (alapból <code>eth0</code>), az <em>SMB megosztás</em> szekcióban állítható.</p>
+        látszik (alapból <code>eth0</code>), az <em>SMB share</em> szekcióban állítható.</p>
 
       <div class="note">
         <span class="lab">Miért megbízható</span>
@@ -505,17 +853,19 @@
           USB-meghajtó megtelt, kicserélődött vagy sérült.</p>
       </div>
 
-      <h4>Mirror FTP (opcionális, csak olvasható)</h4>
+      <h3 id="s10-ftp">Mirror FTP (opcionális, csak olvasható)</h3>
       <p>Ugyanaz az adat FTP-n keresztül is elérhető — második, független protokoll
         arra az esetre, ha egy adott kliensen az SMB nem elég stabil. Alapból ki van
-        kapcsolva, az <em>SMB megosztás</em> szekcióban kapcsolható be.</p>
+        kapcsolva; a beállítások között a saját <em>Mirror FTP</em> szekciójában
+        kapcsolható be (<em>Mirror FTP enabled → Yes</em>, <em>Save + Apply</em>).</p>
       <ul>
         <li>Bejelentkezés: <strong>ugyanazzal a felhasználónévvel és jelszóval, mint
-          az SMB megosztás</strong> — nincs külön Mirror FTP jelszó, a jelszót a fenti
-          SMB-jelszó mezőben kell beállítani/megváltoztatni.</li>
+          az SMB megosztás</strong> (<code>smbuser</code>) — nincs külön Mirror FTP
+          jelszó, a jelszót az <em>SMB share</em> szekcióban kell beállítani/megváltoztatni.</li>
         <li>Csak olvasható: fájl feltöltése, törlése nem lehetséges rajta keresztül.</li>
+        <li>Az <code>eth0</code>-n érhető el, passzív módban (portok: <code>30021–30040</code>).</li>
       </ul>
-      <div class="note">
+      <div class="note warn">
         <span class="lab">Figyelem</span>
         <p>Az FTP titkosítás nélküli protokoll: a jelszó a hálózaton nyílt szövegként
           utazik bejelentkezéskor. Mivel ugyanaz a jelszó nyitja az SMB-megosztást is,
@@ -523,16 +873,100 @@
       </div>
     </section>
 
-    <!-- 10 -->
-    <section id="s10">
-      <div class="sec-head"><span class="num">10</span><h2>NAS biztonsági mentés</h2></div>
+    <!-- 11 -->
+    <section id="s11">
+      <div class="sec-head"><span class="num">11</span><h2>Kimásolás USB-meghajtóra<span class="new">új</span></h2></div>
+      <p>A mentett képek egy pendrive-ra vagy külső lemezre közvetlenül az egységen
+        kimásolhatók — nem kell hozzá laptop a gyártósor mellett, és az adat nem megy
+        át a hálózaton. Adminisztrátori jelszó sem kell: az <strong>SMB-jelszó</strong> elég.</p>
+
+      <ol class="steps">
+        <li><h4>Dugd be a meghajtót egy USB-A portba</h4>
+          Az egység egyik <strong>USB-A</strong> portjába — <strong>soha ne az OTG-portba</strong>,
+          az a vizsgáló gépé. Támogatott fájlrendszerek: FAT32, exFAT, NTFS. A meghajtó
+          automatikusan csatolódik.</li>
+        <li><h4>Nyisd meg a kimásoló oldalt</h4>
+          Kezdőoldal → <em>Copy files to USB</em> (<code>http://CITOSTORE.local/export</code>),
+          bejelentkezés az SMB-jelszóval. Az oldal mutatja a meghajtó típusát és szabad helyét.</li>
+        <li><h4>Válaszd ki, mit és hová</h4>
+          Bal oldalt (<em>Mirror</em>, csak olvasható) pipáld be a mappákat/fájlokat;
+          jobb oldalt (<em>USB drive</em>) nyisd meg a célmappát — újat a
+          <em>New folder</em> gombbal hozhatsz létre.</li>
+        <li><h4>Másolás</h4>
+          <em>Copy selected to USB</em>. A másolás az egységen fut: a haladás látszik az
+          oldalon, és a böngészőt be is zárhatod — a másolás folytatódik. Egyszerre egy
+          másolás futhat.</li>
+        <li><h4>Biztonságos eltávolítás</h4>
+          A végén nyomd meg a <em>Safely remove</em> gombot, és csak utána húzd ki a meghajtót.</li>
+      </ol>
+
+      <h4>Alternatíva: Windows fájlkezelőből</h4>
+      <p>Nyisd meg egymás mellett a <code>\\CITOSTORE\vision_mirror</code> és a
+        <code>\\CITOSTORE\usb_backup</code> megosztást, és húzd át a mappákat. A
+        másolást maga az egység végzi (szerveroldali másolás): az adat nem utazik át a
+        PC-n, így a hálózat sebessége nem számít.</p>
+
+      <div class="note">
+        <span class="lab">Sebesség és biztonság</span>
+        <p>A meghajtó „azonnali írás" módban van csatolva: ha valaki másolás közben
+          kihúzza, a már kiírt adat ép marad. Ennek ára a sebesség — egy átlagos
+          pendrive-on mérve kb. 7 MB/s (100 GB kb. 4 óra). Nagy mennyiségnél indítsd a
+          másolást műszak végén, és másolás előtt nézd meg a szabad helyet.</p>
+        <p>A kimásolás a vizsgáló gépet nem zavarja (külön USB-vezérlőn fut), és a
+          mirrorból soha nem töröl semmit.</p>
+      </div>
+    </section>
+
+    <!-- 12 -->
+    <section id="s12">
+      <div class="sec-head"><span class="num">12</span><h2>Védett mappák<span class="new">új</span></h2></div>
+      <p>Amikor az NVMe megtelik, a retenció a legrégebbi képeket törli, hogy helyet
+        csináljon. Ha egy mappát (pl. egy reklamációs sorozatot) meg kell tartani,
+        jelöld <strong>védettnek</strong>: a retenció soha nem törli — akkor sem, ha a
+        lemez teljesen megtelt.</p>
+
+      <ol class="steps">
+        <li><h4>Nyisd meg a védett mappák oldalt</h4>
+          Kezdőoldal → <em>Keep folders</em> (<code>http://CITOSTORE.local/protected</code>),
+          bejelentkezés az SMB-jelszóval.</li>
+        <li><h4>Jelöld ki a mappákat</h4>
+          Bal oldalt (<em>Mirror</em>) böngészd a mappákat, és pipáld be, amit meg kell
+          tartani. Csak mappa jelölhető ki. Egy szülőmappa kijelölése a teljes tartalmát
+          védi (az alatta lévők szürkén jelennek meg). A jobb oldali lista mutatja a védett mappákat.</li>
+        <li><h4>Mentés</h4>
+          Nyomd meg a <em>Save</em> gombot. Amíg nem mentettél, az oldal jelzi: „Not saved yet".</li>
+      </ol>
+      <ul>
+        <li><strong>Mindkét nézetben véd:</strong> a <code>raw/</code> és a
+          <code>bydate/</code> ugyanazt a fájlt mutatja; ha egy kép bármelyik nézetben
+          védett mappában van, mindkét helyen megmarad.</li>
+        <li>A védett lista az NVMe-n tárolódik, újraindítás és frissítés után is megmarad.
+          Az <em>Összes adat törlése</em> és a <em>Gyári visszaállítás</em> azonban a
+          védett adatot és a listát is törli.</li>
+        <li>A védelem feloldása: vedd ki a pipát, és <em>Save</em>.</li>
+      </ul>
+
+      <div class="note crit">
+        <span class="lab">Ne védj túl sokat</span>
+        <p>Ha a védett adat miatt a retenció nem tud elég helyet felszabadítani, az
+          egység <strong>leáll az új képek mentésével</strong> — a védett adatot ekkor sem
+          törli. Ezt az oldal piros sávval és a naplóban is jelzi. 75% feletti
+          telítettségnél az oldal előre figyelmeztet.</p>
+        <p>Teendő: másold ki a régi védett mappákat (<a href="#s11">11. fejezet</a>),
+          majd oldd fel a védelmüket.</p>
+      </div>
+    </section>
+
+    <!-- 13 -->
+    <section id="s13">
+      <div class="sec-head"><span class="num">13</span><h2>NAS biztonsági mentés</h2></div>
       <p>Opcionálisan az összes mentett adat egy távoli hálózati NAS-ra is
         replikálható, így az adat <strong>duplán</strong> biztos: helyi NVMe + távoli NAS.</p>
       <ul>
-        <li>A <em>NAS mentés</em> szekcióban engedélyezd, add meg a távoli megosztás
+        <li>A <em>NAS backup</em> szekcióban engedélyezd, add meg a távoli megosztás
           útvonalát (pl. <code>//nas/vision</code>) és a csatolási pontot.</li>
         <li>Add meg a hitelesítést (felhasználónév / jelszó / domain).</li>
-        <li><em>Save + Apply</em>.</li>
+        <li><em>Save + Apply</em>. A replikáció állapota a <em>Status</em> panel NAS sorában látszik.</li>
       </ul>
       <div class="note">
         <span class="lab">Best-effort</span>
@@ -542,81 +976,223 @@
       </div>
     </section>
 
-    <!-- 11 -->
-    <section id="s11">
-      <div class="sec-head"><span class="num">11</span><h2>Hálózat</h2></div>
+    <!-- 14 -->
+    <section id="s14">
+      <div class="sec-head"><span class="num">14</span><h2>Hálózat</h2></div>
       <div class="tbl-wrap">
       <table>
         <thead><tr><th>Interfész</th><th>Szerep</th><th>Beállítás</th></tr></thead>
         <tbody>
-          <tr><td class="mono">eth0</td><td>Menedzsment + SMB</td><td>DHCP (alap) vagy statikus IP az <em>Alaphálózat</em> szekcióban. Az „Apply Network (live)" azonnal érvényesíti.</td></tr>
+          <tr><td class="mono">eth0</td><td>Menedzsment + SMB + Mirror FTP</td><td>DHCP (alap) vagy statikus IP a <em>Base network</em> szekcióban. Az <em>Apply Network (live)</em> azonnal érvényesíti. Router nélkül, közvetlen laptop-kábelnél az egység maga oszt címet (<code>10.10.10.1</code>).</td></tr>
           <tr><td class="mono">eth1</td><td>Ethernet AOI (izolált)</td><td>Statikus, alapból <code>192.168.100.1/24</code>, üres átjáróval. Az <em>Ethernet AOI</em> szekcióban.</td></tr>
           <tr><td class="mono">WiFi</td><td>Opcionális</td><td>Kliens vagy hotspot mód.</td></tr>
         </tbody>
       </table>
       </div>
+
+      <h3>Névfeloldás</h3>
+      <p>Az egység három módon hirdeti magát, mindhárom a NetBIOS-nevet használja:</p>
+      <ul>
+        <li><strong>mDNS</strong> — <code>CITOSTORE.local</code> (böngésző, Windows 10/11, macOS).</li>
+        <li><strong>NetBIOS</strong> — <code>\\CITOSTORE</code> a Windows fájlkezelőben.</li>
+        <li><strong>WS-Discovery</strong> — a Windows fájlkezelő <em>Hálózat</em> nézetében megjelenik.</li>
+      </ul>
+      <p>A névhirdetés csak az <code>eth0</code>-n történik; az izolált <code>eth1</code>
+        címe soha nem jelenik meg a menedzsment-hálózaton.</p>
+
+      <h3>Közvetlen mód (címosztás router nélkül)</h3>
+      <p>Ha az <code>eth0</code> DHCP-módban van, és kb. 45 másodpercen belül nem kap
+        címet (nincs router a kábel túloldalán), az egység maga lesz DHCP-szerver a
+        <code>10.10.10.x</code> tartományban (lásd <a href="#s5-direct">5. fejezet, B</a>).
+        A kábel kihúzásakor ezt azonnal leállítja, így egy valódi hálózatra kötve nem
+        zavarja annak címosztását. Fix IP-vel beállított egység soha nem oszt címet.</p>
+
       <div class="note warn">
         <span class="lab">Külön alhálózatok</span>
         <p>Az <code>eth1</code>-nek adj a menedzsment-hálózattól (eth0) eltérő
           alhálózatot. Így az Ethernet AOI forgalma teljesen elkülönül, és nem zavarja a
-          menedzsmentet.</p>
+          menedzsmentet. Hasonlóképp a menedzsment-hálózat ne a <code>10.10.10.x</code>
+          tartományt használja, ha közvetlen laptopos módot is használsz.</p>
       </div>
     </section>
 
-    <!-- 12 -->
-    <section id="s12">
-      <div class="sec-head"><span class="num">12</span><h2>Karbantartás</h2></div>
-      <p>A <em>Karbantartás</em> szekció a ritkábban használt, de fontos műveleteket
-        tartalmazza. A csillaggal (*) jelöltek visszafordíthatatlanok — kérnek megerősítést.</p>
+    <!-- 15 -->
+    <section id="s15">
+      <div class="sec-head"><span class="num">15</span><h2>Rendszeridő<span class="new">új</span></h2></div>
+      <p>A pontos idő azért fontos, mert ez alapján kerülnek a képek a
+        <code>bydate/</code> napi mappáiba, és ez határozza meg, mi számít „legrégebbinek"
+        a retenciónál. Az egység <strong>nem támaszkodik internetes időszinkronra</strong>,
+        és a vizsgáló gép óráját sem veszi át.</p>
+      <ul>
+        <li><strong>Valós idejű óra (RTC) tartalékcellával.</strong> Tölthető
+          tartalékcellával (ML2032 / hivatalos RTC-akkumulátor) az óra áramszünet alatt is jár.</li>
+        <li><strong>Óra-védelem cella nélkül is.</strong> Az egység 10 percenként és
+          szabályos leállításkor elmenti az utolsó ismert időt az NVMe-re, és indításkor
+          ahhoz igazítja az órát. Az óra így <strong>soha nem ugrik vissza</strong> — cella
+          nélkül legfeljebb a kikapcsolt időtartammal késik.</li>
+        <li><strong>Kézi beállítás.</strong> <em>System → Time</em>: dátum
+          (<code>ÉÉÉÉ-HH-NN</code>), idő (<code>ÓÓ:PP:MM</code>), <em>Set Time Now</em>. Cella
+          nélküli egységnél hosszabb áramszünet után ellenőrizd és szükség esetén állítsd be.</li>
+      </ul>
+      <div class="note warn">
+        <span class="lab">Tartalékcella</span>
+        <p>Az egység tölti az RTC-cellát. Csak <strong>tölthető</strong> cellát
+          használj (ML2032); nem tölthető CR2032 elemet ne tegyél bele — ha mégis ilyen
+          kell, a töltést a szolgáltatónak ki kell kapcsolnia.</p>
+      </div>
+    </section>
+
+    <!-- 16 -->
+    <section id="s16">
+      <div class="sec-head"><span class="num">16</span><h2>Karbantartás</h2></div>
+      <p>A <em>Maintenance</em> szekció a ritkábban használt, de fontos műveleteket
+        tartalmazza. A csillaggal (*) jelöltek visszafordíthatatlanok — a megerősítéshez
+        a megadott szöveget be kell gépelni.</p>
       <div class="tbl-wrap">
       <table>
         <thead><tr><th>Művelet</th><th>Mit csinál</th></tr></thead>
         <tbody>
-          <tr><td><strong>USB-kötet méretezése</strong></td><td>Az USB logikai kötetek méretének megváltoztatása.</td></tr>
-          <tr><td><strong>Tárkiegyenlítés</strong></td><td>A tárhely újraelosztása a kötetek között.</td></tr>
-          <tr><td><strong>Szinkron most / Rotáció most</strong></td><td>Kézi szinkron-ciklus, illetve azonnali kötetváltás.</td></tr>
-          <tr><td><strong>Klón-formátum</strong></td><td>USB-kötet előkészítése/formázása.</td></tr>
-          <tr><td><strong>Karbantartó mód</strong></td><td>Az automatizmusok felfüggesztése kézi beavatkozáshoz.</td></tr>
-          <tr><td><strong>Frissítés</strong></td><td>Szoftverfrissítés telepítése.</td></tr>
-          <tr><td><strong>Összes adat törlése *</strong></td><td>Minden mentett adat biztonságos törlése.</td></tr>
-          <tr><td><strong>Alapértelmezések visszaállítása *</strong></td><td>A konfiguráció gyári alapra állítása.</td></tr>
-          <tr><td><strong>Biztonságos leállítás</strong></td><td>Az eszköz szabályos leállítása áramtalanítás előtt.</td></tr>
+          <tr><td><strong>USB-kötet méretezése</strong> <span class="ui">Resize USB LVs</span></td><td>Az USB logikai kötetek (a gép által látott meghajtó) méretének megváltoztatása, pl. <code>100G</code>.</td></tr>
+          <tr><td><strong>Tárkiegyenlítés</strong> <span class="ui">Rebalance Storage</span></td><td>A tárhely újraelosztása a kötetek között.</td></tr>
+          <tr><td><strong>Klón-formátum</strong> <span class="ui">Clone USB Format</span></td><td>Az USB-kötetek újraformázása egységes formátumra.</td></tr>
+          <tr><td><strong>Biztonságos leállítás</strong> <span class="ui">Safe Shutdown</span></td><td>Az eszköz szabályos leállítása áramtalanítás előtt.</td></tr>
+          <tr><td><strong>Alapértelmezések visszaállítása *</strong> <span class="ui">Restore Defaults</span></td><td>A beállítások gyári alapra állítása. Az adat megmarad.</td></tr>
+          <tr><td><strong>Összes adat törlése *</strong> <span class="ui">Wipe All Data</span></td><td>Minden USB- és mirror-adat törlése. A beállítások megmaradnak.</td></tr>
+          <tr><td><strong>Gyári visszaállítás *</strong> <span class="ui">Factory Reset</span> <span class="new">új</span></td><td>A teljes NVMe törlése és újraépítése, mint egy új egységen: minden adat, beállítás és jelszó törlődik.</td></tr>
+          <tr><td><strong>Karbantartó mód</strong> <span class="ui">Maintenance Mode</span></td><td>A szinkron és a rotáció felfüggesztése kézi beavatkozáshoz. Amíg aktív, sáv jelzi; ne felejtsd el kikapcsolni.</td></tr>
+          <tr><td><strong>Frissítés</strong> <span class="ui">System Update</span></td><td>A szolgáltatótól kapott frissítőcsomag (<code>.tar.gz</code>) feltöltése és telepítése; a korábbi frissítések listája alatta látszik.</td></tr>
         </tbody>
       </table>
       </div>
+
+      <h3 id="s16-reset">Melyik törlés mit visz el?</h3>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th></th><th>Képek</th><th>Védett mappák</th><th>Beállítások</th><th>Jelszavak</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Restore Defaults</strong></td><td>megmaradnak</td><td>megmaradnak</td><td>gyári alapra</td><td>megmaradnak</td></tr>
+          <tr><td><strong>Wipe All Data</strong></td><td>törlődnek</td><td>törlődnek</td><td>megmaradnak</td><td>megmaradnak</td></tr>
+          <tr><td><strong>Factory Reset</strong></td><td>törlődnek</td><td>törlődnek</td><td>törlődnek</td><td>törlődnek</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>Az <em>Alapértelmezések visszaállítása</em> a NetBIOS-nevet is
+        <code>CITOSTORE</code>-ra állítja vissza — ezután az egység ezen a néven érhető el.</p>
+      <h4>A gyári visszaállítás menete</h4>
+      <p>A <em>Factory Reset</em> megerősítése után az egység újraindul, induláskor
+        törli és újraépíti a teljes NVMe-t, majd még egyszer újraindul. Ez néhány perc;
+        közben ne áramtalanítsd. Utána az egység úgy jelentkezik, mint egy frissen
+        telepített: a kezdőoldal → <em>Settings</em> a beállító oldalra visz, ahol új
+        adminisztrátori jelszót kell megadni, majd a <a href="#s6">6. fejezet</a> lépései
+        következnek. Mivel a beállítások is törlődnek, a NetBIOS-név visszaáll
+        <code>CITOSTORE</code>-ra és az <code>eth0</code> DHCP-re: az egységet ezután a
+        <code>CITOSTORE.local</code> néven éred el. Az egység hostneve
+        (<code>citostore-XXXXXX</code>) nem változik.</p>
       <div class="note crit">
         <span class="lab">Vigyázat</span>
-        <p>Az <strong>Összes adat törlése</strong> és az <strong>Alapértelmezések
-          visszaállítása</strong> nem vonható vissza. Csak akkor futtasd, ha biztos vagy
-          benne, és van érvényes mentésed (SMB/NAS).</p>
+        <p>Az <strong>Összes adat törlése</strong>, az <strong>Alapértelmezések
+          visszaállítása</strong> és a <strong>Gyári visszaállítás</strong> nem vonható
+          vissza. Csak akkor futtasd, ha biztos vagy benne, és van érvényes mentésed
+          (SMB/NAS/USB-kimásolás, valamint a <a href="#s17">konfig-csomag</a>). A gyári
+          visszaállításhoz stabil tápellátás kell (<a href="#s3">3. fejezet</a>).</p>
       </div>
     </section>
 
-    <!-- 13 -->
-    <section id="s13">
-      <div class="sec-head"><span class="num">13</span><h2>Egység cseréje</h2></div>
-      <p>Meghibásodás vagy tervezett csere esetén a <em>Mentés &amp; csere</em> szekció
-        segít átvinni a beállításokat egy másik egységre.</p>
+    <!-- 17 -->
+    <section id="s17">
+      <div class="sec-head"><span class="num">17</span><h2>Egység cseréje</h2></div>
+      <p>Egy CitoStore teljes „személyazonossága" — minden beállítás, az összes jelszó,
+        az SMB-felhasználók és az <code>aoi_settings</code> tartalma — egyetlen
+        <strong>konfig-csomag</strong> fájlba (<code>.citostore</code>) menthető. Ebből
+        egy üres csereegység percek alatt a régi pontos másolatává tehető, kézi
+        beállítás nélkül.</p>
+
+      <h3>Konfig-csomag mentése (a működő egységen)</h3>
+      <p><em>Backup &amp; Replacement → Download Config Bundle</em>. Tárold biztonságos
+        helyen, és töltsd le újra minden beállítás-változtatás után.</p>
+      <div class="note warn">
+        <span class="lab">Bizalmas fájl</span>
+        <p>A <code>.citostore</code> fájl <strong>nem titkosított</strong>, és az egység
+          összes jelszavát tartalmazza. Csak megbízható tárhelyen őrizd.</p>
+      </div>
+
+      <h3>Csereegység beállítása</h3>
       <ol class="steps">
-        <li><h4>Exportáld a konfigurációt</h4>
-          A régi (vagy egy referencia-) egységen mentsd ki a konfigurációs csomagot.</li>
-        <li><h4>Készítsd elő az új egységet</h4>
-          Az új egység a gyári image-ből indul, első bekapcsoláskor egyedi azonosítót és
-          hostnevet kap, és felkészíti a saját NVMe-jét.</li>
-        <li><h4>Importáld a konfigurációt</h4>
-          Töltsd be a mentett csomagot az új egységre, majd alkalmazd. A beállítások
-          (hálózat, megosztás, szinkron, ingest) átkerülnek.</li>
-        <li><h4>Állítsd be újra a jelszavakat</h4>
-          Biztonsági okból a jelszavakat az új egységen külön állítsd be.</li>
+        <li><h4>Indítsd el az új egységet</h4>
+          Az új egység a gyári image-ből indul; első bekapcsoláskor egyedi azonosítót és
+          hostnevet kap. Kösd be, és csatlakozz hozzá (<a href="#s5">5. fejezet</a>).</li>
+        <li><h4>Töltsd fel a csomagot</h4>
+          <em>Backup &amp; Replacement → Provision from Bundle…</em> → válaszd ki a
+          <code>.citostore</code> fájlt.</li>
+        <li><h4>Ellenőrizd a tervet és erősítsd meg</h4>
+          Az egység kiszámolja és megmutatja a saját NVMe-jére szabott elrendezést. A
+          megerősítéshez gépeld be: <code>PROVISION</code>.</li>
+        <li><h4>Várd meg a provizionálást</h4>
+          Az egység törli és újraépíti az NVMe-t, visszaállítja a beállításokat, a
+          jelszavakat és az <code>aoi_settings</code> tartalmát. A webes felület kb. 1 perc
+          múlva újra elérhető.</li>
+        <li><h4>Jelentkezz be a régi jelszavakkal</h4>
+          Minden jelszó a régi egységé (admin, SMB, ingest, NAS). Ellenőrizd a
+          <em>Status</em> panelt, és végezz egy próbaírást.</li>
       </ol>
+      <div class="note">
+        <span class="lab">Eltérő NVMe-méret</span>
+        <p>Az új egység SSD-jének nem kell egyeznie a régiével. Az USB-meghajtók
+          (amit a gép lát) mérete és száma a csomagból jön, a mirror pedig kitölti az új
+          SSD maradék helyét. Ha az új SSD túl kicsi a csomag USB-elrendezéséhez, a
+          provizionálás elutasítja a műveletet, mielőtt bármit törölne. A művelethez
+          stabil tápellátás kell (<a href="#s3">3. fejezet</a>).</p>
+      </div>
+
+      <h3>Csak a beállítások átvitele</h3>
+      <p>Az <em>Export Config</em> / <em>Import Config</em> gombok csak a beállításokat
+        (<code>.conf</code> fájl) viszik át, jelszavak nélkül — ilyenkor a jelszavakat az
+        új egységen külön kell beállítani. Teljes cseréhez a konfig-csomagot használd.</p>
     </section>
 
-    <!-- 14 -->
-    <section id="s14">
-      <div class="sec-head"><span class="num">14</span><h2>Biztonság &amp; hozzáférés</h2></div>
+    <!-- 18 -->
+    <section id="s18">
+      <div class="sec-head"><span class="num">18</span><h2>24/7 üzem &amp; önjavítás<span class="new">új</span></h2></div>
+      <p>Az egység felügyelet nélküli, folyamatos üzemre készült: a legtöbb hibából
+        emberi beavatkozás nélkül áll helyre, és amit kijavított, azt jelzi is.</p>
+      <ul class="lead-list">
+        <li><span class="ic">◆</span><span><strong>Hardveres watchdog.</strong> Ha a rendszer lefagyna, a hardver kb. 15 másodpercen belül automatikusan újraindítja — nem kell hozzá a helyszínre menni.</span></li>
+        <li><span class="ic">◆</span><span><strong>Indításkori állapotellenőrzés.</strong> Minden induláskor ellenőrzi és szükség esetén javítja: az NVMe csatolását, a hiányzó USB-köteteket (pl. megszakadt gyári visszaállítás után magától pótolja őket), a sérült konfigurációt (visszaáll az utolsó jóra), a beragadt pillanatképet, az USB-kötetek fájlrendszerét és a szinkron-adatbázist.</span></li>
+        <li><span class="ic">◆</span><span><strong>Folyamatos felügyelet.</strong> Figyelmeztető sáv jelenik meg a webes felület tetején, ha a szinkron hibára fut vagy 15 percig nem fut le, ha az USB-gadget leáll, ha egy USB-kötet vagy a tár kritikusan telített, illetve ha az egység túlmelegszik.</span></li>
+        <li><span class="ic">◆</span><span><strong>Naplók áramszünet után is.</strong> A rendszernapló legutóbbi bejegyzései rendszeresen az NVMe-re is kiíródnak, így egy váratlan újraindulás oka szervizeléskor visszakereshető.</span></li>
+        <li><span class="ic">◆</span><span><strong>Óra-védelem.</strong> Az óra áramszünet után sem ugrik vissza (<a href="#s15">15. fejezet</a>).</span></li>
+      </ul>
+      <div class="note">
+        <span class="lab">Áramszünet</span>
+        <p>Váratlan áramtalanítás után a rendszer magától, teljes működéssel indul újra.
+          Az áramszünet pillanatában éppen íródó egy-két kép sérülhet; a többi adat ép
+          marad. Tervezett áramtalanítás előtt használd a <em>Safe Shutdown</em> gombot.</p>
+      </div>
+    </section>
+
+    <!-- 19 -->
+    <section id="s19">
+      <div class="sec-head"><span class="num">19</span><h2>Biztonság &amp; hozzáférés</h2></div>
+      <h3>Ki mihez fér hozzá</h3>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Felület</th><th>Cím</th><th>Hitelesítés</th></tr></thead>
+        <tbody>
+          <tr><td>Kezdőoldal</td><td class="mono">http://CITOSTORE.local/</td><td>nincs (csak az egység nevét mutatja)</td></tr>
+          <tr><td>Beállítások</td><td class="mono">/admin</td><td>adminisztrátori (WebUI) jelszó</td></tr>
+          <tr><td>Kimásolás USB-re</td><td class="mono">/export</td><td>SMB-jelszó</td></tr>
+          <tr><td>Védett mappák</td><td class="mono">/protected</td><td>SMB-jelszó</td></tr>
+          <tr><td>Hálózati megosztás</td><td class="mono">\\CITOSTORE</td><td><code>smbuser</code> + SMB-jelszó</td></tr>
+          <tr><td>Mirror FTP</td><td class="mono">ftp://CITOSTORE.local</td><td><code>smbuser</code> + SMB-jelszó</td></tr>
+          <tr><td>Ethernet AOI ingest</td><td class="mono">eth1 · FTP/SFTP</td><td><code>aoiftp</code> + ingest-jelszó</td></tr>
+        </tbody>
+      </table>
+      </div>
       <ul class="lead-list">
         <li><span class="ic">◆</span><span><strong>Csak olvasható OS.</strong> Az operációs rendszer overlay-védett; a rendszerfájlok nem módosulnak üzem közben, ami ellenállóvá teszi a tápkimaradással és a sérüléssel szemben.</span></li>
-        <li><span class="ic">◆</span><span><strong>Külön jelszavak.</strong> A WebUI, az SMB-megosztás és az FTP/SFTP-ingest külön-külön jelszóval védett, mind a webes felületről állítható.</span></li>
+        <li><span class="ic">◆</span><span><strong>Külön jelszavak.</strong> Az adminisztrátori, az SMB- és az ingest-jelszó külön-külön állítható. Az SMB-jelszóval bejelentkezett operátor nem fér hozzá a beállításokhoz.</span></li>
+        <li><span class="ic">◆</span><span><strong>Csak olvasható mirror.</strong> A mentett adatot sem a megosztáson, sem az FTP-n, sem a kimásoló oldalon nem lehet törölni vagy módosítani.</span></li>
+        <li><span class="ic">◆</span><span><strong>Rejtett rendszeradatok.</strong> A jelszavakat és belső állapotot tároló mappa a megosztáson és a böngésző oldalakon sem látható.</span></li>
         <li><span class="ic">◆</span><span><strong>Munkamenet-időkorlát.</strong> A webes bejelentkezés 8 óra után lejár.</span></li>
         <li><span class="ic">◆</span><span><strong>Elkülönített ingest-hálózat.</strong> Az Ethernet AOI külön interfészen és alhálózaton van, elszigetelve a menedzsmenttől.</span></li>
         <li><span class="ic">◆</span><span><strong>SSH karbantartáshoz.</strong> Szervizeléshez SSH-hozzáférés kulcs-alapú hitelesítéssel érhető el (a szolgáltató által kezelt kulccsal).</span></li>
@@ -624,36 +1200,43 @@
       <div class="note warn">
         <span class="lab">Éles üzem előtt</span>
         <p>Üzembe helyezéskor cseréld le az összes alapértelmezett jelszót saját, erős
-          jelszóra: WebUI, SMB és (ha használod) ingest.</p>
+          jelszóra: WebUI, SMB és (ha használod) ingest. A konfig-csomagot
+          (<code>.citostore</code>) jelszóként kezeld.</p>
       </div>
     </section>
 
-    <!-- 15 -->
-    <section id="s15">
-      <div class="sec-head"><span class="num">15</span><h2>Hibaelhárítás</h2></div>
+    <!-- 20 -->
+    <section id="s20">
+      <div class="sec-head"><span class="num">20</span><h2>Hibaelhárítás</h2></div>
+      <p>Csatlakozási problémák (webes felület, megosztás, <code>.local</code> név):
+        lásd az <a href="#s5">5. fejezet</a> végén lévő táblázatot.</p>
       <div class="tbl-wrap">
       <table>
         <thead><tr><th>Tünet</th><th>Lehetséges ok</th><th>Teendő</th></tr></thead>
         <tbody>
-          <tr><td>A webes felület nem érhető el</td><td>Rossz IP / hálózati kábel / eth0 nincs bekötve</td><td>Ellenőrizd az <code>eth0</code> kábelt és a DHCP-lízinget; próbáld a <code>CITOSTORE</code> nevet vagy a router kliens-listáját.</td></tr>
+          <tr><td>A webes felület nem érhető el</td><td>Rossz cím / hálózati kábel / eth0 nincs bekötve</td><td>Ellenőrizd az <code>eth0</code> kábelt; próbáld a <code>CITOSTORE.local</code> nevet, a router kliens-listáját, vagy közvetlen laptop-kábellel a <code>10.10.10.1</code> címet.</td></tr>
           <tr><td>A gép nem látja az USB-meghajtót</td><td>OTG-kábel / a gép még enumerál</td><td>Ellenőrizd az <code>USB-C (OTG)</code> kábelt; a <em>Status</em> panelen az USB-gadgetnek futnia kell.</td></tr>
-          <tr><td>Az új fájlok nem jelennek meg SMB-n</td><td>Fájl még íródik / szinkron-ütem</td><td>Egy fájl csak stabil állapotban másolódik; várd meg a következő ciklust, vagy nyomj <em>Szinkron most</em>-ot.</td></tr>
-          <tr><td>A vizsgáló gép „megtelt" meghajtót jelez</td><td>Rotációs ablakon kívül / küszöb</td><td>Ellenőrizd a rotációs időablakot; szükség esetén <em>Rotáció most</em>.</td></tr>
+          <tr><td>Az új fájlok nem jelennek meg SMB-n</td><td>Fájl még íródik / szinkron-ütem / karbantartó mód</td><td>Egy fájl csak stabil állapotban másolódik; várd meg a következő ciklust, vagy nyomj <em>Sync Now</em>-t. Ellenőrizd, hogy nincs-e bekapcsolva a karbantartó mód.</td></tr>
+          <tr><td>A vizsgáló gép „megtelt" meghajtót jelez</td><td>Rotációs ablakon kívül / küszöb</td><td>Ellenőrizd a rotációs időablakot; szükség esetén <em>Rotate USB Now</em>.</td></tr>
           <tr><td>Nincs hely / NVMe magas</td><td>Retenció még nem futott</td><td>A retenció automatikus; ellenőrizd az SMB/NAS mentést, mielőtt bármit törölnél.</td></tr>
+          <tr><td>Az egység nem ment új képeket, a védett mappák oldalán piros sáv</td><td>A védett adat miatt nem szabadítható fel hely</td><td>Másold ki és oldd fel a régi védett mappákat (<a href="#s12">12. fejezet</a>).</td></tr>
+          <tr><td>A <code>bydate/</code> rossz napra sorol</td><td>Téves rendszeridő</td><td>Állítsd be az időt (<em>System → Time</em>); ellenőrizd az RTC-cellát (<a href="#s15">15. fejezet</a>).</td></tr>
+          <tr><td>A kimásoló oldal „No USB drive plugged in"-t mutat</td><td>Rossz port / nem támogatott fájlrendszer</td><td>USB-A portot használj (ne az OTG-t); a meghajtó FAT32, exFAT vagy NTFS legyen.</td></tr>
+          <tr><td>Figyelmeztető sáv a felület tetején</td><td>Az önellenőrzés hibát talált vagy javított</td><td>Olvasd el a sáv szövegét; ha „auto-completed" / „restored", a rendszer már javította. Ha tartósan fennáll, nézd meg a <em>Logs</em> szekciót, és jelezd a szolgáltatónak.</td></tr>
           <tr><td>Az Ethernet AOI nem tud feltölteni</td><td>eth1 / jelszó / passzív portok</td><td>Ellenőrizd az eth1 bekötést és címet, az ingest engedélyezését, a jelszót és a <code>30000–30020</code> portokat.</td></tr>
         </tbody>
       </table>
       </div>
       <div class="note">
         <span class="lab">Naplók</span>
-        <p>A legtöbb probléma a <em>Naplók</em> szekcióban gyorsan beazonosítható —
-          itt szolgáltatásonként megtekinthetők és kereshetők a naplóbejegyzések.</p>
+        <p>A legtöbb probléma a <em>Logs</em> szekcióban gyorsan beazonosítható — itt
+          szolgáltatásonként megtekinthetők a naplóbejegyzések (10–2000 sor).</p>
       </div>
     </section>
 
-    <!-- 16 -->
-    <section id="s16">
-      <div class="sec-head"><span class="num">16</span><h2>Műszaki adatok</h2></div>
+    <!-- 21 -->
+    <section id="s21">
+      <div class="sec-head"><span class="num">21</span><h2>Műszaki adatok</h2></div>
       <div class="tbl-wrap">
       <table>
         <thead><tr><th>Jellemző</th><th>Érték</th></tr></thead>
@@ -664,8 +1247,12 @@
           <tr><td>Tárkezelés</td><td class="mono">LVM (thin pool + snapshot)</td></tr>
           <tr><td>AOI-bemenet (USB)</td><td class="mono">USB-C OTG · mass-storage gadget · FAT32</td></tr>
           <tr><td>AOI-bemenet (hálózat)</td><td class="mono">eth1 · FTP / SFTP</td></tr>
-          <tr><td>Megosztás</td><td class="mono">SMB (Samba) + opcionális NAS-replikáció</td></tr>
+          <tr><td>Adatelérés</td><td class="mono">SMB2/3 (Samba) · csak olvasható FTP · opcionális NAS-replikáció</td></tr>
+          <tr><td>Kimásolás</td><td class="mono">USB-A host · FAT32 / exFAT / NTFS</td></tr>
           <tr><td>Menedzsment</td><td class="mono">Webes felület · HTTP · 80-as port</td></tr>
+          <tr><td>Névfeloldás</td><td class="mono">mDNS (.local) · NetBIOS · WS-Discovery</td></tr>
+          <tr><td>Óra</td><td class="mono">RTC tölthető cellával + óra-megőrzés NVMe-n</td></tr>
+          <tr><td>Felügyelet</td><td class="mono">Hardveres watchdog (~15 s) · indításkori önellenőrzés</td></tr>
           <tr><td>Táplálás</td><td class="mono">PoE+ (802.3at) vagy DC</td></tr>
           <tr><td>Hálózat</td><td class="mono">2× Ethernet + opcionális WiFi</td></tr>
         </tbody>
@@ -673,22 +1260,30 @@
       </div>
     </section>
 
-    <!-- 17 -->
-    <section id="s17">
-      <div class="sec-head"><span class="num">17</span><h2>Konfigurációs referencia</h2></div>
-      <p>A leggyakrabban hangolt paraméterek és gyári alapértékeik. Ezek a webes
-        felület megfelelő szekcióiban állíthatók.</p>
+    <!-- 22 -->
+    <section id="s22">
+      <div class="sec-head"><span class="num">22</span><h2>Konfigurációs referencia</h2></div>
+      <p>A leggyakrabban hangolt paraméterek és gyári alapértékeik. Az
+        <strong>UI</strong> jelűek a webes felület megfelelő szekciójában állíthatók; a
+        többi szerviz-paraméter, amelyet a szolgáltató módosít.</p>
 
       <h3>Szinkronizálás</h3>
       <div class="tbl-wrap">
       <table>
         <thead><tr><th>Paraméter</th><th>Alap</th><th>Jelentés</th></tr></thead>
         <tbody>
-          <tr><td>Szinkron-ciklus</td><td class="mono">2&nbsp;min</td><td>Normál ütem két szinkron-ciklus között.</td></tr>
-          <tr><td>Gyors ütem</td><td class="mono">10&nbsp;s</td><td>Aktív írás közben sűrűbb szinkron.</td></tr>
+          <tr><td>Szinkron-ciklus <span class="ui">UI · Sync interval</span></td><td class="mono">2&nbsp;min</td><td>Normál ütem két szinkron-ciklus között.</td></tr>
+          <tr><td>Gyors ütem <span class="ui">UI · Fast sync interval</span></td><td class="mono">10&nbsp;s</td><td>Aktív írás közben sűrűbb szinkron.</td></tr>
+          <tr><td>Első szinkron indulás után <span class="ui">UI · First sync after boot</span></td><td class="mono">2&nbsp;min</td><td>Mennyivel a bekapcsolás után fut az első ciklus.</td></tr>
+          <tr><td>Szkennelési mélység <span class="ui">UI · Scan depth</span></td><td class="mono">1</td><td>A munkamappák szintje az AOI mappaszerkezetében (állandó előtag-mappák nélkül).</td></tr>
+          <tr><td>Forró mappák <span class="ui">UI · Hot folders per sync</span></td><td class="mono">1</td><td>Legalább ennyi legfrissebb mappa minden ciklusban.</td></tr>
+          <tr><td>Forró ablak</td><td class="mono">5&nbsp;min</td><td>Az ennyi időn belül írt mappák mind forrónak számítanak.</td></tr>
+          <tr><td>Hideg audit <span class="ui">UI · Cold audit folders per sync</span></td><td class="mono">4</td><td>Ennyi régebbi mappa ellenőrzése ciklusonként, körbeforgóan.</td></tr>
+          <tr><td>Bydate fájlidő szerint <span class="ui">UI · Bydate uses file time</span></td><td class="mono">false</td><td><code>false</code>: mentés ideje; <code>true</code>: a fájl módosítási ideje.</td></tr>
+          <tr><td>Mindig egyedi név <span class="ui">UI · Always append raw filenames</span></td><td class="mono">false</td><td><code>true</code>: minden fájlnévhez időbélyeg-utótag.</td></tr>
           <tr><td>Stabilitási olvasások</td><td class="mono">2</td><td>Ennyi változatlan olvasás után másolható egy fájl.</td></tr>
-          <tr><td>Szkennelési mélység</td><td class="mono">1</td><td>Hány könyvtárszintet jár be prioritással.</td></tr>
           <tr><td>Max. fájlméret</td><td class="mono">4&nbsp;GB</td><td>FAT32-kompatibilitási felső határ.</td></tr>
+          <tr><td>Szinkron-riasztás</td><td class="mono">15&nbsp;min</td><td>Ennyi ideig tartó szinkron-kimaradás után figyelmeztetés.</td></tr>
         </tbody>
       </table>
       </div>
@@ -698,28 +1293,46 @@
       <table>
         <thead><tr><th>Paraméter</th><th>Alap</th><th>Jelentés</th></tr></thead>
         <tbody>
+          <tr><td>Váltási ablak <span class="ui">UI · Switch window</span></td><td class="mono">00:00–23:59</td><td>Mikor engedélyezett a normál kötetváltás.</td></tr>
+          <tr><td>Váltási késleltetés <span class="ui">UI · Switch delay</span></td><td class="mono">0&nbsp;s</td><td>0 = észrevétlen csere; 1–2 s = a gép érzékeli a cserét.</td></tr>
+          <tr><td>USB-kötet mérete <span class="ui">UI · Resize USB LVs</span></td><td class="mono">egységfüggő</td><td>A gép által látott meghajtó mérete.</td></tr>
           <tr><td>Rotáció felső küszöb</td><td class="mono">80%</td><td>Efölött vált a rendszer a következő kötetre (az ablakban).</td></tr>
           <tr><td>Kritikus küszöb</td><td class="mono">92%</td><td>Ennél azonnali váltás, ablaktól függetlenül.</td></tr>
-          <tr><td>Váltási ablak</td><td class="mono">00:00–23:59</td><td>Mikor engedélyezett a normál kötetváltás.</td></tr>
+          <tr><td>Írásszünet a váltás előtt</td><td class="mono">0,3&nbsp;s / max 5&nbsp;s</td><td>Ennyi írásmentes időt vár ki a váltás előtt, legfeljebb 5 másodpercig.</td></tr>
           <tr><td>Retenció felső</td><td class="mono">90%</td><td>Efölött kezd törölni a legrégebbi mentett adatból.</td></tr>
-          <tr><td>Retenció alsó</td><td class="mono">85%</td><td>Eddig a szintig szabadít fel helyet.</td></tr>
+          <tr><td>Retenció alsó</td><td class="mono">85%</td><td>Eddig a szintig szabadít fel helyet (a védett mappákat kihagyva).</td></tr>
         </tbody>
       </table>
       </div>
 
-      <h3>Hálózat &amp; ingest</h3>
+      <h3>Hálózat, elérés &amp; ingest</h3>
       <div class="tbl-wrap">
       <table>
         <thead><tr><th>Paraméter</th><th>Alap</th><th>Jelentés</th></tr></thead>
         <tbody>
-          <tr><td>eth0 (menedzsment)</td><td class="mono">DHCP</td><td>Menedzsment + SMB interfész.</td></tr>
-          <tr><td>eth1 cím</td><td class="mono">192.168.100.1/24</td><td>Izolált Ethernet-AOI hálózat.</td></tr>
-          <tr><td>WebUI port</td><td class="mono">80</td><td>A webes felület HTTP-portja.</td></tr>
-          <tr><td>NetBIOS-név</td><td class="mono">CITOSTORE</td><td>Az SMB-megosztás hálózati neve.</td></tr>
-          <tr><td>Ingest-felhasználó</td><td class="mono">aoiftp</td><td>Az FTP/SFTP feltöltő fiók neve.</td></tr>
-          <tr><td>Passzív FTP portok</td><td class="mono">30000–30020</td><td>Az FTP passzív adatkapcsolat porttartománya.</td></tr>
-          <tr><td>Mirror FTP</td><td class="mono">kikapcsolva</td><td>Csak-olvasható FTP a mirror-adatra, eth0-n; bekapcsolásig inaktív.</td></tr>
+          <tr><td>eth0 (menedzsment) <span class="ui">UI · Base network</span></td><td class="mono">DHCP</td><td>Menedzsment + SMB interfész.</td></tr>
+          <tr><td>Közvetlen mód címei</td><td class="mono">10.10.10.1 / .x</td><td>Router nélküli laptop-kapcsolatnál az egység és a laptop címe.</td></tr>
+          <tr><td>DHCP-várakozás</td><td class="mono">45&nbsp;s</td><td>Ennyi ideig vár címre, mielőtt közvetlen módba vált.</td></tr>
+          <tr><td>NetBIOS-név <span class="ui">UI · SMB share</span></td><td class="mono">CITOSTORE</td><td>A megosztás és a <code>.local</code> név.</td></tr>
+          <tr><td>SMB-felhasználó</td><td class="mono">smbuser</td><td>A megosztás, a Mirror FTP, a kimásolás és a védett mappák felhasználója.</td></tr>
+          <tr><td>WebUI port <span class="ui">UI · System</span></td><td class="mono">80</td><td>A webes felület HTTP-portja.</td></tr>
+          <tr><td>eth1 cím <span class="ui">UI · Ethernet AOI</span></td><td class="mono">192.168.100.1/24</td><td>Izolált Ethernet-AOI hálózat.</td></tr>
+          <tr><td>Ingest-felhasználó <span class="ui">UI · Ethernet AOI</span></td><td class="mono">aoiftp</td><td>Az FTP/SFTP feltöltő fiók neve.</td></tr>
+          <tr><td>Passzív FTP portok (ingest)</td><td class="mono">30000–30020</td><td>Az FTP passzív adatkapcsolat porttartománya.</td></tr>
+          <tr><td>Mirror FTP <span class="ui">UI · Mirror FTP</span></td><td class="mono">kikapcsolva</td><td>Csak olvasható FTP a mirror-adatra, eth0-n.</td></tr>
           <tr><td>Mirror FTP passzív portok</td><td class="mono">30021–30040</td><td>Elkülönítve az ingest-FTP porttartományától.</td></tr>
+          <tr><td>USB-kimásolás</td><td class="mono">bekapcsolva · azonnali írás</td><td>USB-A portba dugott meghajtó automatikus csatolása.</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Óra</h3>
+      <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>Paraméter</th><th>Alap</th><th>Jelentés</th></tr></thead>
+        <tbody>
+          <tr><td>RTC</td><td class="mono">bekapcsolva · cellatöltés be</td><td>Valós idejű óra tölthető tartalékcellával.</td></tr>
+          <tr><td>Óra-megőrzés</td><td class="mono">10&nbsp;min</td><td>Ilyen gyakran menti az időt az NVMe-re (és leállításkor).</td></tr>
         </tbody>
       </table>
       </div>
@@ -727,9 +1340,10 @@
 
     <footer>
       <div class="rule"></div>
-      <p><strong>CitoStore Vision USB Gateway</strong> — Felhasználói kézikönyv, v1.0.
-        A konkrét tárméretek, küszöbök és hálózati paraméterek a telepítéstől függően
-        eltérhetnek; az élő értékeket mindig a webes felület mutatja.</p>
+      <p><strong>CitoStore Vision USB Gateway</strong> — Felhasználói kézikönyv, v1.1
+        (2026. szeptember). A konkrét tárméretek, küszöbök és hálózati paraméterek a
+        telepítéstől függően eltérhetnek; az élő értékeket mindig a webes felület mutatja.
+        A példákban szereplő <code>CITOSTORE</code> helyett az egységed NetBIOS-nevét használd.</p>
     </footer>
   </main>
 </div>
