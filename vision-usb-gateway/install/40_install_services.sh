@@ -75,6 +75,22 @@ if [[ -d "$SCRIPT_DIR/../systemd/system.conf.d" ]]; then
   install -m 0644 "$SCRIPT_DIR/../systemd/system.conf.d/"*.conf /etc/systemd/system.conf.d/
 fi
 
+# Re-bind smbd / vsftpd-mirror when the LAN interface's address appears or
+# changes after they started (direct 1-1 link, slow DHCP) — see lan-rebind.sh.
+# Baked here, not generated at boot: the address can arrive before anything
+# re-applies config, and the hook must already be in place when it does.
+log "installing NetworkManager rebind dispatcher"
+mkdir -p /etc/NetworkManager/dispatcher.d
+cat > /etc/NetworkManager/dispatcher.d/91-citostore-rebind <<EOF
+#!/bin/sh
+# Managed by 40_install_services.sh — see scripts/lan-rebind.sh.
+case "\$2" in
+  up|dhcp4-change|reapply)
+    "$GATEWAY_HOME/scripts/lan-rebind.sh" "\$1" "\$2" 2>&1 | systemd-cat -t citostore-rebind ;;
+esac
+EOF
+chmod 0755 /etc/NetworkManager/dispatcher.d/91-citostore-rebind
+
 # The sync's transient snapshot lives well under a second; udev's blkid probe
 # (queued by the dm change uevents of its activation) races the teardown and
 # logs a spurious "Buffer I/O error ... async page read" EVERY sync cycle
