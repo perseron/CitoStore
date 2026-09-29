@@ -469,8 +469,8 @@ async function applyNetwork() {
     gateway: document.getElementById("NET_GW").value,
     dns: dns,
   };
-  await api("/api/network", { method: "POST", body: JSON.stringify(payload) });
-  setStatus("Network updated");
+  const res = await api("/api/network", { method: "POST", body: JSON.stringify(payload) });
+  setStatus(res && res.warning ? res.warning : "Network updated");
 }
 
 async function changeWebuiPassword() {

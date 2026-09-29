@@ -45,6 +45,10 @@ prefix="${vals[3]:-}"
 gateway="${vals[4]:-}"
 dns="${vals[5]:-}"
 
+# --temporary: network.json is the persistent truth and this re-applies it every
+# boot. A saved modify wrote the profile to /etc, which on the overlay-off first
+# boot after a flash is the eMMC itself — the static IP then outlived
+# network.json and came back on every boot (seen live on AOI1).
 active_conn() {
   nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null     | awk -F: -v d="$iface" '$2==d{print $1; exit}'
 }
@@ -68,13 +72,13 @@ fi
 ((waited == 0)) || log "$iface connection '$conn' active after ${waited}s"
 
 if [[ "$method" == "auto" ]]; then
-  nmcli connection modify "$conn" ipv4.method auto ipv4.addresses "" ipv4.gateway "" ipv4.dns ""
+  nmcli connection modify --temporary "$conn" ipv4.method auto ipv4.addresses "" ipv4.gateway "" ipv4.dns ""
 else
   if [[ -z "$address" || -z "$prefix" ]]; then
     log "static config missing address/prefix"
     exit 1
   fi
-  nmcli connection modify "$conn" ipv4.method manual ipv4.addresses "${address}/${prefix}" \
+  nmcli connection modify --temporary "$conn" ipv4.method manual ipv4.addresses "${address}/${prefix}" \
     ipv4.gateway "$gateway" ipv4.dns "$dns"
 fi
 

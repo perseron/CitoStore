@@ -55,7 +55,7 @@ check() { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; else echo "  FAIL: $1 (
 
 STATIC='{"interface": "eth0", "method": "manual", "address": "10.10.10.50", "prefix": "24", "gateway": "", "dns": ""}'
 DHCP='{"interface": "eth0", "method": "auto", "address": "", "prefix": "", "gateway": "", "dns": ""}'
-APPLIED="rc=0 calls=connection modify Wired connection 1 ipv4.method manual ipv4.addresses 10.10.10.50/24 ipv4.gateway  ipv4.dns ;connection up Wired connection 1;"
+APPLIED="rc=0 calls=connection modify --temporary Wired connection 1 ipv4.method manual ipv4.addresses 10.10.10.50/24 ipv4.gateway  ipv4.dns ;connection up Wired connection 1;"
 
 echo "=== static IP ==="
 check "no network.json -> nothing, success" "$(run_case - 1)" "rc=0 calls="
@@ -83,7 +83,7 @@ took=$(( $(date +%s) - start ))
 check "DHCP with nothing active -> success, nothing to do" "$got" "rc=0 calls="
 check "  ... without waiting" "$(( took <= 1 ))" "1"
 check "DHCP with eth0 active -> set to auto" "$(run_case "$DHCP" 1)" \
-  "rc=0 calls=connection modify Wired connection 1 ipv4.method auto ipv4.addresses  ipv4.gateway  ipv4.dns ;connection up Wired connection 1;"
+  "rc=0 calls=connection modify --temporary Wired connection 1 ipv4.method auto ipv4.addresses  ipv4.gateway  ipv4.dns ;connection up Wired connection 1;"
 
 echo
 if ((fail)); then echo "FAILED"; exit 1; fi

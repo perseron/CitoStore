@@ -1047,6 +1047,17 @@ def units_to_tb(units) -> float | None:
         return None
 
 
+# network.json is the only persistent source of truth (apply-network.sh
+# re-applies it at every boot), so NetworkManager profiles are only ever changed
+# in memory: a plain `nmcli connection modify` wrote the profile to /etc, and on
+# an overlay-off boot (the first boot after a flash) that landed on the eMMC —
+# the static IP then outlived network.json and came back on every boot.
+NMCLI_MODIFY = ["nmcli", "connection", "modify", "--temporary"]
+# Bounded: DHCP activation with no server answering (a direct laptop link)
+# otherwise holds the request for NetworkManager's whole DHCP timeout.
+NMCLI_UP = ["nmcli", "--wait", "20", "connection", "up"]
+
+
 def apply_network_config(
     iface: str, method: str, address: str, prefix: str, gateway: str, dns: str
 ):
@@ -1055,9 +1066,7 @@ def apply_network_config(
         return 1, "", "no active connection for interface"
     if method == "auto":
         args = [
-            "nmcli",
-            "connection",
-            "modify",
+            *NMCLI_MODIFY,
             conn,
             "ipv4.method",
             "auto",
@@ -1071,7 +1080,7 @@ def apply_network_config(
         code, out, err = run_cmd(args)
         if code != 0:
             return code, out, err
-        return run_cmd(["nmcli", "connection", "up", conn])
+        return run_cmd([*NMCLI_UP, conn])
     try:
         ipaddress.ip_address(address)
         prefix_int = int(prefix)
@@ -1083,9 +1092,7 @@ def apply_network_config(
         return 1, "", f"invalid network parameters: {exc}"
     addr = f"{address}/{prefix_int}"
     args = [
-        "nmcli",
-        "connection",
-        "modify",
+        *NMCLI_MODIFY,
         conn,
         "ipv4.method",
         "manual",
@@ -1099,7 +1106,46 @@ def apply_network_config(
     code, out, err = run_cmd(args)
     if code != 0:
         return code, out, err
-    return run_cmd(["nmcli", "connection", "up", conn])
+    return run_cmd([*NMCLI_UP, conn])
+
+
+def apply_and_save_network(
+    iface: str, method: str, address: str, prefix: str, gateway: str, dns: str
+) -> tuple[bool, str]:
+    """Apply live, then save network.json for apply-network.sh to re-apply at boot.
+
+    Returns (ok, message): the error when not ok, otherwise a warning or "".
+    """
+    code, out, err = apply_network_config(iface, method, address, prefix, gateway, dns)
+    log(f"network update iface={iface} rc={code} out={out} err={err}")
+    warning = ""
+    if code != 0:
+        if method != "auto":
+            return False, err or out
+        # Switching to DHCP is valid even when nothing answers right now: on a
+        # direct laptop link there is no DHCP server, activation times out, and
+        # refusing to save left the unit stuck on its static address with no
+        # way back from the WebUI.
+        warning = (
+            f"No DHCP server answered on {iface}. DHCP is saved and takes effect "
+            "after a restart; on a direct laptop link the unit then gives itself "
+            "10.10.10.1."
+        )
+    NETWORK_STATE.write_text(
+        json.dumps(
+            {
+                "interface": iface,
+                "method": method,
+                "address": address,
+                "prefix": prefix,
+                "gateway": gateway,
+                "dns": dns,
+            }
+        ),
+        encoding="utf-8",
+    )
+    os.chmod(NETWORK_STATE, 0o600)
+    return True, warning
 
 
 def validate_config_updates(updates: dict) -> tuple[bool, str]:
@@ -1743,25 +1789,10 @@ class WebHandler(BaseHTTPRequestHandler):
         gateway = data.get("gateway", "")
         dns = data.get("dns", "")
         with require_lock():
-            code, out, err = apply_network_config(iface, method, address, prefix, gateway, dns)
-            log(f"network update iface={iface} rc={code} out={out} err={err}")
-            if code != 0:
-                return self.send_json({"ok": False, "error": err or out}, status=500)
-            NETWORK_STATE.write_text(
-                json.dumps(
-                    {
-                        "interface": iface,
-                        "method": method,
-                        "address": address,
-                        "prefix": prefix,
-                        "gateway": gateway,
-                        "dns": dns,
-                    }
-                ),
-                encoding="utf-8",
-            )
-            os.chmod(NETWORK_STATE, 0o600)
-            return self.send_json({"ok": True})
+            ok, message = apply_and_save_network(iface, method, address, prefix, gateway, dns)
+            if not ok:
+                return self.send_json({"ok": False, "error": message}, status=500)
+            return self.send_json({"ok": True, "warning": message} if message else {"ok": True})
 
     def handle_nas_creds(self):
         length = int(self.headers.get("Content-Length", 0))
