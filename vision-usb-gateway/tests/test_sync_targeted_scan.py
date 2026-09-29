@@ -4,7 +4,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from vision_sync.db import init_db
-from vision_sync.sync import select_scan_roots, stable_and_copy
+from vision_sync.sync import (
+    HOT_WINDOW_MAX_DIRS,
+    PREFIX_SKIP_MAX,
+    select_scan_roots,
+    stable_and_copy,
+)
 
 
 def _sync_cfg(mirror: Path, tmp_path: Path, depth: int) -> SimpleNamespace:
@@ -329,6 +334,77 @@ def test_prefix_skip_fires_next_to_the_persist_folder(tmp_path: Path):
         conn.close()
     assert "aoi_settings/config.ini" in got
     assert len(got) == 3
+
+
+def test_prefix_deeper_than_skip_max_stops_but_stays_complete(tmp_path: Path):
+    """A layout with MORE constant levels than PREFIX_SKIP_MAX (3) must not
+    be silently mis-skipped: the walk stops at the cap, granularity is
+    reduced (units land one level too high), but every file is still
+    captured by the recursive unit scan -- no data loss, just a coarser
+    hot/cold split than an in-limit prefix would get."""
+    assert PREFIX_SKIP_MAX == 3, "test assumes the current cap; adjust levels below if it changes"
+    root = tmp_path / "snap"
+    leaves = ["d1/SG1/S1/OK", "d1/SG1/S1/NG", "d2/SG2/S1/OK"]
+    deep_prefix = "A/B/C/D"  # 4 constant levels > PREFIX_SKIP_MAX
+    for leaf in leaves:
+        d = root / deep_prefix / leaf
+        d.mkdir(parents=True)
+        (d / f"{leaf.replace('/', '_')}.jpg").write_bytes(leaf.encode())
+
+    cfg = SimpleNamespace(
+        sync_scan_depth=4,
+        sync_hot_dirs=1,
+        sync_hot_window_sec=0,
+        sync_cold_audit_dirs_per_run=8,
+        sync_dir_index_file=tmp_path / "sync-dir-index-deepprefix.json",
+    )
+    roots, plan = select_scan_roots(cfg, root)
+    # Skip stopped at 3 levels (A/B/C), not all 4 -- "D" is left as real
+    # structure, so the scan units are one level shallower than d1/d2.
+    assert plan["prefix"] == "A/B/C"
+
+    # Completeness is what actually matters: the offline export (every dir
+    # under the rebased base, recursively) must still get every file.
+    mirror = tmp_path / "mirror"
+    conn = init_db(mirror / ".state" / "vision.db")
+    copy_cfg = _sync_cfg(mirror, tmp_path, depth=4)
+    try:
+        stable_and_copy(copy_cfg, root, conn, force_stable=True, full_scan=True)
+        got = _synced_paths(conn)
+    finally:
+        conn.close()
+    assert got == sorted(
+        f"{deep_prefix}/{leaf}/{leaf.replace('/', '_')}.jpg" for leaf in leaves
+    )
+
+
+def test_hot_selection_bounded_under_extreme_fanout(tmp_path: Path):
+    """A wide layout (many SceneGroups x Scenes) can put far more than
+    HOT_WINDOW_MAX_DIRS leaves inside the hot window at once (all written
+    within the same burst). The selection must cap at the bound -- not
+    silently balloon to scanning hundreds of dirs every ~30s cycle -- while
+    still preferring the most-recently-written ones."""
+    root = tmp_path / "snap"
+    now = int(time.time())
+    total = HOT_WINDOW_MAX_DIRS + 40
+    for i in range(total):
+        _touch_dir(root / f"leaf{i:03d}", now - i)  # all within a few minutes
+
+    cfg = SimpleNamespace(
+        sync_scan_depth=1,
+        sync_hot_dirs=1,
+        sync_hot_window_sec=300,
+        sync_cold_audit_dirs_per_run=4,
+        sync_dir_index_file=tmp_path / "sync-dir-index-fanout.json",
+    )
+    roots, plan = select_scan_roots(cfg, root)
+    assert len(plan["hot"]) == HOT_WINDOW_MAX_DIRS
+    # The newest-written leaves win the capped slots (dirs are mtime-sorted).
+    assert set(plan["hot"]) == {f"leaf{i:03d}" for i in range(HOT_WINDOW_MAX_DIRS)}
+    # The overflow isn't lost -- it round-robins through the cold cursor.
+    assert set(plan["audit"]).issubset(
+        {f"leaf{i:03d}" for i in range(HOT_WINDOW_MAX_DIRS, total)}
+    )
 
 
 def test_single_date_folder_edge_stays_fully_covered(tmp_path: Path):
