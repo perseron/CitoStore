@@ -105,10 +105,15 @@ Restart=on-failure
 RestartSec=10
 EOF
 
+# Enable only — never start it here. This script also runs at boot (via
+# vision-shadow-config) and on every WebUI apply; on a unit with no DHCP answer
+# yet (direct 1-1 laptop link, no cable) starting wait-online blocks ~15s and
+# fails, and under `set -e` that aborted this script and apply-shadow-config
+# with it: ingest, mDNS and mirror FTP were never re-applied on such a boot.
 if systemctl is-active --quiet NetworkManager; then
-  systemctl enable --now NetworkManager-wait-online.service
+  systemctl enable NetworkManager-wait-online.service
 elif systemctl is-active --quiet systemd-networkd; then
-  systemctl enable --now systemd-networkd-wait-online.service
+  systemctl enable systemd-networkd-wait-online.service
 fi
 
 systemctl daemon-reload

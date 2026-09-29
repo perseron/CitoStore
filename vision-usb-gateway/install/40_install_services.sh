@@ -121,8 +121,15 @@ log "configuring vision-sync.timer override"
 SYNC_TIMER_DIR=/etc/systemd/system/vision-sync.timer.d
 SYNC_TIMER_OVERRIDE=$SYNC_TIMER_DIR/override.conf
 mkdir -p "$SYNC_TIMER_DIR"
+# Each override first clears the base unit's values (empty assignment): timer
+# settings ACCUMULATE across drop-ins, so without the reset the base unit's
+# 2min kept firing too — a configured interval longer than the base never
+# took effect.
 cat > "$SYNC_TIMER_OVERRIDE" <<EOF
 [Timer]
+OnBootSec=
+OnActiveSec=
+OnUnitActiveSec=
 OnBootSec=$SYNC_ONBOOT_SEC
 OnActiveSec=$SYNC_ONACTIVE_SEC
 OnUnitActiveSec=$SYNC_INTERVAL_SEC
@@ -134,6 +141,8 @@ SYNC_FAST_TIMER_OVERRIDE=$SYNC_FAST_TIMER_DIR/override.conf
 mkdir -p "$SYNC_FAST_TIMER_DIR"
 cat > "$SYNC_FAST_TIMER_OVERRIDE" <<EOF
 [Timer]
+OnActiveSec=
+OnUnitActiveSec=
 OnActiveSec=$SYNC_HI_INTERVAL_SEC
 OnUnitActiveSec=$SYNC_HI_INTERVAL_SEC
 EOF
@@ -144,6 +153,8 @@ RTC_TIMER_OVERRIDE=$RTC_TIMER_DIR/override.conf
 mkdir -p "$RTC_TIMER_DIR"
 cat > "$RTC_TIMER_OVERRIDE" <<EOF
 [Timer]
+OnBootSec=
+OnUnitActiveSec=
 OnBootSec=5min
 OnUnitActiveSec=$RTC_SYNC_INTERVAL
 EOF
