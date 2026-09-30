@@ -48,5 +48,5 @@ bash -n "$tmp/install.sh"
 
 mkdir -p "$out_dir"
 out="$out_dir/$version.tar.gz"
-tar czf "$out" -C "$tmp" .
+tar czf "$out" --owner=0 --group=0 --numeric-owner -C "$tmp" .
 echo "$out"
