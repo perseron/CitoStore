@@ -1,6 +1,11 @@
 [Unit]
 Description=Vision Update Reapply (overlay mode)
 After=local-fs.target
+# The persisted update lives on the NVMe mirror, whose mount is nofail (so not
+# ordered before local-fs.target): this ran ~0.1-0.3s after it in the boots
+# measured, and a slower mount (fsck after a power cut) silently skipped the
+# update for that boot — "no persisted update to reapply".
+RequiresMountsFor=/srv/vision_mirror
 Before=vision-gw-config.service usb-gadget.service vision-sync.service vision-webui.service
 
 [Service]

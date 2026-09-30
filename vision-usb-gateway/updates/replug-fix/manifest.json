@@ -1,0 +1,6 @@
+{
+  "version": "replug-fix-676108b",
+  "description": "A re-plugged Ethernet cable decides network vs direct (10.10.10.1) again, without a reboot.",
+  "source_commit": "676108b",
+  "compatible_builds": ["bb27fc1", "676108b"]
+}
