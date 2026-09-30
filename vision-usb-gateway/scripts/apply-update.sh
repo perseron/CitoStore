@@ -10,6 +10,7 @@ require_root
 STAGING_DIR="$MIRROR_MOUNT/.state/update-staging"
 PERSIST_DIR="$MIRROR_MOUNT/.state/updates"
 HISTORY_FILE="$MIRROR_MOUNT/.state/update-history.json"
+BUILD_FILE=${CITOSTORE_BUILD_FILE:-/etc/citostore-build}
 
 # MODE can be "apply" (new upload) or "reapply" (boot-time re-application)
 MODE="${1:-apply}"
@@ -71,6 +72,27 @@ import json; print(json.load(open('$STAGING_DIR/manifest.json'))['version'])
 if [[ ! -f "$STAGING_DIR/install.sh" ]]; then
   log "no install.sh in update staging"
   exit 1
+fi
+
+# A persisted package made for specific builds (manifest "compatible_builds")
+# that no longer match the running image means the unit was reflashed since it
+# was uploaded: the image carries its own code now. Re-running the package on
+# every boot would only fail (its install.sh refuses a foreign build) and mark
+# the unit degraded — so delete it. An upload (apply) still fails loudly, so an
+# operator sees a package that was not made for this unit.
+if [[ "$MODE" == "reapply" ]]; then
+  compatible=$(python3 -c '
+import json, sys
+print(" ".join(json.load(open(sys.argv[1])).get("compatible_builds", [])))' \
+    "$STAGING_DIR/manifest.json" 2>/dev/null || true)
+  build=$(sed -n 's/^CITOSTORE_BUILD_SHA=//p' "$BUILD_FILE" 2>/dev/null | head -1)
+  if [[ -n "$compatible" && " $compatible " != *" ${build:-unknown} "* ]]; then
+    log "persisted update $version is for builds [$compatible]; this unit now runs ${build:-unknown} (reflashed) — removed, not re-applied"
+    rm -f "$PERSIST_DIR/current.tar.gz"
+    record_history "$version" "removed"
+    rm -rf "$STAGING_DIR"
+    exit 0
+  fi
 fi
 
 log "applying update: $version (mode=$MODE)"

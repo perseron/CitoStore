@@ -52,9 +52,10 @@ check "no CRLF in the packaged install.sh / manifest" "$(cat "$TMP/unpacked/inst
 unit() {  # <build sha>
   rm -rf "$TMP/gw" "$TMP/mirror"
   mkdir -p "$TMP/gw/scripts" "$TMP/mirror/.state"
-  # From git (LF), as on the unit — a Windows checkout has them CRLF.
+  # The working tree, CRs stripped (a Windows checkout has them CRLF; the unit
+  # gets LF from git).
   for f in apply-update.sh common.sh; do
-    git -C "$GW" show "HEAD:${PREFIX}scripts/$f" > "$TMP/gw/scripts/$f"
+    tr -d '\r' < "$GW/scripts/$f" > "$TMP/gw/scripts/$f"
   done
   install -m 0755 "$TMP/old.sh" "$TMP/gw/scripts/mdns-apply-mode.sh"
   printf 'CITOSTORE_BUILD_SHA=%s\n' "$1" > "$TMP/citostore-build"
@@ -91,6 +92,21 @@ chmod +x "$TMP/bin/mount"
 check "reapply succeeds" "$(run_update reapply)" 0
 check "fix is back" "$(installed)" "$(sha "$TMP/new.sh")"
 check "history shows both runs" "$(history)" "$version=ok;$version=ok"
+rm -f "$TMP/bin/mount"
+
+echo "=== unit reflashed to a newer image, package still persisted on the NVMe ==="
+# Seen live: every boot the reapply failed ("nothing changed") and the unit
+# came up degraded. The image carries its own code, so the package is deleted.
+printf 'CITOSTORE_BUILD_SHA=f9b2b6a\n' > "$TMP/citostore-build"
+install -m 0755 "$TMP/old.sh" "$TMP/gw/scripts/mdns-apply-mode.sh"   # stands in for the image's copy
+printf '#!/bin/bash\necho "overlayroot on / type overlay (rw,relatime)"\n' > "$TMP/bin/mount"
+chmod +x "$TMP/bin/mount"
+check "reapply succeeds instead of failing the boot" "$(run_update reapply)" 0
+check "package not run over the image's code" "$(installed)" "$(sha "$TMP/old.sh")"
+check "history says removed" "$(history | awk -F';' '{print $NF}')" "$version=removed"
+check "package deleted from the NVMe" "$(find "$TMP/mirror/.state/updates" -type f | wc -l)" 0
+check "next boot: nothing to reapply, still fine" "$(run_update reapply)" 0
+check "  ... and no new history entry" "$(history | tr ';' '\n' | grep -c .)" 3
 rm -f "$TMP/bin/mount"
 
 echo "=== upload on a build it was not made for ==="
