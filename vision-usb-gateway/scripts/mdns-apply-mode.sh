@@ -17,7 +17,7 @@ SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/common.sh"
 
-load_config
+load_config "${CONF_FILE:-}"
 : "${MDNS_ENABLED:=true}"
 : "${MDNS_INTERFACE:=eth0}"
 : "${MDNS_DIRECT_NAME:=citostore.local}"
@@ -34,6 +34,8 @@ load_config
 : "${MDNS_NETWORK_WAIT_SEC:=45}"
 SHARED_CON=citostore-direct
 PROBE_CON=citostore-probe
+CARRIER_WAIT_UNIT=citostore-carrier-wait
+NETWORK_STATE_FILE=${NETWORK_STATE_FILE:-/srv/vision_mirror/.state/network.json}
 
 action="${1:-}"
 
@@ -42,25 +44,44 @@ command -v avahi-set-host-name >/dev/null 2>&1 || { log "avahi-utils missing; sk
 
 shared_active() { nmcli -t -f NAME,DEVICE connection show --active 2>/dev/null | grep -q "^$SHARED_CON:"; }
 
-# When the 1-1 cable is physically UNPLUGGED while we are serving DHCP, stop
-# serving and hand the interface back to the DHCP client — so a unit later moved
-# onto a LAN never keeps serving rogue DHCP. Gate on real carrier loss (no
-# LOWER_UP): a "down" event also fires when the boot decision switches the
-# interface from the DHCP client to the shared connection (the old connection
-# deactivates) — that is NOT an unplug (the cable is still up), and acting on it
-# would tear down the DHCP server we just started (flap). The direct<->network
-# switch is otherwise decided at the next boot.
-if [[ "$MDNS_DIRECT_DHCP" == "true" && "$action" == "down" ]] && shared_active \
-   && ! ip link show "$MDNS_INTERFACE" 2>/dev/null | grep -q 'LOWER_UP'; then
-  log "mDNS: $MDNS_INTERFACE cable unplugged while serving DHCP -> releasing to DHCP client"
-  nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
-  # Delete the (runtime-only) profile before reconnecting: `nmcli device
-  # connect` activates the best AVAILABLE profile, and with the shared profile
-  # still present that is the shared profile itself — flapping the DHCP server
-  # right back on. apply-shadow recreates the profile on the next boot; within
-  # this boot a re-plugged 1-1 link needs a reboot anyway (decision is per-boot).
-  nmcli connection delete "$SHARED_CON" >/dev/null 2>&1 || true
-  nmcli device connect "$MDNS_INTERFACE" >/dev/null 2>&1 || true
+has_carrier() { ip link show "$MDNS_INTERFACE" 2>/dev/null | grep -q 'LOWER_UP'; }
+
+# The operator's choice for the interface: a static IP (network.json "manual")
+# never serves DHCP and needs no re-probe — NM brings the fixed address back by
+# itself when the cable returns.
+configured_static() {
+  [[ -r "$NETWORK_STATE_FILE" ]] || return 1
+  python3 -c 'import json, sys; sys.exit(0 if json.load(open(sys.argv[1])).get("method") == "manual" else 1)'     "$NETWORK_STATE_FILE" 2>/dev/null
+}
+
+# Hand the wait for a cable to its own transient unit. A child left behind by
+# the NM dispatcher dies with the dispatcher's cgroup once it idles out, and the
+# unit name makes it a singleton: asking again while one waits is a no-op.
+spawn_carrier_wait() {
+  systemctl is-active --quiet "$CARRIER_WAIT_UNIT.service" 2>/dev/null && return 0
+  systemd-run --quiet --collect --no-block --unit="$CARRIER_WAIT_UNIT"     --setenv=GATEWAY_HOME="$GATEWAY_HOME"     /bin/bash "$SCRIPT_DIR/mdns-apply-mode.sh" carrier-wait >/dev/null 2>&1 || true
+}
+
+# Cable UNPLUGGED: a "down" event with no carrier. (A "down" also fires when the
+# boot decision itself switches the interface from the DHCP client to the shared
+# connection — the cable is still up then, and acting on it would tear down the
+# DHCP server just started.) Stop serving DHCP, so a unit moved onto a LAN never
+# keeps serving rogue DHCP, then — unless the IP is static — go back to waiting
+# for a cable: the next plug-in runs the same probe as boot (lease -> network,
+# none -> direct on MDNS_DIRECT_SUBNET.1), so a re-plugged laptop gets an address
+# without a reboot. That used to need one: this branch deleted the shared
+# profile and the direct/network decision was only ever made at boot. The
+# profile is now kept — the carrier wait needs it, and nothing else re-activates
+# it (autoconnect=no). NM itself deactivates connections on carrier loss, so the
+# shared one may already be down by the time this runs.
+if [[ "$MDNS_DIRECT_DHCP" == "true" && "$action" == "down" ]] && ! has_carrier; then
+  if shared_active; then
+    log "mDNS: $MDNS_INTERFACE cable unplugged while serving DHCP -> stopping the DHCP server"
+    nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
+  fi
+  configured_static && exit 0
+  log "mDNS: $MDNS_INTERFACE cable unplugged -> the next cable decides network vs direct again"
+  spawn_carrier_wait
   exit 0
 fi
 
@@ -99,30 +120,46 @@ start_dhcp_probe() {
 # final for the boot, so getting it wrong puts a rogue DHCP server on a real LAN
 # and takes the unit off its own subnet. Wait for the lease before ruling the
 # network out; it arrives on a normal LAN in a second or two and ends the wait.
-if [[ -z "$routable" && ( "$action" == "boot" || "$action" == "carrier-wait" ) ]]; then
-  if [[ "$action" == "boot" ]] && ! ip link show "$MDNS_INTERFACE" 2>/dev/null | grep -q 'LOWER_UP'; then
-    # No cable at boot. Serving DHCP NOW would poison a LAN the cable is later
-    # plugged into (the decision used to be final for the boot). Advertise the
-    # name, hand the serve decision to a background carrier wait so boot can
-    # finish, and probe for a router only once a cable actually appears.
-    log "mDNS: no carrier on $MDNS_INTERFACE at boot -> deferring DHCP-serve decision until a cable appears"
-    printf 'direct' > /run/citostore-mdns.mode 2>/dev/null || true
-    nohup "$SCRIPT_DIR/mdns-apply-mode.sh" carrier-wait >/dev/null 2>&1 &
-    exit 0
-  fi
-  if [[ "$action" == "carrier-wait" ]]; then
-    while ! ip link show "$MDNS_INTERFACE" 2>/dev/null | grep -q 'LOWER_UP'; do sleep 3; done
-    log "mDNS: carrier appeared on $MDNS_INTERFACE -> probing for a DHCP server"
-  fi
-  # Waiting only helps if something is actually asking for a lease (a leftover
-  # profile can suppress NM's auto-default DHCP connection entirely).
+# Wait up to MDNS_NETWORK_WAIT_SEC for a lease; stops early on a lease or when
+# the cable is pulled mid-wait (a dead link must not be read as "no router").
+probe_for_network() {
   start_dhcp_probe
   waited=0
   while ((waited < MDNS_NETWORK_WAIT_SEC)); do
     sleep 1
     waited=$((waited + 1))
     routable=$(routable_addr)
-    [[ -n "$routable" ]] && break
+    [[ -n "$routable" ]] && return 0
+    has_carrier || return 0
+  done
+}
+
+if [[ -z "$routable" && ( "$action" == "boot" || "$action" == "carrier-wait" ) ]]; then
+  if [[ "$action" == "boot" ]] && ! has_carrier; then
+    # No cable at boot. Serving DHCP NOW would poison a LAN the cable is later
+    # plugged into. Advertise the name, hand the serve decision to a background
+    # carrier wait so boot can finish, and probe only once a cable appears.
+    log "mDNS: no carrier on $MDNS_INTERFACE at boot -> deferring DHCP-serve decision until a cable appears"
+    printf 'direct' > /run/citostore-mdns.mode 2>/dev/null || true
+    spawn_carrier_wait
+    exit 0
+  fi
+  while :; do
+    if [[ "$action" == "carrier-wait" ]]; then
+      while ! has_carrier; do sleep 3; done
+      log "mDNS: carrier appeared on $MDNS_INTERFACE -> probing for a DHCP server"
+    fi
+    probe_for_network
+    if [[ -n "$routable" ]] || has_carrier; then
+      break
+    fi
+    # Pulled again before anything answered: nothing to decide on a dead link.
+    if [[ "$action" == "boot" ]]; then
+      log "mDNS: $MDNS_INTERFACE lost its cable during the boot wait -> deferring to a carrier wait"
+      spawn_carrier_wait
+      exit 0
+    fi
+    log "mDNS: $MDNS_INTERFACE lost its cable while probing -> waiting for it to come back"
   done
   if [[ -n "$routable" ]]; then
     log "mDNS: $MDNS_INTERFACE got a routable address after ${waited}s -> network"
@@ -146,8 +183,8 @@ if [[ -n "$routable" ]]; then
 else
   mode="direct"
   # No routable address after the wait above = a 1-1 link with no router, so
-  # become the DHCP server and hand the laptop a real IP. Decided at boot only
-  # (action=boot) — no runtime hot-switch. A static-IP unit always has a routable
+  # become the DHCP server and hand the laptop a real IP. Decided at boot and
+  # whenever a cable is plugged back in (carrier-wait). A static-IP unit always has a routable
   # address, so it takes the network branch above and never serves DHCP; that is
   # the reason to give a unit that lives on a LAN a fixed address.
   if [[ ( "$action" == "boot" || "$action" == "carrier-wait" ) && "$MDNS_DIRECT_DHCP" == "true" ]] \
@@ -174,4 +211,11 @@ prev=$(cat /run/citostore-mdns.mode 2>/dev/null || true)
 if [[ "$prev" != "$mode" ]]; then
   printf '%s' "$mode" > /run/citostore-mdns.mode 2>/dev/null || true
   log "mDNS: $mode mode on $MDNS_INTERFACE -> advertising ${target}.local"
+fi
+
+# A cable pulled while this decision was being applied fires its "down" event
+# while this unit is still running, so no new wait is spawned for it: keep
+# waiting here instead.
+if [[ "$action" == "carrier-wait" ]] && ! has_carrier && ! configured_static; then
+  exec /bin/bash "$SCRIPT_DIR/mdns-apply-mode.sh" carrier-wait
 fi
