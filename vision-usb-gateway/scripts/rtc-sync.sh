@@ -46,7 +46,8 @@ rtc_usable() {
 # reads as UTC, which is close enough for a "is this the epoch or a real date"
 # test even when the RTC is set to localtime.
 rtc_epoch() {
-  local sysfs="/sys/class/rtc/$(basename "$RTC_DEVICE")/since_epoch"
+  local sysfs
+  sysfs="/sys/class/rtc/$(basename "$RTC_DEVICE")/since_epoch"
   if [[ -r "$sysfs" ]]; then
     cat "$sysfs"
     return 0
@@ -82,7 +83,13 @@ systohc_guarded() {
     return 0
   fi
   log "system clock -> rtc ($RTC_DEVICE)"
-  hwclock --systohc --rtc "$RTC_DEVICE" "$rtc_flag" || true
+  # The result counts: the WebUI's "Set Time" reported OK while a failed RTC
+  # write meant the time was lost at the next power-off. (No RTC at all is
+  # not a failure — rtc_usable above.)
+  if ! hwclock --systohc --rtc "$RTC_DEVICE" "$rtc_flag"; then
+    log "ERROR: writing the system clock to $RTC_DEVICE failed"
+    return 1
+  fi
 }
 
 persist_save() {
@@ -133,8 +140,8 @@ if [[ "$mode" == "hctosys-if-ntp-missing" ]]; then
   fi
   persist_save
 elif [[ "$mode" == "systohc" ]]; then
-  systohc_guarded
   persist_save
+  systohc_guarded
 else
   hctosys_guarded
 fi

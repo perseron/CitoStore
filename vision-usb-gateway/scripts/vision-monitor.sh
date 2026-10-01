@@ -122,10 +122,15 @@ usage_stable_count() {
 
 set_fast_sync_mode() {
   local enabled="$1"
+  # --no-block: this runs in vision-sync.service's ExecStopPost. When that
+  # service is being stopped by a job (Wipe, shutdown/reboot), a blocking
+  # start/stop of its own timer waits for that very stop job — which waits for
+  # this script: a deadlock until TimeoutStopSec (35 min). Seen live 2026-10-01
+  # as a Wipe All Data hung for 10+ minutes.
   if [[ "$enabled" == "true" ]]; then
-    systemctl start "$FAST_SYNC_TIMER" >/dev/null 2>&1 || true
+    systemctl --no-block start "$FAST_SYNC_TIMER" >/dev/null 2>&1 || true
   else
-    systemctl stop "$FAST_SYNC_TIMER" >/dev/null 2>&1 || true
+    systemctl --no-block stop "$FAST_SYNC_TIMER" >/dev/null 2>&1 || true
   fi
 }
 

@@ -2005,7 +2005,14 @@ class WebHandler(BaseHTTPRequestHandler):
             if code != 0:
                 return self.send_json({"ok": False, "error": err or out}, status=500)
             gh = get_gateway_home()
-            run_privileged([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
+            code, out, err = run_privileged([f"{gh}/scripts/rtc-sync.sh", "--systohc"])
+            if code != 0:
+                log(f"system time set: {value}, but the RTC write failed: {err or out}")
+                return self.send_json(
+                    {"ok": False, "error": "time set, but not saved to the RTC (lost at power-off): "
+                     + (err or out)},
+                    status=500,
+                )
             log(f"system time set: {value} (ntp disabled)")
             return self.send_json({"ok": True})
 

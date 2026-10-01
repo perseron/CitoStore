@@ -82,6 +82,9 @@ fi
 
 restart_stack() {
   systemctl start usb-gadget.service || true
+  # The Samba bind (.state/samba -> /var/lib/samba) went down with the mirror
+  # mount; without it smbd ran on the overlay's RAM copy of its databases.
+  systemctl start var-lib-samba.mount || true
   systemctl start smbd.service nmbd.service wsdd.service || true
   systemctl start vision-webui.service || true
   systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
@@ -105,12 +108,12 @@ on_exit() {
 }
 trap on_exit EXIT
 
-systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer nas-sync.timer || true
+# The fast-sync timer too: left running it started a sync between the stops,
+# and stopping that sync then waited on the timer it toggles (see
+# vision-monitor.sh set_fast_sync_mode).
+systemctl stop vision-sync.timer vision-sync-fast.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer nas-sync.timer || true
 systemctl stop vision-sync.service vision-monitor.service vision-rotator.service mirror-retention.service nas-sync.service || true
 systemctl stop usb-gadget.service vision-webui.service smbd.service nmbd.service wsdd.service || true
-systemctl stop srv-vision_mirror.mount srv-vision_mirror.automount || true
-
-vgchange -ay "$VG" || true
 
 # Back up everything that is configuration, not captured data, before wiping:
 # "Wipe All Data" erases the images and keeps the unit's settings. It used to
@@ -119,6 +122,16 @@ vgchange -ay "$VG" || true
 # installed field update were silently lost with the images.
 # The protected-folder list goes with the images it refers to.
 # (STATE_PRESERVE / state_backup: common.sh, shared with rebalance-storage.)
+#
+# BEFORE the mirror is unmounted — the writers are stopped above. This backup
+# used to run after `systemctl stop srv-vision_mirror.mount`, so it read the
+# empty directory under the mount point: seen live 2026-10-01, a wipe left the
+# unit without its WebUI password (open /setup), SMB users, network setting
+# and AOI settings. No mirror mounted = nothing to back up = no wipe.
+if ! mountpoint -q "$MIRROR_MOUNT" || [[ ! -d "$MIRROR_MOUNT/.state" ]]; then
+  echo "mirror not mounted at $MIRROR_MOUNT: its settings cannot be backed up; nothing wiped" >&2
+  exit 1
+fi
 rm -rf "$BACKUP_DIR"
 state_backup "$MIRROR_MOUNT/.state" "$BACKUP_DIR/state"
 if [[ -f /etc/vision-gw.conf ]]; then
@@ -127,6 +140,11 @@ fi
 if [[ -f /etc/vision-nas.creds ]]; then
   cp /etc/vision-nas.creds "$BACKUP_DIR/vision-nas.creds"
 fi
+log "settings backed up: $(ls "$BACKUP_DIR/state" | tr '\n' ' ')"
+
+systemctl stop srv-vision_mirror.mount srv-vision_mirror.automount || true
+
+vgchange -ay "$VG" || true
 
 if mountpoint -q "$MIRROR_MOUNT"; then
   if ! umount "$MIRROR_MOUNT"; then

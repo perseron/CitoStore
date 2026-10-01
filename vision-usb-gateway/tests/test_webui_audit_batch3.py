@@ -221,3 +221,22 @@ def test_plan_never_runs_on_a_rejected_bundle(state, tmp_path, monkeypatch):
     assert req.sent[0] == 400
     assert ran == []
     assert not (stage / "bundle.citostore").exists()
+
+
+# --- Set Time reports an RTC write that failed -------------------------------
+
+def test_set_time_reports_a_failed_rtc_write(state, monkeypatch):
+    monkeypatch.setattr(server, "set_system_time", lambda value: (0, "", ""))
+    monkeypatch.setattr(server, "run_privileged", lambda args, **kw: (1, "", "hwclock: ioctl failed"))
+    req = Req({"time": "2026-10-01 10:00:00"})
+    server.WebHandler.handle_time(req)
+    assert req.sent[0] == 500
+    assert "RTC" in req.sent[1]["error"]
+
+
+def test_set_time_ok_when_the_rtc_took_it(state, monkeypatch):
+    monkeypatch.setattr(server, "set_system_time", lambda value: (0, "", ""))
+    monkeypatch.setattr(server, "run_privileged", lambda args, **kw: (0, "", ""))
+    req = Req({"time": "2026-10-01 10:00:00"})
+    server.WebHandler.handle_time(req)
+    assert req.sent == (200, {"ok": True})
