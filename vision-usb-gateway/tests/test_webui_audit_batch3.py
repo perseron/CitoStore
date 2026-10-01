@@ -165,3 +165,59 @@ def test_ftp_password_failure_is_reported(state, monkeypatch):
     req = _password_req()
     server.WebHandler.handle_ftp_password(req)
     assert req.sent[0] == 500
+
+
+# --- a provisioning bundle's config is checked before anything sources it ----
+
+def _bundle(tmp_path, conf_text, name="./etc/vision-gw.conf"):
+    import tarfile
+    src = tmp_path / "vision-gw.conf"
+    src.write_text(conf_text, encoding="utf-8")
+    out = tmp_path / "b.citostore"
+    with tarfile.open(out, "w:gz") as tar:
+        tar.add(src, arcname=name)
+    return out
+
+
+def test_a_plain_bundle_config_is_accepted(tmp_path):
+    b = _bundle(tmp_path, "GATEWAY_HOME=/opt/x\nUSB_LVS=(usb_0 usb_1 usb_2)\nUSB_LV_SIZE=16G\n")
+    assert server.bundle_config_error(b) == ""
+
+
+@pytest.mark.parametrize("line", ["USB_LV_SIZE=$(reboot)", "NETBIOS_NAME=`id`", "X=a b"])
+def test_a_bundle_config_that_would_run_code_is_refused(tmp_path, line):
+    b = _bundle(tmp_path, f"GATEWAY_HOME=/opt/x\n{line}\n")
+    assert "bundle config rejected" in server.bundle_config_error(b)
+
+
+def test_a_bundle_without_config_or_not_a_bundle_is_refused(tmp_path):
+    assert server.bundle_config_error(_bundle(tmp_path, "A=1\n", name="./etc/other")) == "bundle missing vision-gw.conf"
+    junk = tmp_path / "junk.citostore"
+    junk.write_bytes(b"not a tar")
+    assert "invalid bundle" in server.bundle_config_error(junk)
+
+
+def test_plan_never_runs_on_a_rejected_bundle(state, tmp_path, monkeypatch):
+    import tarfile
+    src = tmp_path / "conf"
+    src.write_text("GATEWAY_HOME=/opt/x\nUSB_LV_SIZE=$(reboot)\n", encoding="utf-8")
+    raw_path = tmp_path / "raw.citostore"
+    with tarfile.open(raw_path, "w:gz") as tar:
+        tar.add(src, arcname="./etc/vision-gw.conf")
+    stage = tmp_path / "stage"
+    monkeypatch.setattr(server, "PROVISION_STAGE", stage)
+    monkeypatch.setattr(server, "BUNDLE_STAGED", stage / "bundle.citostore")
+    ran = []
+    monkeypatch.setattr(server, "run_cmd", lambda args, **kw: (ran.append(args), (0, "{}", ""))[1])
+
+    class BinReq(Req):
+        def __init__(self, raw: bytes):
+            self.headers = {"Content-Length": str(len(raw))}
+            self.rfile = io.BytesIO(raw)
+            self.sent = None
+
+    req = BinReq(raw_path.read_bytes())
+    server.WebHandler.handle_bundle_plan(req)
+    assert req.sent[0] == 400
+    assert ran == []
+    assert not (stage / "bundle.citostore").exists()

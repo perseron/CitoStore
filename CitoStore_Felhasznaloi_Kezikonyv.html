@@ -1125,12 +1125,14 @@
           <em>Backup &amp; Replacement → Provision from Bundle…</em> → válaszd ki a
           <code>.citostore</code> fájlt.</li>
         <li><h4>Ellenőrizd a tervet és erősítsd meg</h4>
-          Az egység kiszámolja és megmutatja a saját NVMe-jére szabott elrendezést. A
-          megerősítéshez gépeld be: <code>PROVISION</code>.</li>
+          Az egység megmutatja, mit fog tenni a saját NVMe-jén. A megerősítéshez gépeld
+          be: <code>PROVISION</code>.</li>
         <li><h4>Várd meg a provizionálást</h4>
-          Az egység törli és újraépíti az NVMe-t, visszaállítja a beállításokat, a
-          jelszavakat és az <code>aoi_settings</code> tartalmát. A webes felület kb. 1 perc
-          múlva újra elérhető.</li>
+          Az egység megtartja az első indításkor létrehozott tárkiosztást — semmit nem
+          töröl, a rajta lévő képek megmaradnak —, és visszaállítja a beállításokat, a
+          jelszavakat, a hálózati beállítást és az <code>aoi_settings</code> tartalmát. Csak
+          azokat az USB-meghajtókat hozza létre újra (üresen), amelyek mérete eltér a
+          csomagétól. A webes felület kb. 1 perc múlva újra elérhető.</li>
         <li><h4>Jelentkezz be a régi jelszavakkal</h4>
           Minden jelszó a régi egységé (admin, SMB, ingest, NAS). Ellenőrizd a
           <em>Status</em> panelt, és végezz egy próbaírást.</li>
@@ -1139,9 +1141,10 @@
         <span class="lab">Eltérő NVMe-méret</span>
         <p>Az új egység SSD-jének nem kell egyeznie a régiével. Az USB-meghajtók
           (amit a gép lát) mérete és száma a csomagból jön, a mirror pedig kitölti az új
-          SSD maradék helyét. Ha az új SSD túl kicsi a csomag USB-elrendezéséhez, a
-          provizionálás elutasítja a műveletet, mielőtt bármit törölne. A művelethez
-          stabil tápellátás kell (<a href="#s3">3. fejezet</a>).</p>
+          SSD maradék helyét — nagyobb SSD-n menet közben megnő. Ha a csomag
+          USB-meghajtói nem férnek el, a provizionálás elutasítja a műveletet, mielőtt
+          bármihez hozzányúlna. A művelethez stabil tápellátás kell
+          (<a href="#s3">3. fejezet</a>).</p>
       </div>
 
       <h3>Csak a beállítások átvitele</h3>

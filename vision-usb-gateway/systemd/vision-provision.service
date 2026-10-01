@@ -1,5 +1,5 @@
 [Unit]
-Description=CitoStore provision from config bundle (DESTRUCTIVE: wipes NVMe)
+Description=CitoStore provision from config bundle (reuses the NVMe layout; wipes only a blank or incomplete one)
 After=local-fs.target
 # Triggered on demand by the WebUI; never enabled at boot.
 

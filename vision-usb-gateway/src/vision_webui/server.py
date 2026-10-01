@@ -11,6 +11,7 @@ import re
 import secrets
 import socket
 import subprocess
+import tarfile
 import threading
 import time
 from contextlib import contextmanager
@@ -600,6 +601,31 @@ def validate_import_config(text: str) -> tuple[str, str]:
     if not keys:
         return "", "no valid config entries found"
     return "\n".join(lines).rstrip("\n") + "\n", ""
+
+
+def bundle_config_error(bundle: Path) -> str:
+    """Why a .citostore bundle's vision-gw.conf may not be used ("" if fine).
+
+    The plan step sources it as root, and once provisioned it is the shadow
+    config every script sources — so the same plain KEY=value rule as a config
+    import: a crafted bundle must not run code on the unit."""
+    try:
+        with tarfile.open(bundle, "r:gz") as tar:
+            member = None
+            for name in ("./etc/vision-gw.conf", "etc/vision-gw.conf"):
+                try:
+                    member = tar.getmember(name)
+                    break
+                except KeyError:
+                    continue
+            if member is None or not member.isfile():
+                return "bundle missing vision-gw.conf"
+            fh = tar.extractfile(member)
+            text = fh.read(1024 * 1024).decode("utf-8", errors="replace") if fh else ""
+    except (tarfile.TarError, OSError, EOFError):
+        return "invalid bundle (not a .citostore archive)"
+    _, err = validate_import_config(text)
+    return f"bundle config rejected: {err}" if err else ""
 
 
 def atomic_write(path: Path, data, mode: int = 0o644) -> None:
@@ -2247,6 +2273,10 @@ class WebHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length)
         PROVISION_STAGE.mkdir(parents=True, exist_ok=True)
         BUNDLE_STAGED.write_bytes(body)
+        error = bundle_config_error(BUNDLE_STAGED)
+        if error:
+            BUNDLE_STAGED.unlink(missing_ok=True)
+            return self.send_json({"ok": False, "error": error}, status=400)
         gh = get_gateway_home()
         code, out, err = run_cmd(
             ["/bin/bash", f"{gh}/scripts/provision-from-bundle.sh", str(BUNDLE_STAGED), "--plan"]
@@ -2284,8 +2314,7 @@ class WebHandler(BaseHTTPRequestHandler):
         return self.send_json(
             {
                 "ok": True,
-                "message": "Provisioning started. The NVMe is being wiped and "
-                "reconfigured; the WebUI will restart in ~1 minute.",
+                "message": "Provisioning started; the WebUI restarts in about a minute.",
             }
         )
 
