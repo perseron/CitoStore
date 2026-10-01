@@ -185,6 +185,7 @@ systemctl start usb-gadget.service || true
 systemctl start smbd.service nmbd.service wsdd.service || true
 systemctl start vision-webui.service || true
 systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
-systemctl enable --now vision-sync.timer vision-monitor.timer vision-rotator.timer || true
+# Not the rotator timer: it is off by design (the rotator runs after each sync).
+systemctl enable --now vision-sync.timer vision-monitor.timer || true
 
 echo "Done."

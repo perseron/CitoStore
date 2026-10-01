@@ -10,6 +10,9 @@ Wants=srv-vision_mirror.mount
 Before=vision-gw-config.service usb-gadget.service vision-sync.service vision-monitor.service vision-rotator.service vision-webui.service
 
 [Service]
+# Bounded: everything that matters is ordered after it, and an LVM/fsck call
+# hung on a failing NVMe would otherwise hold the whole boot forever.
+TimeoutStartSec=5min
 Type=oneshot
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env

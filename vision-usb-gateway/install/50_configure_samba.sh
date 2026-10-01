@@ -51,12 +51,13 @@ setup_samba_persist
 
 # USB_EXPORT_MOUNT is a path, so it carries slashes — use a separator sed will
 # not confuse for one.
+SMB_CONF_CHANGED=false
 sed -e "s/{{SMB_BIND_INTERFACE}}/$SMB_BIND_INTERFACE/" \
   -e "s/{{SMB_USER}}/$SMB_USER/" \
   -e "s/{{NETBIOS_NAME}}/$NETBIOS_NAME/" \
   -e "s/{{SMB_WORKGROUP}}/$SMB_WORKGROUP/" \
   -e "s#{{USB_EXPORT_MOUNT}}#$USB_EXPORT_MOUNT#" \
-  "$TEMPLATE" > "$OUT"
+  "$TEMPLATE" | write_if_changed "$OUT" && SMB_CONF_CHANGED=true
 
 if ! id -u "$SMB_USER" >/dev/null 2>&1; then
   useradd -M -s /usr/sbin/nologin "$SMB_USER"
@@ -74,7 +75,11 @@ fi
 
 chown root:root /srv/vision_mirror
 chmod 0755 /srv/vision_mirror
-chown -R root:root /srv/vision_mirror/.state /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
+# raw/ and bydate/ themselves only: a recursive chown walked (and dirtied the
+# ctime of) every captured image on each boot and each Save + Apply. The sync
+# writes them as root anyway; .state is small and holds the secrets.
+chown root:root /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
+chown -R root:root /srv/vision_mirror/.state 2>/dev/null || true
 chmod 0755 /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
 # .state holds secrets (ftp.creds, webui.secret/passwd, vision-nas.creds, the
 # Samba passdb/secrets tdbs) right under the SMB-shared mirror root. It must NOT
@@ -92,7 +97,7 @@ if [[ -d /srv/vision_mirror/.state/samba/private ]]; then
 fi
 
 mkdir -p "$SMBD_OVERRIDE_DIR"
-cat > "$SMBD_OVERRIDE_FILE" <<'EOF'
+write_if_changed "$SMBD_OVERRIDE_FILE" <<'EOF' && SMB_CONF_CHANGED=true
 [Unit]
 Wants=network-online.target
 After=network-online.target
@@ -118,12 +123,20 @@ fi
 
 systemctl daemon-reload
 systemctl enable smbd nmbd
-systemctl restart smbd
+# Only on a real config change (or when it is not running): a restart drops
+# every connected SMB client, including a server-side copy to a USB drive in
+# progress, and this runs on every boot and every Save + Apply.
+restart_if_needed "$SMB_CONF_CHANGED" smbd
 # nmbd (NetBIOS only) fails if no network interface is up yet (e.g. cable not
 # plugged in at boot). Don't let that abort this script under `set -e` and take
 # apply-shadow-config (and the ingest config after it) down with it; its
 # Restart=on-failure drop-in brings it up once an interface appears.
-systemctl restart nmbd || log "nmbd restart deferred (no network interface yet); will retry"
+# --no-block: with no address yet (a direct laptop link before 10.10.10.1
+# exists) nmbd cannot become ready and the blocking restart held this script —
+# and the whole boot applier — for ~50 s.
+if [[ "$SMB_CONF_CHANGED" == true ]] || ! systemctl is-active --quiet nmbd; then
+  systemctl --no-block restart nmbd || log "nmbd restart deferred (no network interface yet); will retry"
+fi
 systemctl enable --now wsdd.service || true
 
 log "samba configured"

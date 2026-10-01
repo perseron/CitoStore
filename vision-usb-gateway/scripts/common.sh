@@ -15,6 +15,42 @@ log() {
   echo "[$(date -Is)] $*" >&2
 }
 
+# Replace <dest> with stdin only if the content differs. Returns 0 when the file
+# changed, 1 when it was already identical. Lets a configurator restart its
+# service only on a real change: these scripts run on every boot AND every WebUI
+# "Save + Apply" (any section), and an unconditional restart dropped connected
+# SMB clients and killed AOI FTP uploads mid-file each time.
+write_if_changed() {  # <dest> [mode]
+  local dest=$1 mode=${2:-0644} tmp
+  tmp=$(mktemp "${dest}.XXXXXX")
+  cat > "$tmp"
+  if [[ -f "$dest" ]] && cmp -s "$tmp" "$dest"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  chmod "$mode" "$tmp"
+  mv -f "$tmp" "$dest"
+  return 0
+}
+
+# Restart <unit> when its config changed or it is not running; otherwise leave
+# it (and its clients) alone.
+restart_if_needed() {  # <changed: true|false> <unit>
+  if [[ "$1" == true ]] || ! systemctl is-active --quiet "$2"; then
+    systemctl restart "$2"
+  else
+    log "$2: configuration unchanged and running; not restarted"
+  fi
+}
+
+# vsftpd binds a single address (ingest on eth1, mirror FTP on eth0). With no
+# cable / no lease yet that address does not exist, and it restart-looped every
+# 5 s forever (Restart=on-failure, no start limit), flooding the RAM journal.
+# Allowing non-local binds lets it bind now and serve once the address appears.
+allow_nonlocal_bind() {
+  sysctl -q -w net.ipv4.ip_nonlocal_bind=1 >/dev/null 2>&1 || true
+}
+
 require_root() {
   if [[ $(id -u) -ne 0 ]]; then
     echo "must run as root" >&2
@@ -53,9 +89,11 @@ ensure_gateway_home_in_conf() {
 # back to the packaged example), then re-assert the correct GATEWAY_HOME. This is
 # the single place that repopulates the live config from persistent storage.
 restore_shadow_conf() {
+  # No shadow (NVMe not mounted, or empty): keep the image's own /etc config —
+  # the golden, tuned one — rather than replacing it with the generic example.
   if [[ -f "$SHADOW_CONF_DEFAULT" ]]; then
     cp "$SHADOW_CONF_DEFAULT" "$CONF_FILE_DEFAULT"
-  elif [[ -f "$GATEWAY_HOME/conf/vision-gw.conf.example" ]]; then
+  elif [[ ! -f "$CONF_FILE_DEFAULT" && -f "$GATEWAY_HOME/conf/vision-gw.conf.example" ]]; then
     cp "$GATEWAY_HOME/conf/vision-gw.conf.example" "$CONF_FILE_DEFAULT"
   fi
   ensure_gateway_home_in_conf "$CONF_FILE_DEFAULT"
@@ -76,7 +114,7 @@ SMB_WORKGROUP=${SMB_WORKGROUP:-WORKGROUP}
 NETBIOS_NAME=${NETBIOS_NAME:-CITOSTORE}
 WEBUI_BIND=${WEBUI_BIND:-0.0.0.0}
 WEBUI_PORT=${WEBUI_PORT:-80}
-RTC_ENABLED=${RTC_ENABLED:-false}
+RTC_ENABLED=${RTC_ENABLED:-true}
 RTC_DEVICE=${RTC_DEVICE:-/dev/rtc0}
 RTC_UTC=${RTC_UTC:-true}
 RTC_SYNC_INTERVAL=${RTC_SYNC_INTERVAL:-10min}

@@ -199,6 +199,7 @@ fi
 
 systemctl start usb-gadget.service || true
 systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
-systemctl start vision-sync.timer vision-monitor.timer vision-rotator.timer || true
+# Not the rotator timer: it is off by design (the rotator runs after each sync).
+systemctl start vision-sync.timer vision-monitor.timer || true
 
 echo "Done."

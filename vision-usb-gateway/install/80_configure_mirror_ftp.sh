@@ -34,7 +34,9 @@ USERLIST=/etc/vsftpd-mirror.userlist
 UNIT=vsftpd-mirror.service
 
 iface_ipv4() {
-  ip -o -4 addr show "$1" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1
+  # "|| true": a missing interface makes ip exit 1 and, under pipefail, the
+  # caller's $(...) aborted this script.
+  { ip -o -4 addr show "$1" 2>/dev/null || true; } | awk '{print $4; exit}' | cut -d/ -f1
 }
 
 # /etc/shadow lives on the overlay root and does not survive a reboot, unlike
@@ -45,7 +47,11 @@ sync_unix_password() {
   [[ -f "$SMB_UNIX_CREDS" ]] || return 0
   local pw
   pw=$(grep -E '^password=' "$SMB_UNIX_CREDS" | cut -d= -f2- || true)
-  [[ -n "$pw" ]] && printf '%s:%s\n' "$SMB_USER" "$pw" | chpasswd
+  # if/fi, not "[[ ]] && ...": with no password the && form returned 1 and
+  # aborted this script under set -e.
+  if [[ -n "$pw" ]]; then
+    printf '%s:%s\n' "$SMB_USER" "$pw" | chpasswd
+  fi
 }
 
 configure_mirror_ftp() {
@@ -72,10 +78,17 @@ configure_mirror_ftp() {
   local bind_ip
   bind_ip=$(iface_ipv4 "$MIRROR_FTP_BIND_INTERFACE")
   if [[ -z "$bind_ip" ]]; then
-    log "no IPv4 on $MIRROR_FTP_BIND_INTERFACE yet; vsftpd-mirror will fail to bind until it appears (unit has Restart=on-failure)"
-    bind_ip="0.0.0.0"
+    # Never 0.0.0.0: a wildcard listener on :21 also took eth1 and kept the
+    # ingest vsftpd (192.168.100.1:21) from binding, and exposed the mirror
+    # login on the isolated AOI network. lan-rebind.sh (NM dispatcher)
+    # re-runs this script as soon as the interface gets an address.
+    log "no IPv4 on $MIRROR_FTP_BIND_INTERFACE yet; mirror FTP starts when it gets one"
+    systemctl stop "$UNIT" >/dev/null 2>&1 || true
+    return 0
   fi
-  cat > "$VSFTPD_CONF" <<EOF
+  allow_nonlocal_bind
+  local changed=false
+  write_if_changed "$VSFTPD_CONF" <<EOF && changed=true
 listen=YES
 listen_ipv6=NO
 listen_address=$bind_ip
@@ -102,9 +115,9 @@ pasv_max_port=$MIRROR_FTP_PASV_MAX_PORT
 seccomp_sandbox=NO
 pam_service_name=vsftpd
 EOF
-  echo "$SMB_USER" > "$USERLIST"
+  echo "$SMB_USER" | write_if_changed "$USERLIST" && changed=true
   systemctl enable "$UNIT" >/dev/null 2>&1 || true
-  systemctl restart "$UNIT" >/dev/null 2>&1 || log "$UNIT restart failed"
+  restart_if_needed "$changed" "$UNIT" >/dev/null 2>&1 || log "$UNIT restart failed"
 }
 
 configure_mirror_ftp

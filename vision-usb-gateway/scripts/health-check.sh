@@ -35,9 +35,11 @@ HEALTHCHECK_FSCK_MIRROR=${HEALTHCHECK_FSCK_MIRROR:-true}
 HEALTHCHECK_FSCK_USB=${HEALTHCHECK_FSCK_USB:-true}
 USB_LABEL=${USB_LABEL:-VISIONUSB}
 
+MIRROR_OK=false
 if ! mountpoint -q "$MIRROR_MOUNT"; then
   health_warn "mirror not mounted: $MIRROR_MOUNT"
 else
+  MIRROR_OK=true
   mkdir -p "$STATE_DIR"
 fi
 
@@ -66,11 +68,25 @@ if lvs "$VG/$THINPOOL_LV" >/dev/null 2>&1; then
   fi
 fi
 
-# Ensure shadow config exists; fall back to default.
-if [[ ! -f "$STATE_DIR/vision-gw.conf" && -f "$DEFAULT_CONF" ]]; then
-  log "shadow config missing; restoring default"
-  cp "$DEFAULT_CONF" "$STATE_DIR/vision-gw.conf"
-  health_warn "shadow config missing; default restored"
+# Everything down to the snapshot cleanup reads/writes the NVMe's .state. With
+# the mirror not mounted there is none: these cp's used to abort the whole check
+# under set -e, before any health JSON was written - so the one boot that most
+# needed the "mirror not mounted" banner never showed it.
+if [[ "$MIRROR_OK" == true ]]; then
+
+# Ensure shadow config exists. Seed it from this image's own /etc config (the
+# golden, tuned one - this runs before update-config) rather than the generic
+# example, which has ingest/eth1 off and generic names.
+if [[ ! -f "$STATE_DIR/vision-gw.conf" ]]; then
+  if [[ -f /etc/vision-gw.conf ]] && grep -q '^GATEWAY_HOME=' /etc/vision-gw.conf; then
+    log "shadow config missing; seeding it from /etc/vision-gw.conf"
+    cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
+    health_warn "shadow config missing; seeded from the image's config"
+  elif [[ -f "$DEFAULT_CONF" ]]; then
+    log "shadow config missing; restoring default"
+    cp "$DEFAULT_CONF" "$STATE_DIR/vision-gw.conf"
+    health_warn "shadow config missing; default restored"
+  fi
 fi
 
 # If shadow config looks invalid, rollback to last-good or default.
@@ -122,6 +138,8 @@ if [[ -f "$STATE_DIR/vision-gw.conf" ]]; then
   fi
 fi
 
+fi  # MIRROR_OK
+
 # Cleanup stale snapshot LV if it exists.
 if command -v lvs >/dev/null 2>&1; then
   if lvs "$VG/$SNAP_NAME" >/dev/null 2>&1; then
@@ -165,14 +183,21 @@ if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
       fi
       if [[ -e "$dev" ]]; then
         log "fsck.fat on $dev"
-        fsck_out=$(fsck.fat -a "$dev" 2>&1) || true
-        fsck_rc=$?
+        # rc captured properly: "$(...) || true; rc=$?" always read 0, so a
+        # repaired or broken FAT was never reported. fsck.fat -a: 0 clean,
+        # 1 errors found and fixed, anything else could not be repaired.
+        fsck_rc=0
+        fsck_out=$(fsck.fat -a "$dev" 2>&1) || fsck_rc=$?
         fsck_status="ok"
-        if [[ $fsck_rc -ne 0 ]]; then
+        if [[ $fsck_rc -eq 1 ]]; then
+          fsck_status="repaired"
+          health_warn "fsck.fat repaired the FAT on $lv"
+        elif [[ $fsck_rc -ne 0 ]]; then
           fsck_status="FAIL (rc=$fsck_rc)"
           health_warn "fsck.fat failed on $lv"
         fi
-        fsck_out_escaped=$(echo "$fsck_out" | head -c 200 | tr '"' "'" | tr '\n' ' ')
+        # Substring, not "| head -c": under pipefail a long output gets SIGPIPE.
+        fsck_out_escaped=$(printf '%s' "${fsck_out:0:200}" | tr '"' "'" | tr '\n' ' ')
         FSCK_RESULTS+=("{\"lv\":\"$lv\",\"status\":\"$fsck_status\",\"output\":\"$fsck_out_escaped\"}")
       fi
     done
@@ -193,8 +218,8 @@ fi
   echo "\"ts\": \"$(date -Is)\"}"
 } > "$STATE_DIR/usb-fsck.json" 2>/dev/null || true
 
-# Validate active USB LV pointer.
-if [[ -n "${ACTIVE_FILE:-}" ]]; then
+# Validate active USB LV pointer (it lives on the NVMe).
+if [[ "$MIRROR_OK" == true && -n "${ACTIVE_FILE:-}" ]]; then
   if [[ -f "$ACTIVE_FILE" ]]; then
     active=$(cat "$ACTIVE_FILE" | tr -d '[:space:]')
   else

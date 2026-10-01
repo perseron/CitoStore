@@ -8,7 +8,9 @@ source "$SCRIPT_DIR/common.sh"
 require_root
 load_config
 
-RTC_ENABLED=${RTC_ENABLED:-false}
+# Same default as conf/vision-gw.conf.example: a config without the key (an old
+# shadow on the NVMe) must not silently switch the battery-backed RTC off.
+RTC_ENABLED=${RTC_ENABLED:-true}
 RTC_DEVICE=${RTC_DEVICE:-/dev/rtc0}
 RTC_UTC=${RTC_UTC:-true}
 # An RTC with no backup cell — or a flat one — reads back at the epoch, and

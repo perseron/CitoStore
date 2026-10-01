@@ -2,6 +2,10 @@
 Description=Vision Rotator
 After=vision-monitor.service
 
+# A late mirror mount (long fsck after a power cut) must not let this run
+# against the bare mountpoint on the root filesystem.
+RequiresMountsFor=/srv/vision_mirror
+
 [Service]
 Type=oneshot
 TimeoutStartSec=10min

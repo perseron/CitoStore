@@ -55,6 +55,7 @@ set_conf() {  # key value
   fi
 }
 [[ -f "$AVAHI_CONF" ]] || printf '[server]\n' > "$AVAHI_CONF"
+avahi_conf_before=$(cksum < "$AVAHI_CONF")
 set_conf host-name "$NETBIOS_NAME"
 set_conf domain-name local
 set_conf allow-interfaces "$MDNS_INTERFACE"
@@ -104,7 +105,10 @@ DISPATCH
 chmod 0755 "$DISPATCHER"
 
 systemctl enable --now avahi-daemon.service >/dev/null 2>&1 || true
-systemctl restart avahi-daemon.service >/dev/null 2>&1 || true
+# Only on a real change: runs on every boot and every Save + Apply.
+avahi_conf_changed=false
+[[ "$(cksum < "$AVAHI_CONF")" != "$avahi_conf_before" ]] && avahi_conf_changed=true
+restart_if_needed "$avahi_conf_changed" avahi-daemon.service >/dev/null 2>&1 || true
 
 # avahi now advertises the conf host-name (NETBIOS_NAME); seed the state so the
 # mode helper only calls avahi-set-host-name when it actually needs to switch

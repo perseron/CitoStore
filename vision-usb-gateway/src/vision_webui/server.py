@@ -109,9 +109,35 @@ LOG_SERVICES = sorted(
 )
 
 
+MIRROR_MOUNT = Path("/srv/vision_mirror")
+STORAGE_MISSING = (
+    "The unit's NVMe storage is not mounted: settings cannot be saved "
+    "(they would be lost at the next restart). See the health banner or contact service."
+)
+# POSTs that persist into STATE_DIR. With the NVMe not mounted (fstab nofail),
+# /srv/vision_mirror is a bare tmpfs directory: they "succeeded" and vanished at
+# the next boot. Maintenance actions are not here on purpose (Factory Reset and
+# Safe Shutdown must keep working on a unit with a broken disk).
+STATE_WRITING_POSTS = {
+    "/api/config", "/api/nas-creds", "/api/apply", "/api/password/webui",
+    "/api/password/smb", "/api/password/ftp", "/api/network", "/api/config/import",
+    "/api/update",
+}
+
+
+def mirror_mounted() -> bool:
+    return os.path.ismount(MIRROR_MOUNT)
+
+
 def get_gateway_home() -> str:
+    # The install location comes from the unit's environment (GATEWAY_HOME,
+    # /etc/vision-gw.env), not the shadow config: an imported config carrying
+    # an old path broke every script call from the WebUI until the next boot.
+    env = os.environ.get("GATEWAY_HOME")
+    if env:
+        return env
     cfg = parse_config(load_config_text())
-    return cfg.get("GATEWAY_HOME", "/opt/vision-usb-gateway")
+    return cfg.get("GATEWAY_HOME", "/opt/CitoStore/vision-usb-gateway")
 
 
 def log(msg: str) -> None:
@@ -207,6 +233,7 @@ USB_JOB_UNIT = "citostore-usb-copy"
 # /run is tmpfs: the progress file dies with the boot, which is right — a copy
 # does not survive one either.
 USB_PROGRESS_FILE = "/run/citostore-usb-copy.progress"
+USB_RC_FILE = "/run/citostore-usb-copy.rc"
 EXPORT_SESSION_USER = "export"
 # Folders retention must never delete. On the NVMe, so it survives an OS reflash
 # — protection lapsing after an update would be worse than never offering it.
@@ -405,7 +432,7 @@ def start_usb_copy(sources: list, dest_rel: str) -> tuple:
     # systemd truncates the progress file when rsync opens it, but --no-block
     # returns before that happens: the page polls in between and reads the *last*
     # copy's final line, flashing 100% before the new one has moved a byte.
-    run_privileged(["/bin/rm", "-f", USB_PROGRESS_FILE])
+    run_privileged(["/bin/rm", "-f", USB_PROGRESS_FILE, USB_RC_FILE])
 
     args = [
         "systemd-run",
@@ -425,7 +452,14 @@ def start_usb_copy(sources: list, dest_rel: str) -> tuple:
         # stderr still goes to the journal — real errors belong there.
         f"--property=StandardOutput=file:{USB_PROGRESS_FILE}",
         "--",
-        "/usr/bin/rsync",
+        # rsync's exit code goes to a file: the unit is --collect'ed, and once a
+        # failed transient unit is unloaded `systemctl show -p Result` answers
+        # the default "success" — a copy that failed (drive full, pulled) was
+        # reported as finished and the operator walked off with an incomplete drive.
+        "/bin/sh",
+        "-c",
+        f'/usr/bin/rsync "$@"; echo $? > {USB_RC_FILE}',
+        "citostore-usb-copy",
         "-rlt",
         "--info=progress2",
         # Flush every update: rsync buffers when stdout is not a tty, which would
@@ -492,11 +526,19 @@ def get_usb_copy_status() -> dict:
     active = usb_copy_running()
     result = {"running": active, "progress": parse_rsync_progress(read_progress_tail())}
     if not active:
-        code, out, _ = run_cmd(
-            ["/bin/systemctl", "show", f"{USB_JOB_UNIT}.service", "-p", "Result", "--value"]
-        )
-        result["result"] = out.strip() or "unknown"
+        result["result"] = usb_copy_result()
     return result
+
+
+def usb_copy_result() -> str:
+    """"success", "failed (rsync exit N)", or "unknown" (no copy ran / killed)."""
+    try:
+        rc = Path(USB_RC_FILE).read_text(encoding="utf-8").strip()
+    except OSError:
+        return "unknown"
+    if rc == "0":
+        return "success"
+    return f"failed (rsync exit {rc or '?'})"
 
 
 def eject_usb() -> tuple:
@@ -677,8 +719,14 @@ def store_password(password: str) -> None:
         "hash": hash_password(password, salt),
     }
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    PASS_FILE.write_text(json.dumps(data), encoding="utf-8")
-    os.chmod(PASS_FILE, 0o600)
+    # Atomic: a power cut mid-write left truncated JSON — login then raised and
+    # /setup stayed closed (the file exists), so only SSH could recover it.
+    tmp = PASS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    os.chmod(tmp, 0o600)
+    with open(tmp, "rb") as fh:
+        os.fsync(fh.fileno())
+    os.replace(tmp, PASS_FILE)
 
 
 def verify_password(password: str) -> bool:
@@ -1602,7 +1650,13 @@ class WebHandler(BaseHTTPRequestHandler):
         if content_length > max_size:
             self.send_error(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request body too large")
             return
-        if setup_allowed() and self.path not in ("/setup", "/setup/"):
+        # The export/protected flow runs on the SMB password and must work before
+        # an admin password exists — exactly as do_GET already lets it.
+        export_flow = (
+            self.path in ("/export", "/export/", "/protected", "/protected/", "/api/protected")
+            or self.path.startswith("/api/usb-export/")
+        )
+        if setup_allowed() and self.path not in ("/setup", "/setup/") and not export_flow:
             return self.redirect("/setup")
         if self.path in ("/login", "/login/"):
             return self.handle_login()
@@ -1615,12 +1669,19 @@ class WebHandler(BaseHTTPRequestHandler):
                 # Never allow an unauthenticated password reset once configured.
                 log("rejected /setup POST: password already configured")
                 return self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+            if not mirror_mounted():
+                # webui.passwd lives on the NVMe: without it mounted, "setup" is
+                # open to anyone and the password would land on tmpfs anyway.
+                log("rejected /setup POST: NVMe storage not mounted")
+                return self.send_text(self.render_setup(STORAGE_MISSING), status=503)
             return self.handle_setup()
         if self.path == "/api/protected":
             if not self.is_export_authenticated():
                 return self.send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
             if not self.require_export_csrf():
                 return self.send_error(HTTPStatus.FORBIDDEN, "CSRF validation failed")
+            if not mirror_mounted():
+                return self.send_json({"ok": False, "error": STORAGE_MISSING}, status=503)
             return self.handle_protected_save()
         if self.path.startswith("/api/usb-export/"):
             if not self.is_export_authenticated():
@@ -1643,6 +1704,8 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_error(HTTPStatus.UNAUTHORIZED, "Unauthorized")
         if self.path.startswith("/api/") and not self.require_csrf():
             return self.send_error(HTTPStatus.FORBIDDEN, "CSRF validation failed")
+        if self.path in STATE_WRITING_POSTS and not mirror_mounted():
+            return self.send_json({"ok": False, "error": STORAGE_MISSING}, status=503)
         if self.path == "/api/config":
             return self.handle_config_update()
         if self.path == "/api/nas-creds":
@@ -1904,11 +1967,24 @@ class WebHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         password = parse_qs(body).get("password", [""])[0]
+        # Same throttle as the admin login (separate bucket): the SMB password
+        # guards the same images, and smbclient answers a guess in ~44 ms.
+        key = f"export:{self.client_address[0]}"
+        now = time.time()
+        attempts = [t for t in _login_attempts.get(key, []) if now - t < LOGIN_RATE_WINDOW]
+        _login_attempts[key] = attempts
+        if len(attempts) >= LOGIN_RATE_LIMIT:
+            log(f"export login rate limited: {self.client_address[0]}")
+            return self.send_text(
+                self.render_export_login(error=True, target=target), status=429
+            )
         if not verify_smb_password(password):
-            log("export login rejected")
+            attempts.append(now)
+            log(f"export login rejected ({len(attempts)}/{LOGIN_RATE_LIMIT})")
             return self.send_text(
                 self.render_export_login(error=True, target=target), status=401
             )
+        _login_attempts.pop(key, None)
         token = make_session(EXPORT_SESSION_USER)
         log("export login accepted")
         self.send_response(HTTPStatus.SEE_OTHER)
@@ -2181,16 +2257,23 @@ class WebHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(length).decode("utf-8")
         data = json.loads(body or "{}")
         enabled = data.get("enabled", False)
-        timers = ["vision-sync.timer", "vision-monitor.timer", "vision-rotator.timer"]
+        # Pause everything that syncs or rotates — including the fast 10 s sync
+        # timer, which kept syncing through "maintenance mode" — but resume only
+        # the timers that are on by design: the rotator timer is off by design
+        # (the rotator runs after each sync), and the monitor starts the fast
+        # timer itself when the AOI is writing.
+        stop_timers = ["vision-sync.timer", "vision-sync-fast.timer",
+                       "vision-monitor.timer", "vision-rotator.timer"]
+        resume_timers = ["vision-sync.timer", "vision-monitor.timer"]
         with require_lock():
             if enabled:
                 MAINT_MODE_FLAG.write_text("1", encoding="utf-8")
-                for t in timers:
+                for t in stop_timers:
                     run_cmd(["/bin/systemctl", "stop", t])
                 log("maintenance mode enabled")
             else:
                 MAINT_MODE_FLAG.unlink(missing_ok=True)
-                for t in timers:
+                for t in resume_timers:
                     run_cmd(["/bin/systemctl", "start", t])
                 log("maintenance mode disabled")
         return self.send_json({"ok": True, "enabled": enabled})

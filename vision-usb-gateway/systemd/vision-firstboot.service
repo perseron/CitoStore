@@ -5,6 +5,9 @@ Description=CitoStore first-boot personalisation (cloned units)
 ConditionPathExists=!/etc/citostore-firstboot-done
 After=local-fs.target network-pre.target
 Before=vision-gw-config.service usb-gadget.service vision-sync.timer smbd.service
+# The health check self-heals a half-built NVMe with 30_setup; it must not run
+# that while first boot is building it.
+Before=vision-gw-health.service
 DefaultDependencies=yes
 
 [Service]

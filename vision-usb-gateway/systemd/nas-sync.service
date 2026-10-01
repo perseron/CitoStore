@@ -1,6 +1,11 @@
 [Unit]
 Description=NAS Sync
-After=local-fs.target mnt-nas.mount
+# The share is automounted on first access (60_configure_nas_optional.sh).
+After=local-fs.target network-online.target
+
+# A late mirror mount (long fsck after a power cut) must not let this run
+# against the bare mountpoint on the root filesystem.
+RequiresMountsFor=/srv/vision_mirror
 
 [Service]
 Type=oneshot

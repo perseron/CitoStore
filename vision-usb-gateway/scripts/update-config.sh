@@ -11,7 +11,11 @@ require_root
 restore_shadow_conf
 
 SHADOW_CREDS=/srv/vision_mirror/.state/vision-nas.creds
-if [[ -f "$SHADOW_CREDS" ]]; then
+# No .state (NVMe not mounted): nothing to sync, and the cp into it must not
+# abort this script — vision-gw-config failing takes everything that wants it down.
+if [[ ! -d "$(dirname "$SHADOW_CREDS")" ]]; then
+  log "mirror state dir missing (NVMe not mounted?); NAS creds not synced"
+elif [[ -f "$SHADOW_CREDS" ]]; then
   cp "$SHADOW_CREDS" /etc/vision-nas.creds
   chmod 0600 /etc/vision-nas.creds
 elif [[ -f /etc/vision-nas.creds ]]; then
@@ -73,7 +77,10 @@ OnUnitActiveSec=$RTC_SYNC_INTERVAL
 EOF
 
 systemctl daemon-reload
-systemctl restart vision-sync.timer
-systemctl try-restart vision-rtc-sync.timer 2>/dev/null || true
-systemctl restart vision-sync-fast.timer >/dev/null 2>&1 || true
-systemctl restart vision-rtc-sync.timer || true
+# try-restart only: pick up the new intervals on timers that are running, but
+# never START one. "restart" started the fast 10s timer (owned by the monitor,
+# off by design) on every boot and every Save + Apply, and resumed syncs that
+# Maintenance Mode had paused. At boot timers.target starts the enabled ones.
+systemctl try-restart vision-sync.timer || log "vision-sync.timer try-restart failed"
+systemctl try-restart vision-sync-fast.timer >/dev/null 2>&1 || true
+systemctl try-restart vision-rtc-sync.timer >/dev/null 2>&1 || true

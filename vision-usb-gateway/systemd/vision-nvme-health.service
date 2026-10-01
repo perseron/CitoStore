@@ -2,6 +2,10 @@
 Description=Vision NVMe SMART Cache
 After=local-fs.target
 
+# Ordered after the mirror mount (not Required: it must still report when the
+# mirror is missing).
+After=srv-vision_mirror.mount
+
 [Service]
 Type=oneshot
 TimeoutStartSec=2min

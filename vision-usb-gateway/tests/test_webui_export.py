@@ -196,7 +196,7 @@ def test_stale_progress_is_cleared_before_a_new_copy(roots, monkeypatch):
     # 100% before the new one has moved a byte.
     rm = [c for c in calls if c[0] == "/bin/rm"]
     run = [i for i, c in enumerate(calls) if c[0] == "systemd-run"]
-    assert rm and rm[0] == ["/bin/rm", "-f", server.USB_PROGRESS_FILE]
+    assert rm and rm[0] == ["/bin/rm", "-f", server.USB_PROGRESS_FILE, server.USB_RC_FILE]
     assert calls.index(rm[0]) < run[0], "must be cleared before the copy starts"
 
 

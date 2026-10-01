@@ -13,6 +13,11 @@ ConditionPathExists=/boot/firmware/factory-reset-pending
 RequiresMountsFor=/boot/firmware
 After=local-fs.target network-pre.target
 Before=vision-firstboot.service vision-gw-config.service usb-gadget.service vision-sync.timer smbd.service var-lib-samba.mount
+# Everything else that opens the NVMe at boot (fsck/mount of the mirror, the
+# health check's fsck.fat + LV self-heal, update reapply, network/RTC state
+# readers): while one of them holds an LV, vgchange -an and parted fail and the
+# wipe aborts after its marker is already gone.
+Before=systemd-fsck@dev-vg0-mirror.service srv-vision_mirror.mount vision-gw-health.service vision-update-reapply.service vision-gw-network.service vision-rtc-boot.service vision-nvme-health.service
 DefaultDependencies=yes
 
 [Service]

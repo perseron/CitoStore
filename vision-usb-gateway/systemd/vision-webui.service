@@ -2,7 +2,9 @@
 Description=Vision Web UI
 After=network-online.target vision-gw-config.service
 Wants=network-online.target
-Requires=vision-gw-config.service
+# Wants, not Requires: when vision-gw-config fails (e.g. the NVMe is not
+# mounted) the WebUI is exactly what is needed to see why.
+Wants=vision-gw-config.service
 
 [Service]
 Type=notify
@@ -15,7 +17,8 @@ NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
-ReadWritePaths=/srv/vision_mirror/.state /etc/vision-gw.conf /etc/vision-gw.env /etc/systemd/system /etc/samba /etc/vision-nas.creds /run /var/log
+# '-': a missing path (no NVMe mounted) must not fail the namespace setup.
+ReadWritePaths=-/srv/vision_mirror/.state /etc/vision-gw.conf /etc/vision-gw.env /etc/systemd/system /etc/samba -/etc/vision-nas.creds /run /var/log
 CapabilityBoundingSet=CAP_NET_BIND_SERVICE
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 

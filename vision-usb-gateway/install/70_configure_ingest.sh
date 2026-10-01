@@ -82,7 +82,9 @@ setup_ingest_dirs_user() {
 }
 
 iface_ipv4() {
-  ip -o -4 addr show "$1" 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1
+  # "|| true": a missing interface makes ip exit 1 and, under pipefail, the
+  # caller's $(...) aborted this script before its fallback could apply.
+  { ip -o -4 addr show "$1" 2>/dev/null || true; } | awk '{print $4; exit}' | cut -d/ -f1
 }
 
 # ---------------- FTP (vsftpd) ----------------
@@ -102,7 +104,9 @@ configure_ftp() {
   local bind_ip
   bind_ip=$(iface_ipv4 "$FTP_BIND_INTERFACE")
   bind_ip=${bind_ip:-$ETH1_ADDRESS}
-  cat > "$VSFTPD_CONF" <<EOF
+  allow_nonlocal_bind
+  local changed=false
+  write_if_changed "$VSFTPD_CONF" <<EOF && changed=true
 listen=YES
 listen_ipv6=NO
 listen_address=$bind_ip
@@ -125,9 +129,10 @@ pasv_max_port=$FTP_PASV_MAX_PORT
 seccomp_sandbox=NO
 pam_service_name=vsftpd
 EOF
-  echo "$FTP_USER" > /etc/vsftpd.userlist
+  echo "$FTP_USER" | write_if_changed /etc/vsftpd.userlist && changed=true
   systemctl enable vsftpd >/dev/null 2>&1 || true
-  systemctl restart vsftpd >/dev/null 2>&1 || log "vsftpd restart failed"
+  # Not on every apply: a restart kills an AOI upload in progress.
+  restart_if_needed "$changed" vsftpd >/dev/null 2>&1 || log "vsftpd restart failed"
 }
 
 # ---------------- SFTP (OpenSSH internal-sftp) ----------------

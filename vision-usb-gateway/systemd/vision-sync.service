@@ -9,6 +9,9 @@ Type=oneshot
 # (FAT mount, LVM stall) would block the timer forever and silently stop all
 # capture. 30min covers even a full 16G first-sync at measured throughput.
 TimeoutStartSec=30min
+# ExecStopPost runs the rotator, which can wait on offline-maint (fsck x2 +
+# reformat, up to 30 min): the default 90s stop timeout killed it mid-rotation.
+TimeoutStopSec=35min
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/usr/bin/python3 -m vision_sync.sync --config /etc/vision-gw.conf
