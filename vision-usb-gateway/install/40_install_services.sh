@@ -200,6 +200,8 @@ systemctl enable vision-nvme-health.timer
 systemctl enable vision-log-cleanup.timer
 systemctl enable vision-persist-boot-log.service
 systemctl enable vision-journal-persist.timer
+# ...and once more at every clean shutdown (the journal is volatile).
+systemctl enable vision-journal-persist-stop.service
 systemctl enable vision-boot-trace.service vision-boot-trace-done.service
 systemctl enable vision-update-reapply.service
 systemctl enable vision-rootfs-grow.service

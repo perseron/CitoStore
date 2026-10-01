@@ -23,7 +23,8 @@ MIRROR_MOUNT=${MIRROR_MOUNT:-/srv/vision_mirror}
 STATE_DIR="$MIRROR_MOUNT/.state"
 HEALTH_STATE="$STATE_DIR/health.json"
 HEALTH_STATE_FALLBACK="/run/vision-health.json"
-DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
+# The unit's factory config (golden image), not the generic example.
+DEFAULT_CONF=$(golden_conf || true)
 DEFAULT_CREDS="$GATEWAY_HOME/conf/nas/vision-nas.creds.example"
 LAST_GOOD_CONF="$STATE_DIR/vision-gw.conf.last-good"
 ACTIVE_FILE=${USB_ACTIVE_PERSIST:-$STATE_DIR/vision-usb-active}
@@ -34,6 +35,13 @@ SNAP_NAME=${SYNC_SNAPSHOT_NAME:-usb_sync_snap}
 HEALTHCHECK_FSCK_MIRROR=${HEALTHCHECK_FSCK_MIRROR:-true}
 HEALTHCHECK_FSCK_USB=${HEALTHCHECK_FSCK_USB:-true}
 USB_LABEL=${USB_LABEL:-VISIONUSB}
+
+# Runs with the overlay off only on the first boot after a flash or in a
+# deliberate maintenance cycle; any other time (overlay enable failed) every
+# write lands on the eMMC and wears it.
+if [[ "$(findmnt -no FSTYPE / 2>/dev/null || true)" != "overlay" && -f /etc/citostore-firstboot-done ]]; then
+  health_warn "read-only root overlay is OFF (writes go to the eMMC)"
+fi
 
 MIRROR_OK=false
 if ! mountpoint -q "$MIRROR_MOUNT"; then

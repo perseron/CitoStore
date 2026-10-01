@@ -54,6 +54,12 @@ if [[ -f "$STATE_DIR/vision-gw.conf" ]]; then
   sed -i "s#^GATEWAY_HOME=.*#GATEWAY_HOME=$GATEWAY_HOME#" /etc/vision-gw.conf || true
   log "promoted shadow config to /etc/vision-gw.conf"
 fi
+# ...and keep a pristine copy: "Restore Defaults" and factory reset return to
+# THIS config (/etc itself is rewritten from the shadow on every boot).
+if [[ -f /etc/vision-gw.conf ]]; then
+  install -m 0644 /etc/vision-gw.conf "$SEED_DIR/vision-gw.conf"
+  log "stored the factory config in $SEED_DIR"
+fi
 # Samba passdb and /etc/vision-nas.creds already live on the eMMC -> inherited.
 
 # 3) Ensure an empty NVMe cannot wedge boot: the mirror mount must be nofail.

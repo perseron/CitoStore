@@ -80,6 +80,31 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
+restart_stack() {
+  systemctl start usb-gadget.service || true
+  systemctl start smbd.service nmbd.service wsdd.service || true
+  systemctl start vision-webui.service || true
+  systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
+  # Not the rotator timer: it is off by design (the rotator runs after each sync).
+  systemctl enable --now vision-sync.timer vision-monitor.timer || true
+}
+# Any failure from here on (mirror busy, mkfs refused) used to exit with the
+# whole stack stopped — WebUI included, so the operator could not even see the
+# error — and the AOI without its USB drive until someone power-cycled it.
+on_exit() {
+  local rc=$?
+  if ((rc != 0)); then
+    log "wipe FAILED (rc=$rc); restarting the services it stopped"
+    mountpoint -q "$MIRROR_MOUNT" || systemctl start srv-vision_mirror.mount || true
+    # Failed after the reformat: put the settings back before anything starts.
+    if mountpoint -q "$MIRROR_MOUNT" && [[ -d "$BACKUP_DIR/state" && ! -e "$MIRROR_MOUNT/.state/vision-gw.conf" ]]; then
+      state_restore "$BACKUP_DIR/state" "$MIRROR_MOUNT/.state" || true
+    fi
+    restart_stack
+  fi
+}
+trap on_exit EXIT
+
 systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer nas-sync.timer || true
 systemctl stop vision-sync.service vision-monitor.service vision-rotator.service mirror-retention.service nas-sync.service || true
 systemctl stop usb-gadget.service vision-webui.service smbd.service nmbd.service wsdd.service || true
@@ -93,24 +118,15 @@ vgchange -ay "$VG" || true
 # the FTP/ingest and mirror-FTP passwords, the AOI's settings folder and an
 # installed field update were silently lost with the images.
 # The protected-folder list goes with the images it refers to.
-PRESERVE=(
-  vision-gw.conf vision-gw.conf.last-good vision-nas.creds network.json
-  webui.passwd webui.secret ftp.creds smb_unix.creds samba aoi_settings
-  updates update-history.json last-known-time
-)
+# (STATE_PRESERVE / state_backup: common.sh, shared with rebalance-storage.)
 rm -rf "$BACKUP_DIR"
-mkdir -p "$BACKUP_DIR/state"
+state_backup "$MIRROR_MOUNT/.state" "$BACKUP_DIR/state"
 if [[ -f /etc/vision-gw.conf ]]; then
   cp /etc/vision-gw.conf "$BACKUP_DIR/vision-gw.conf"
 fi
 if [[ -f /etc/vision-nas.creds ]]; then
   cp /etc/vision-nas.creds "$BACKUP_DIR/vision-nas.creds"
 fi
-for item in "${PRESERVE[@]}"; do
-  if [[ -e "$MIRROR_MOUNT/.state/$item" ]]; then
-    cp -a "$MIRROR_MOUNT/.state/$item" "$BACKUP_DIR/state/"
-  fi
-done
 
 if mountpoint -q "$MIRROR_MOUNT"; then
   if ! umount "$MIRROR_MOUNT"; then
@@ -144,11 +160,7 @@ if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
 fi
 
 # Restore the preserved state (from the RAM backup).
-for item in "${PRESERVE[@]}"; do
-  if [[ -e "$BACKUP_DIR/state/$item" ]]; then
-    cp -a "$BACKUP_DIR/state/$item" "$MIRROR_MOUNT/.state/"
-  fi
-done
+state_restore "$BACKUP_DIR/state" "$MIRROR_MOUNT/.state"
 # No shadow config on the NVMe before the wipe: keep the running one.
 if [[ ! -f "$MIRROR_MOUNT/.state/vision-gw.conf" && -f "$BACKUP_DIR/vision-gw.conf" ]]; then
   cp "$BACKUP_DIR/vision-gw.conf" "$MIRROR_MOUNT/.state/vision-gw.conf"
@@ -181,11 +193,6 @@ for lv in "${USB_LVS[@]}"; do
   fi
 done
 
-systemctl start usb-gadget.service || true
-systemctl start smbd.service nmbd.service wsdd.service || true
-systemctl start vision-webui.service || true
-systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
-# Not the rotator timer: it is off by design (the rotator runs after each sync).
-systemctl enable --now vision-sync.timer vision-monitor.timer || true
+restart_stack
 
 echo "Done."

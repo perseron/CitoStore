@@ -91,12 +91,82 @@ ensure_gateway_home_in_conf() {
 restore_shadow_conf() {
   # No shadow (NVMe not mounted, or empty): keep the image's own /etc config —
   # the golden, tuned one — rather than replacing it with the generic example.
+  local factory
   if [[ -f "$SHADOW_CONF_DEFAULT" ]]; then
     cp "$SHADOW_CONF_DEFAULT" "$CONF_FILE_DEFAULT"
-  elif [[ ! -f "$CONF_FILE_DEFAULT" && -f "$GATEWAY_HOME/conf/vision-gw.conf.example" ]]; then
-    cp "$GATEWAY_HOME/conf/vision-gw.conf.example" "$CONF_FILE_DEFAULT"
+  elif [[ ! -f "$CONF_FILE_DEFAULT" ]] && factory=$(golden_conf); then
+    cp "$factory" "$CONF_FILE_DEFAULT"
   fi
   ensure_gateway_home_in_conf "$CONF_FILE_DEFAULT"
+}
+
+# The unit's factory configuration: the golden image's own, tuned config — NOT
+# the generic packaged example, which has other volume sizes (100G USB LVs in a
+# 64G pool), NetBIOS name, sync cadence and switch settings. prepare-golden-image
+# keeps a pristine copy in the seed dir; on images baked before that, the
+# overlay's read-only lower /etc still holds it.
+SEED_CONF=/etc/citostore-seed/vision-gw.conf
+golden_conf() {
+  local c
+  for c in "$SEED_CONF" /media/root-ro/etc/vision-gw.conf "$GATEWAY_HOME/conf/vision-gw.conf.example"; do
+    if [[ -f "$c" ]]; then
+      echo "$c"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Set KEY=VALUE in the NVMe shadow config (the copy that survives a reboot under
+# the read-only overlay; the WebUI reads it too) and in the live /etc copy.
+# Writing /etc alone — as resize/rebalance did — was undone at the next boot.
+# VALUE must already be validated: the file is sourced by root scripts.
+set_conf_value() {  # <key> <value>
+  local key=$1 value=$2 f tmp
+  for f in "$SHADOW_CONF_DEFAULT" "$CONF_FILE_DEFAULT"; do
+    [[ -f "$f" ]] || continue
+    tmp=$(mktemp "$f.XXXXXX")
+    awk -v k="$key" -v v="$value" '
+      index($0, k "=") == 1 { if (!done) print k "=" v; done = 1; next }
+      { print }
+      END { if (!done) print k "=" v }' "$f" > "$tmp"
+    if [[ "$f" == "$SHADOW_CONF_DEFAULT" ]]; then
+      chmod 0644 "$tmp"
+      mv -f "$tmp" "$f"
+    else
+      # In place (same inode): the WebUI's sandbox bind-mounts this very file.
+      cat "$tmp" > "$f"
+      rm -f "$tmp"
+    fi
+  done
+}
+
+# .state items that are configuration, not captured data: carried across a
+# reformat of the mirror (Wipe All Data, rebalance-storage). Missing one meant
+# the unit came back without its passwords, SMB passdb or AOI settings.
+STATE_PRESERVE=(
+  vision-gw.conf vision-gw.conf.last-good vision-nas.creds network.json
+  webui.passwd webui.secret ftp.creds smb_unix.creds samba aoi_settings
+  updates update-history.json last-known-time
+)
+state_backup() {  # <state dir> <backup dir>
+  local item
+  rm -rf "$2"
+  mkdir -p "$2"
+  for item in "${STATE_PRESERVE[@]}"; do
+    if [[ -e "$1/$item" ]]; then
+      cp -a "$1/$item" "$2/"
+    fi
+  done
+}
+state_restore() {  # <backup dir> <state dir>
+  local item
+  mkdir -p "$2"
+  for item in "${STATE_PRESERVE[@]}"; do
+    if [[ -e "$1/$item" ]]; then
+      cp -a "$1/$item" "$2/"
+    fi
+  done
 }
 
 # Single source of truth for the systemd env file: ALWAYS the full key set.

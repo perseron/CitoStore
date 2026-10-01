@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Expert/offline tool — deliberately NOT in the WebUI any more. It removes and
+# recreates the mirror LV on the running unit, and a live teardown of the in-use
+# NVMe is unreliable (a held LV cannot be removed until a reboot; see
+# factory-reset.sh, which does its rebuild at early boot for that reason). From
+# the WebUI it also could not change the sizes it rebuilds from, and its button
+# promised a "rebalance" while it erased every image.
+
 # shellcheck source=/dev/null
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
@@ -31,7 +38,8 @@ Usage:
   rebalance-storage.sh --i-know-what-im-doing [--dry-run] [--update-config] [--force-umount]
 
 Rebuilds mirror + thinpool + USB LVs based on /etc/vision-gw.conf.
-All data is destroyed.
+All captured data (images) is destroyed; settings and passwords in .state are
+carried over. Prefer a maintenance window: stop clients of the mirror first.
 
 Optional: set UNALLOCATED_GB=20G in config or env to reserve free space.
 EOF
@@ -127,9 +135,35 @@ if [[ "$DRY_RUN" == "true" ]]; then
   exit 0
 fi
 
-systemctl stop vision-sync.timer vision-monitor.timer vision-rotator.timer || true
-systemctl stop vision-sync.service vision-monitor.service vision-rotator.service || true
-systemctl stop usb-gadget.service || true
+BACKUP_DIR=/run/vision-rebalance-backup
+restart_stack() {
+  systemctl start srv-vision_mirror.mount || true
+  systemctl start usb-gadget.service smbd.service nmbd.service vision-webui.service || true
+  # Not the rotator timer: it is off by design (the rotator runs after each sync).
+  systemctl start vision-sync.timer vision-monitor.timer || true
+}
+# A failure part-way used to exit with the gadget, sync and timers stopped (and,
+# after the mkfs, an empty .state: no passwords, no config) until a reboot.
+on_exit() {
+  local rc=$?
+  ((rc != 0)) || return 0
+  log "rebalance FAILED (rc=$rc); restoring what can be restored"
+  if mountpoint -q "$MIRROR_MOUNT" && [[ -d "$BACKUP_DIR/state" && ! -e "$MIRROR_MOUNT/.state/vision-gw.conf" ]]; then
+    state_restore "$BACKUP_DIR/state" "$MIRROR_MOUNT/.state" || true
+  fi
+  restart_stack
+}
+trap on_exit EXIT
+
+# Settings, passwords, the SMB passdb, AOI settings: kept in RAM across the mkfs.
+state_backup "$MIRROR_MOUNT/.state" "$BACKUP_DIR/state"
+
+systemctl stop vision-sync.timer vision-sync-fast.timer vision-monitor.timer vision-rotator.timer mirror-retention.timer nas-sync.timer || true
+systemctl stop vision-sync.service vision-monitor.service vision-rotator.service mirror-retention.service nas-sync.service || true
+systemctl stop usb-gadget.service smbd.service nmbd.service vsftpd-mirror.service || true
+# Through systemd, so the Samba bind of .state/samba (and anything else that
+# requires the mount) is released first.
+systemctl stop srv-vision_mirror.mount || true
 
 if mountpoint -q "$MIRROR_MOUNT"; then
   if ! umount "$MIRROR_MOUNT"; then
@@ -158,6 +192,7 @@ lvcreate -L "$MIRROR_SIZE" -n "$MIRROR_LV" "$VG"
 mkfs.ext4 -F "/dev/$VG/$MIRROR_LV"
 mount "/dev/$VG/$MIRROR_LV" "$MIRROR_MOUNT"
 mkdir -p "$MIRROR_MOUNT/.state" "$MIRROR_MOUNT/raw" "$MIRROR_MOUNT/bydate"
+state_restore "$BACKUP_DIR/state" "$MIRROR_MOUNT/.state"
 
 if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
   mkdir -p "$USB_PERSIST_BACKING"
@@ -175,31 +210,25 @@ for lv in "${USB_LVS[@]}"; do
     safe_mkdir "$persist_mnt"
     if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "/dev/$VG/$lv" "$persist_mnt"; then
       safe_mkdir "$persist_mnt/$USB_PERSIST_DIR"
+      if [[ -d "$USB_PERSIST_BACKING" ]]; then
+        cp -a "$USB_PERSIST_BACKING/." "$persist_mnt/$USB_PERSIST_DIR/" 2>/dev/null || true
+      fi
       umount "$persist_mnt" || true
     fi
   fi
 done
 
 if [[ "$UPDATE_CONFIG" == "true" ]]; then
-  if [[ -w /etc/vision-gw.conf ]]; then
-    sed -i "s/^MIRROR_SIZE=.*/MIRROR_SIZE=$MIRROR_SIZE/" /etc/vision-gw.conf
-    sed -i "s/^THINPOOL_SIZE=.*/THINPOOL_SIZE=$POOL_SIZE/" /etc/vision-gw.conf
-    sed -i "s/^THINPOOL_META_SIZE=.*/THINPOOL_META_SIZE=$POOL_META/" /etc/vision-gw.conf
-    sed -i "s/^USB_LV_SIZE=.*/USB_LV_SIZE=$USB_LV_SIZE/" /etc/vision-gw.conf
-    if grep -q '^UNALLOCATED_GB=' /etc/vision-gw.conf; then
-      sed -i "s/^UNALLOCATED_GB=.*/UNALLOCATED_GB=$UNALLOCATED/" /etc/vision-gw.conf
-    else
-      echo "UNALLOCATED_GB=$UNALLOCATED" >> /etc/vision-gw.conf
-    fi
-  else
-    echo "Cannot write /etc/vision-gw.conf (read-only). Update manually." >&2
-    exit 1
-  fi
+  # Shadow + /etc (set_conf_value): /etc alone is lost at the next boot.
+  set_conf_value MIRROR_SIZE "$MIRROR_SIZE"
+  set_conf_value THINPOOL_SIZE "$POOL_SIZE"
+  set_conf_value THINPOOL_META_SIZE "$POOL_META"
+  set_conf_value USB_LV_SIZE "$USB_LV_SIZE"
+  set_conf_value UNALLOCATED_GB "$UNALLOCATED"
 fi
 
-systemctl start usb-gadget.service || true
-systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
-# Not the rotator timer: it is off by design (the rotator runs after each sync).
-systemctl start vision-sync.timer vision-monitor.timer || true
+# The mirror was mounted by hand above; hand it back to systemd's mount unit.
+umount "$MIRROR_MOUNT" || true
+restart_stack
 
 echo "Done."

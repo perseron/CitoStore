@@ -37,13 +37,19 @@ configure_eth1() {
   command -v nmcli >/dev/null 2>&1 || { log "nmcli missing; cannot configure $ETH1_INTERFACE"; return 0; }
   local con="vision-$ETH1_INTERFACE"
   if [[ "$ETH1_ENABLED" != "true" ]]; then
-    nmcli connection down "$con" >/dev/null 2>&1 || true
+    # Delete, not just "down": the profile has autoconnect, so a disabled eth1
+    # came straight back up with its old address on the next carrier or boot.
+    nmcli connection delete "$con" >/dev/null 2>&1 || true
     return 0
   fi
+  # Runtime-only (save no / --temporary), like every other profile here: this
+  # runs on every boot, and a saved profile written on the overlay-off first
+  # boot after a flash lands on the eMMC and outlives the config (eth1 disabled,
+  # factory reset). config + this script are the persistent truth.
   if ! nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$con"; then
-    nmcli connection add type ethernet con-name "$con" ifname "$ETH1_INTERFACE" >/dev/null 2>&1 || true
+    nmcli connection add save no type ethernet con-name "$con" ifname "$ETH1_INTERFACE" >/dev/null 2>&1 || true
   fi
-  nmcli connection modify "$con" \
+  nmcli connection modify --temporary "$con" \
     connection.interface-name "$ETH1_INTERFACE" \
     ipv4.method manual \
     ipv4.addresses "$ETH1_ADDRESS/$ETH1_PREFIX" \

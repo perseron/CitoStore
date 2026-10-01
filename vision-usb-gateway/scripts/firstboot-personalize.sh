@@ -168,6 +168,8 @@ log "first-boot personalisation complete: $newhost"
 # 8) Optionally re-enable the read-only overlay for the fleet, then reboot.
 if [[ -f "$SEED_DIR/enable-overlay" ]]; then
   log "enabling read-only overlay and rebooting"
-  "$GATEWAY_HOME/install/20_enable_readonly_overlay.sh" || true
+  # Not silent: a unit left without its overlay writes everything to the eMMC.
+  # health-check reports a root without the overlay on every boot.
+  "$GATEWAY_HOME/install/20_enable_readonly_overlay.sh"     || log "ERROR: enabling the read-only overlay failed; the unit runs read-write"
   systemctl reboot
 fi

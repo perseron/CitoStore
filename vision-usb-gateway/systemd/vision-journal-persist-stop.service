@@ -1,0 +1,18 @@
+[Unit]
+Description=Persist the journal tail to NVMe state at shutdown
+# Stopped (ExecStop runs) before the mirror is unmounted: After= the mount on
+# start means the reverse order on stop. Catches the minutes since the last
+# periodic run on every clean shutdown / reboot (the journal is volatile).
+RequiresMountsFor=/srv/vision_mirror
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
+EnvironmentFile=-/etc/vision-gw.env
+ExecStart=/bin/true
+ExecStop=/bin/bash ${GATEWAY_HOME}/scripts/journal-persist.sh
+TimeoutStopSec=1min
+
+[Install]
+WantedBy=multi-user.target

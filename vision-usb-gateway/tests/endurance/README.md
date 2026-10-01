@@ -38,7 +38,7 @@ BOARD=192.168.2.162 bash verify-mirror.sh
 ## What "pass" means
 
 Over the whole run: zero ALERT lines, verify-mirror exits 0, and the board's
-`boot-trace.txt` shows no unexpected reboot. Rotations are expected and good
+`citostore/boot-trace.txt` (on the FAT boot partition) shows no unexpected reboot. Rotations are expected and good
 (the 16G LV rotates around 80%; at 2MB/s that is roughly every 1.8h) — the
 proof is that files written across the rotation boundary still all land in the
 mirror. Reboot-under-load and power-cut-under-load are worthwhile manual

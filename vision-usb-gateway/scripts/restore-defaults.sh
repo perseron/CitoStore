@@ -7,20 +7,19 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 require_root
 load_config
 
-# GATEWAY_HOME comes from common.sh (env override or self-derived).
-DEFAULT_CONF="$GATEWAY_HOME/conf/vision-gw.conf.example"
-STATE_DIR=/srv/vision_mirror/.state
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+: "${MIRROR_MOUNT:=/srv/vision_mirror}"
+STATE_DIR="$MIRROR_MOUNT/.state"
 
 usage() {
   cat <<'EOF'
 Usage:
   restore-defaults.sh --i-know-what-im-doing
 
-This restores configuration defaults:
- - /etc/vision-gw.conf from conf/vision-gw.conf.example
- - shadow config in /srv/vision_mirror/.state/vision-gw.conf
-
-Data volumes are NOT modified.
+Restores THIS UNIT's factory configuration — the golden image's own config
+(/etc/citostore-seed/vision-gw.conf, or the overlay's read-only /etc), not the
+generic conf/vision-gw.conf.example — into the NVMe shadow config, and applies
+it. Data volumes, passwords and the network setting are NOT modified.
 EOF
 }
 
@@ -49,24 +48,32 @@ if [[ "$CONFIRM" != "true" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$DEFAULT_CONF" ]]; then
-  echo "Default config missing: $DEFAULT_CONF" >&2
+# The generic example is NOT this unit's default: it has 100G USB LVs (more than
+# the 64G pool holds), another NetBIOS name and workgroup, a 2 min sync cadence
+# instead of the tuned one, no soft-switch settings... Restoring it silently
+# de-tuned the unit.
+if ! DEFAULT_CONF=$(golden_conf); then
+  echo "no factory configuration found; nothing changed" >&2
   exit 1
 fi
-
-cp "$DEFAULT_CONF" /etc/vision-gw.conf
-if grep -q '^GATEWAY_HOME=' /etc/vision-gw.conf; then
-  sed -i "s#^GATEWAY_HOME=.*#GATEWAY_HOME=$GATEWAY_HOME#" /etc/vision-gw.conf
-else
-  echo "GATEWAY_HOME=$GATEWAY_HOME" >> /etc/vision-gw.conf
+# The shadow on the NVMe is the copy that survives a reboot under the overlay.
+if ! mountpoint -q "$MIRROR_MOUNT"; then
+  echo "NVMe mirror not mounted; nothing changed" >&2
+  exit 1
 fi
-
+log "restoring the factory configuration from $DEFAULT_CONF"
 mkdir -p "$STATE_DIR"
-cp "$DEFAULT_CONF" "$STATE_DIR/vision-gw.conf"
-if grep -q '^GATEWAY_HOME=' "$STATE_DIR/vision-gw.conf"; then
-  sed -i "s#^GATEWAY_HOME=.*#GATEWAY_HOME=$GATEWAY_HOME#" "$STATE_DIR/vision-gw.conf"
-else
-  echo "GATEWAY_HOME=$GATEWAY_HOME" >> "$STATE_DIR/vision-gw.conf"
-fi
+tmp=$(mktemp "$STATE_DIR/vision-gw.conf.XXXXXX")
+cp "$DEFAULT_CONF" "$tmp"
+ensure_gateway_home_in_conf "$tmp"
+chmod 0644 "$tmp"
+sync "$tmp" 2>/dev/null || sync
+mv -f "$tmp" "$STATE_DIR/vision-gw.conf"
 
-echo "Defaults restored."
+# Apply now: copying the files alone left the unit running the old settings
+# until a reboot, while the WebUI already showed the defaults.
+if ! /bin/bash "$SCRIPT_DIR/apply-shadow-config.sh"; then
+  echo "defaults written, but applying them failed (see the log)" >&2
+  exit 1
+fi
+echo "Defaults restored and applied."

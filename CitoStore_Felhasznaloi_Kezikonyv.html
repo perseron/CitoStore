@@ -1052,11 +1052,10 @@
       <table>
         <thead><tr><th>Művelet</th><th>Mit csinál</th></tr></thead>
         <tbody>
-          <tr><td><strong>USB-kötet méretezése</strong> <span class="ui">Resize USB LVs</span></td><td>Az USB logikai kötetek (a gép által látott meghajtó) méretének megváltoztatása, pl. <code>100G</code>.</td></tr>
-          <tr><td><strong>Tárkiegyenlítés</strong> <span class="ui">Rebalance Storage</span></td><td>A tárhely újraelosztása a kötetek között.</td></tr>
+          <tr><td><strong>USB-kötet méretezése&nbsp;*</strong> <span class="ui">Resize USB LVs</span></td><td>Az USB-kötetek (a gép által látott meghajtó) újralétrehozása új mérettel, egész <code>G</code> vagy <code>M</code> értékkel (pl. <code>16G</code>). Előtte szinkronizál a mirrorra, az USB-kötetek tartalma törlődik, az AOI beállításmappája visszakerül. A kötetek együtt sem lehetnek nagyobbak az USB-tárolónál — különben a művelet semmit nem változtat. Az új méret újraindítás után is megmarad.</td></tr>
           <tr><td><strong>Klón-formátum</strong> <span class="ui">Clone USB Format</span></td><td>Az USB-kötetek újraformázása egységes formátumra.</td></tr>
           <tr><td><strong>Biztonságos leállítás</strong> <span class="ui">Safe Shutdown</span></td><td>Az eszköz szabályos leállítása áramtalanítás előtt.</td></tr>
-          <tr><td><strong>Alapértelmezések visszaállítása *</strong> <span class="ui">Restore Defaults</span></td><td>A beállítások gyári alapra állítása. Az adat megmarad.</td></tr>
+          <tr><td><strong>Alapértelmezések visszaállítása *</strong> <span class="ui">Restore Defaults</span></td><td>A beállítások visszaállítása az egység szállításkori (gyári) konfigurációjára, és azonnali alkalmazása. Képek, jelszavak és a hálózati beállítás megmaradnak.</td></tr>
           <tr><td><strong>Összes adat törlése *</strong> <span class="ui">Wipe All Data</span></td><td>Minden USB- és mirror-adat törlése. A beállítások megmaradnak.</td></tr>
           <tr><td><strong>Gyári visszaállítás *</strong> <span class="ui">Factory Reset</span> <span class="new">új</span></td><td>A teljes NVMe törlése és újraépítése, mint egy új egységen: minden adat, beállítás és jelszó törlődik.</td></tr>
           <tr><td><strong>Karbantartó mód</strong> <span class="ui">Maintenance Mode</span></td><td>A szinkron és a rotáció felfüggesztése kézi beavatkozáshoz. Amíg aktív, sáv jelzi; ne felejtsd el kikapcsolni.</td></tr>
@@ -1076,8 +1075,9 @@
         </tbody>
       </table>
       </div>
-      <p>Az <em>Alapértelmezések visszaállítása</em> a NetBIOS-nevet is
-        <code>CITOSTORE</code>-ra állítja vissza — ezután az egység ezen a néven érhető el.</p>
+      <p>Az <em>Alapértelmezések visszaállítása</em> az egység szállításkori beállításait
+        hozza vissza — a NetBIOS-név is a gyári lesz (pl. <code>AOI1</code>), ha közben
+        átnevezted, ezután azon a néven érhető el.</p>
       <h4>A gyári visszaállítás menete</h4>
       <p>A <em>Factory Reset</em> megerősítése után az egység újraindul, induláskor
         törli és újraépíti a teljes NVMe-t, majd még egyszer újraindul. Ez néhány perc;

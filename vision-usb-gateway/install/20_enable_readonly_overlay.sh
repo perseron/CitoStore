@@ -172,11 +172,9 @@ if [[ "$OVERLAY_CLEAN_LOGS_ON_ENABLE" == "true" ]]; then
   if [[ -d /run/log/journal ]]; then
     find /run/log/journal -type f -name '*.journal*' -delete 2>/dev/null || true
   fi
-  : "${MIRROR_MOUNT:=/srv/vision_mirror}"
-  STATE_DIR="$MIRROR_MOUNT/.state"
-  if [[ -d "$STATE_DIR" ]]; then
-    find "$STATE_DIR" -maxdepth 2 -type f -name '*.log*' -delete 2>/dev/null || true
-  fi
+  # Not the NVMe's .state logs: this runs on the first boot after every
+  # reflash and every maintenance cycle, and those logs are the unit's own
+  # history (the previous image's journal copy, the WebUI log).
 fi
 
 if $BOOT_RO; then

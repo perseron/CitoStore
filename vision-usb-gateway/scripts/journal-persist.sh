@@ -24,6 +24,18 @@ fi
 
 mkdir -p "$LOG_DIR"
 
+# A cursor from a previous boot: journalctl then falls back to timestamps and
+# skips this boot's entries that carry an earlier time — on a unit without an
+# RTC cell that is the whole early boot (it runs on the image's bake date until
+# the clock is stepped forward). The journal is volatile, so a new boot simply
+# starts from its beginning.
+if [[ -f "$CURSOR" ]]; then
+  boot_id=$(tr -d '-' < /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+  if [[ -n "$boot_id" ]] && ! grep -q "b=$boot_id" "$CURSOR"; then
+    rm -f "$CURSOR"
+  fi
+fi
+
 journalctl --cursor-file="$CURSOR" --no-pager >> "$OUT" 2>/dev/null || true
 
 size=$(stat -c%s "$OUT" 2>/dev/null || echo 0)

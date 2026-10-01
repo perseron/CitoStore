@@ -183,7 +183,8 @@ function validateField(el) {
     return ok;
   }
   if (rule === "size") {
-    const ok = /^[0-9]+(K|M|G|T)?$/.test(value);
+    // Same rule as the server (LV_SIZE_RE): whole MiB/GiB, unit required.
+    const ok = /^[1-9][0-9]{0,6}[MmGg]$/.test(value);
     setFieldValidity(el, ok, ok ? "e.g. 100G, 512M" : "invalid size");
     return ok;
   }
@@ -540,10 +541,9 @@ async function setManualTime() {
 const MAINTENANCE_CONFIRMATIONS = {
   "wipe":             { title: "Wipe All Data", msg: "This will erase all USB and mirror data. Configuration is preserved.", text: "WIPE ALL DATA" },
   "factory-reset":    { title: "Factory Reset", msg: "This wipes the ENTIRE NVMe and rebuilds it like a blank drive: all images AND all passwords, network settings and the SMB/WebUI/NAS credentials are erased. The unit reboots and comes back with no password, as if newly imaged. This cannot be undone.", text: "FACTORY RESET" },
-  "rebalance":        { title: "Rebalance Storage", msg: "This rebalances thin-pool storage allocation.", text: "REBALANCE" },
-  "resize":           { title: "Resize USB LVs", msg: "This will resize all USB logical volumes.", text: "RESIZE" },
+  "resize":           { title: "Resize USB LVs", msg: "All USB drives are recreated empty at the new size: the AOI sees its drive change, and images not yet mirrored are lost (a sync runs first). The mirror and the AOI's settings folder are kept.", text: "RESIZE" },
   "shutdown":         { title: "Safe Shutdown", msg: "The device will power off.", text: "SHUTDOWN" },
-  "restore-defaults": { title: "Restore Defaults", msg: "Configuration will be reset to factory defaults. Data is preserved.", text: "RESTORE DEFAULTS" },
+  "restore-defaults": { title: "Restore Defaults", msg: "Settings are reset to this unit's factory configuration (as delivered) and applied now. Images, passwords and the network setting are kept.", text: "RESTORE DEFAULTS" },
   "clone-usb-format": { title: "Clone USB Format", msg: "USB LVs will be reformatted.", text: "CLONE USB FORMAT" },
   "rotate":           { title: "Rotate USB Now", msg: "The active USB LV will switch to the next one.", text: null },
   "sync":             { title: "Sync Now", msg: "Trigger a manual sync cycle.", text: null },
@@ -551,13 +551,7 @@ const MAINTENANCE_CONFIRMATIONS = {
 
 async function maintenance(action) {
   let payload = {};
-  const conf = MAINTENANCE_CONFIRMATIONS[action];
-  if (conf) {
-    const ok = conf.text
-      ? await showModal(conf.title, conf.msg, conf.text, true)
-      : await showModal(conf.title, conf.msg, null, false);
-    if (!ok) return;
-  }
+  // Validate before the confirmation, not after the operator typed RESIZE.
   if (action === "resize") {
     const sizeField = document.getElementById("RESIZE_SIZE");
     if (!validateField(sizeField)) {
@@ -566,8 +560,21 @@ async function maintenance(action) {
     }
     payload.size = sizeField.value;
   }
+  const conf = MAINTENANCE_CONFIRMATIONS[action];
+  if (conf) {
+    const ok = conf.text
+      ? await showModal(conf.title, conf.msg, conf.text, true)
+      : await showModal(conf.title, conf.msg, null, false);
+    if (!ok) return;
+  }
   await api(`/api/maintenance/${action}`, { method: "POST", body: JSON.stringify(payload) });
-  setStatus(`${action} started`);
+  // resize and restore-defaults run to completion before the reply.
+  if (action === "resize" || action === "restore-defaults") {
+    setStatus(`${action} done`);
+    await loadConfig();
+  } else {
+    setStatus(`${action} started`);
+  }
   if (action === "rotate") {
     setTimeout(refreshStatus, 2000);
   }
@@ -631,8 +638,6 @@ document.getElementById("save-smb-pass").addEventListener("click",
   withLoading(document.getElementById("save-smb-pass"), changeSmbPassword));
 document.getElementById("wipe").addEventListener("click",
   withLoading(document.getElementById("wipe"), () => maintenance("wipe")));
-document.getElementById("rebalance").addEventListener("click",
-  withLoading(document.getElementById("rebalance"), () => maintenance("rebalance")));
 document.getElementById("resize-usb").addEventListener("click",
   withLoading(document.getElementById("resize-usb"), () => maintenance("resize")));
 document.getElementById("restore-defaults").addEventListener("click",

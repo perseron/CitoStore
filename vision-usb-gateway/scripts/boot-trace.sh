@@ -11,7 +11,12 @@ require_root
 # still tells how far it got. The journal cannot do this: it is volatile, and
 # an early hang leaves it empty.
 BOOT_MOUNT=/boot/firmware
-TRACE="$BOOT_MOUNT/boot-trace.txt"
+# In a subfolder, not the FAT root: the root directory holds config.txt and
+# the kernel, and this file is rewritten (tmp + rename) up to three times per
+# boot — including the earliest seconds, when a weak supply browns out. A
+# power cut mid-update then risks the directory the unit boots from.
+TRACE_DIR="$BOOT_MOUNT/citostore"
+TRACE="$TRACE_DIR/boot-trace.txt"
 MAX_LINES=60
 phase="${1:-mark}"
 
@@ -24,6 +29,9 @@ if findmnt -no OPTIONS "$BOOT_MOUNT" | tr ',' '\n' | grep -qx ro; then
 fi
 
 {
+  mkdir -p "$TRACE_DIR"
+  # One-time move of the file older builds kept in the root.
+  if [[ -f "$BOOT_MOUNT/boot-trace.txt" ]]; then mv -f "$BOOT_MOUNT/boot-trace.txt" "$TRACE"; fi
   build=$(grep -m1 '^CITOSTORE_BUILD_SHA=' /etc/citostore-build 2>/dev/null | cut -d= -f2 || true)
   up=$(awk '{print int($1)}' /proc/uptime)
   extra=""

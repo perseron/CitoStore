@@ -6,6 +6,7 @@ import hmac
 import ipaddress
 import json
 import os
+import pwd
 import re
 import secrets
 import socket
@@ -601,6 +602,24 @@ def validate_import_config(text: str) -> tuple[str, str]:
     return "\n".join(lines).rstrip("\n") + "\n", ""
 
 
+def atomic_write(path: Path, data, mode: int = 0o644) -> None:
+    """tmp + fsync + rename. These units lose power without warning, and an
+    in-place write cut short leaves a truncated file on the NVMe: half a config
+    (missing keys silently fall back to defaults), an empty session key, broken
+    JSON. The tmp is created with its final mode, so a secret is never briefly
+    readable by others."""
+    if isinstance(data, str):
+        data = data.encode("utf-8")
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+    with os.fdopen(fd, "wb") as fh:
+        os.fchmod(fh.fileno(), mode)
+        fh.write(data)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+
+
 def record_update_history(version: str, status: str) -> None:
     """Append to the history apply-update.sh keeps, for rejections that never
     reach it — otherwise a refused upload leaves no trace the operator can see."""
@@ -611,7 +630,7 @@ def record_update_history(version: str, status: str) -> None:
         history = []
     history.append({"version": version, "status": status, "ts": time.strftime("%Y-%m-%dT%H:%M:%S")})
     try:
-        path.write_text(json.dumps(history[-20:]), encoding="utf-8")
+        atomic_write(path, json.dumps(history[-20:]))
     except OSError as exc:
         log(f"update history write failed: {exc}")
 
@@ -700,10 +719,14 @@ def update_config_file(base_text: str, updates: dict) -> str:
 def ensure_secret() -> bytes:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     if SECRET_FILE.exists():
-        return SECRET_FILE.read_bytes()
+        secret = SECRET_FILE.read_bytes()
+        # A short key (an empty file left by a power cut) would sign sessions
+        # with a guessable HMAC key: anyone could forge an admin cookie.
+        if len(secret) >= 32:
+            return secret
+        log("session secret too short; regenerating (all sessions end)")
     secret = secrets.token_bytes(32)
-    SECRET_FILE.write_bytes(secret)
-    os.chmod(SECRET_FILE, 0o600)
+    atomic_write(SECRET_FILE, secret, 0o600)
     return secret
 
 
@@ -721,12 +744,7 @@ def store_password(password: str) -> None:
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     # Atomic: a power cut mid-write left truncated JSON — login then raised and
     # /setup stayed closed (the file exists), so only SSH could recover it.
-    tmp = PASS_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data), encoding="utf-8")
-    os.chmod(tmp, 0o600)
-    with open(tmp, "rb") as fh:
-        os.fsync(fh.fileno())
-    os.replace(tmp, PASS_FILE)
+    atomic_write(PASS_FILE, json.dumps(data), 0o600)
 
 
 def verify_password(password: str) -> bool:
@@ -1230,7 +1248,8 @@ def apply_and_save_network(
             "after a restart; on a direct laptop link the unit then gives itself "
             "10.10.10.1."
         )
-    NETWORK_STATE.write_text(
+    atomic_write(
+        NETWORK_STATE,
         json.dumps(
             {
                 "interface": iface,
@@ -1241,10 +1260,15 @@ def apply_and_save_network(
                 "dns": dns,
             }
         ),
-        encoding="utf-8",
+        0o600,
     )
-    os.chmod(NETWORK_STATE, 0o600)
     return True, warning
+
+
+# USB LV size: what lvcreate -V and the resize script both accept. A whole
+# number of MiB/GiB; "0G", "4GB", "1.5G" or K-sized volumes used to reach
+# lvcreate only after the old LV had already been removed.
+LV_SIZE_RE = re.compile(r"^[1-9][0-9]{0,6}[MG]$")
 
 
 def validate_config_updates(updates: dict) -> tuple[bool, str]:
@@ -1261,9 +1285,9 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
     if "NAS_MOUNT" in updates and not updates["NAS_MOUNT"].startswith("/"):
         return False, "NAS_MOUNT must be an absolute path"
     if "USB_LV_SIZE" in updates:
-        size = updates["USB_LV_SIZE"]
-        if not size or not size[:-1].isdigit() or size[-1] not in "KMGTkmgt":
-            return False, "USB_LV_SIZE must look like 100G"
+        updates["USB_LV_SIZE"] = size = updates["USB_LV_SIZE"].strip().upper()
+        if not LV_SIZE_RE.match(size):
+            return False, "USB_LV_SIZE must look like 100G or 512M"
     if "NETBIOS_NAME" in updates:
         name = updates["NETBIOS_NAME"]
         if not name or len(name) > 15 or not name.replace("-", "").replace("_", "").isalnum():
@@ -1722,8 +1746,6 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.handle_maintenance(["wipe"])
         if self.path == "/api/maintenance/factory-reset":
             return self.handle_maintenance(["factory-reset"])
-        if self.path == "/api/maintenance/rebalance":
-            return self.handle_maintenance(["rebalance"])
         if self.path == "/api/maintenance/resize":
             return self.handle_maintenance(["resize"])
         if self.path == "/api/maintenance/restore-defaults":
@@ -1810,9 +1832,10 @@ class WebHandler(BaseHTTPRequestHandler):
         base_text = load_config_text()
         new_text = update_config_file(base_text, updates)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        SHADOW_CONF.write_text(new_text, encoding="utf-8")
-        last_good = STATE_DIR / "vision-gw.conf.last-good"
-        last_good.write_text(new_text, encoding="utf-8")
+        # Not last-good: apply-shadow-config promotes it only after the config
+        # applied cleanly — written here, a config that fails to apply became
+        # the "known good" rollback target too.
+        atomic_write(SHADOW_CONF, new_text)
         log(f"config updated: {', '.join(sorted(updates.keys()))}")
         return self.send_json({"ok": True})
 
@@ -1858,17 +1881,26 @@ class WebHandler(BaseHTTPRequestHandler):
         )
         if code != 0:
             return self.send_json({"ok": False, "error": err or out}, status=500)
-        run_privileged(["/usr/bin/smbpasswd", "-e", smb_user])
+        code, out, err = run_privileged(["/usr/bin/smbpasswd", "-e", smb_user])
+        if code != 0:
+            return self.send_json(
+                {"ok": False, "error": f"SMB account not enabled: {err or out}"}, status=500
+            )
         # Mirror FTP (eth0) authenticates as this same Unix account via PAM, not
         # Samba's own passdb -- and /etc/shadow lives on the overlay root, so
         # unlike passdb.tdb (bind-mounted onto persistent storage by
         # 50_configure_samba.sh) it does NOT survive a reboot. Persist on the
         # NVMe so 80_configure_mirror_ftp.sh can re-apply it (chpasswd) on
         # every boot -- same pattern as ftp.creds for the ingest FTP user.
-        creds = STATE_DIR / "smb_unix.creds"
-        creds.write_text(f"password={password}\n", encoding="utf-8")
-        os.chmod(creds, 0o600)
-        run_privileged(["/usr/sbin/chpasswd"], input_text=f"{smb_user}:{password}\n")
+        atomic_write(STATE_DIR / "smb_unix.creds", f"password={password}\n", 0o600)
+        # Checked: unchecked, a failure here reported "OK" while the mirror FTP
+        # login kept the old password.
+        code, out, err = run_privileged(["/usr/sbin/chpasswd"], input_text=f"{smb_user}:{password}\n")
+        if code != 0:
+            return self.send_json(
+                {"ok": False, "error": f"SMB password set, but the mirror FTP login was not: {err or out}"},
+                status=500,
+            )
         log(f"smb password changed for {smb_user}")
         return self.send_json({"ok": True})
 
@@ -1885,11 +1917,17 @@ class WebHandler(BaseHTTPRequestHandler):
         cfg = parse_config(load_config_text())
         ftp_user = cfg.get("FTP_USER", "aoiftp")
         # Persist on the NVMe (overlay-safe; re-applied on boot by 70_configure_ingest).
-        creds = STATE_DIR / "ftp.creds"
-        creds.write_text(f"password={password}\n", encoding="utf-8")
-        os.chmod(creds, 0o600)
-        # Apply now if the ingest user already exists.
-        run_privileged(["/usr/sbin/chpasswd"], input_text=f"{ftp_user}:{password}\n")
+        atomic_write(STATE_DIR / "ftp.creds", f"password={password}\n", 0o600)
+        # Apply now if the ingest user already exists (otherwise 70_configure_ingest
+        # applies it when ingest is enabled) — and report it if that fails.
+        try:
+            pwd.getpwnam(ftp_user)
+        except KeyError:
+            log(f"ftp password stored; {ftp_user} does not exist yet (applied when ingest is enabled)")
+            return self.send_json({"ok": True})
+        code, out, err = run_privileged(["/usr/sbin/chpasswd"], input_text=f"{ftp_user}:{password}\n")
+        if code != 0:
+            return self.send_json({"ok": False, "error": f"FTP password not applied: {err or out}"}, status=500)
         log(f"ftp password changed for {ftp_user}")
         return self.send_json({"ok": True})
 
@@ -1925,8 +1963,7 @@ class WebHandler(BaseHTTPRequestHandler):
         for field in creds.values():
             if field and not (len(field) <= MAX_PASSWORD_LEN and field.isprintable()):
                 return self.send_json({"ok": False, "error": "invalid NAS credentials"}, status=400)
-        NAS_CREDS_SHADOW.write_text(render_nas_creds(creds), encoding="utf-8")
-        os.chmod(NAS_CREDS_SHADOW, 0o600)
+        atomic_write(NAS_CREDS_SHADOW, render_nas_creds(creds), 0o600)
         log("nas creds updated (shadow)")
         return self.send_json({"ok": True})
 
@@ -2072,12 +2109,12 @@ class WebHandler(BaseHTTPRequestHandler):
                 # WebUI going down with the reboot. --no-block so the HTTP reply
                 # is sent before the teardown begins.
                 args = ["/bin/systemctl", "--no-block", "start", "vision-factory-reset.service"]
-            elif action == ["rebalance"]:
-                args = [f"{gh}/scripts/rebalance-storage.sh", "--i-know-what-im-doing"]
             elif action == ["resize"]:
-                size = data.get("size", "")
-                if not size:
-                    return self.send_json({"ok": False, "error": "size is required"}, status=400)
+                size = str(data.get("size", "")).strip().upper()
+                if not LV_SIZE_RE.match(size):
+                    return self.send_json(
+                        {"ok": False, "error": "size must look like 100G or 512M"}, status=400
+                    )
                 args = [
                     f"{gh}/scripts/resize-usb-lvs.sh",
                     "--size",
@@ -2103,7 +2140,7 @@ class WebHandler(BaseHTTPRequestHandler):
             # Direct-script actions mutate /etc, /dev and LVM metadata, so they must
             # run outside this service's ProtectSystem=strict sandbox. systemctl/
             # shutdown actions only talk to PID 1 over D-Bus and work in-sandbox.
-            privileged = action and action[0] in ("rebalance", "resize", "restore-defaults")
+            privileged = action and action[0] in ("resize", "restore-defaults")
             runner = run_privileged if privileged else run_cmd
             code, out, err = runner(args, timeout=3600)
             log(f"maintenance {action} rc={code} out={out} err={err}")

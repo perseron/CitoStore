@@ -30,8 +30,11 @@ elif [[ -f /etc/vision-gw.conf ]]; then
 fi
 
 # 2) WebUI identity + secrets (optional; can be re-set instead).
-for f in webui.passwd webui.secret vision-nas.creds; do
-  [[ -f "$STATE_DIR/$f" ]] && cp "$STATE_DIR/$f" "$STAGE/state/$f"
+# ftp.creds (AOI ingest login) and smb_unix.creds (the mirror-FTP / PAM copy of
+# the SMB password) too: without them a replacement unit's AOI FTP upload and
+# mirror-FTP logins failed.
+for f in webui.passwd webui.secret vision-nas.creds ftp.creds smb_unix.creds; do
+  if [[ -f "$STATE_DIR/$f" ]]; then cp "$STATE_DIR/$f" "$STAGE/state/$f"; fi
 done
 
 # 3) NAS creds in /etc too (in case shadow is absent).

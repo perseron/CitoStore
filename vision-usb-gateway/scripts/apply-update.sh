@@ -30,14 +30,20 @@ if path.exists():
     except Exception: pass
 history.append({"version": ver, "status": status, "ts": datetime.now().isoformat()})
 history = history[-20:]
-path.write_text(json.dumps(history))
+# Atomic: a power cut mid-write used to leave truncated JSON, and the next read
+# then silently started a new, empty history.
+tmp = path.with_name(path.name + ".tmp")
+tmp.write_text(json.dumps(history))
+tmp.replace(path)
 PY
 }
 
 if [[ "$MODE" == "reapply" ]]; then
   # Boot-time re-application for overlay mode.
   # Check if root is overlayfs — if not, skip (persistent rootfs keeps changes).
-  if ! mount | grep -q 'on / type overlay'; then
+  # findmnt, not "mount | grep -q": under pipefail a long mount table can take
+  # SIGPIPE (141), read as "not overlay", and the update was skipped that boot.
+  if [[ "$(findmnt -no FSTYPE / 2>/dev/null || true)" != "overlay" ]]; then
     log "not overlay mode; skipping update reapply"
     exit 0
   fi
@@ -49,10 +55,15 @@ if [[ "$MODE" == "reapply" ]]; then
   STAGING_DIR="$PERSIST_DIR/reapply-staging"
   rm -rf "$STAGING_DIR"
   mkdir -p "$STAGING_DIR"
-  tar xzf "$PERSIST_DIR/current.tar.gz" -C "$STAGING_DIR" || {
-    log "failed to extract persisted update"
-    exit 1
-  }
+  if ! tar xzf "$PERSIST_DIR/current.tar.gz" --no-same-owner -C "$STAGING_DIR"; then
+    # A corrupt archive (power cut while it was being stored) would fail this
+    # unit on every boot from now on; it can never apply again — remove it.
+    log "persisted update archive is corrupt; removed (upload the package again)"
+    rm -f "$PERSIST_DIR/current.tar.gz"
+    rm -rf "$STAGING_DIR"
+    record_history "unknown" "removed: corrupt archive"
+    exit 0
+  fi
 fi
 
 if [[ ! -d "$STAGING_DIR" ]]; then
@@ -113,15 +124,21 @@ if [[ "$MODE" == "apply" ]]; then
   # The WebUI handler keeps update.tar.gz in the staging dir.
   mkdir -p "$PERSIST_DIR"
   if [[ -f "$STAGING_DIR/update.tar.gz" ]]; then
-    cp "$STAGING_DIR/update.tar.gz" "$PERSIST_DIR/current.tar.gz"
+    # tmp + sync + rename: a half-copied archive must never become "current".
+    cp "$STAGING_DIR/update.tar.gz" "$PERSIST_DIR/current.tar.gz.tmp"
+    sync "$PERSIST_DIR/current.tar.gz.tmp" 2>/dev/null || sync
+    mv -f "$PERSIST_DIR/current.tar.gz.tmp" "$PERSIST_DIR/current.tar.gz"
     log "update archive persisted for overlay reapply"
   else
-    # Fallback: re-create archive from staging contents.
-    tar czf "$PERSIST_DIR/current.tar.gz" \
-      --exclude='install.log' \
-      -C "$STAGING_DIR" . || {
+    # Fallback: re-create archive from staging contents (same tmp + rename).
+    if tar czf "$PERSIST_DIR/current.tar.gz.tmp" \
+         --exclude='install.log' -C "$STAGING_DIR" .; then
+      sync "$PERSIST_DIR/current.tar.gz.tmp" 2>/dev/null || sync
+      mv -f "$PERSIST_DIR/current.tar.gz.tmp" "$PERSIST_DIR/current.tar.gz"
+    else
+      rm -f "$PERSIST_DIR/current.tar.gz.tmp"
       log "warning: failed to persist update archive"
-    }
+    fi
   fi
   # Cleanup staging
   rm -rf "$STAGING_DIR"

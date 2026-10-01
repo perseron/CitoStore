@@ -185,12 +185,18 @@ cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
 cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf.last-good"
 
 # 6) Restore secrets + AOI settings from the bundle.
-for f in webui.passwd webui.secret vision-nas.creds; do
+for f in webui.passwd webui.secret vision-nas.creds ftp.creds smb_unix.creds; do
   if [[ -f "$STAGE/state/$f" ]]; then
     install -m 0600 "$STAGE/state/$f" "$STATE_DIR/$f"
     log "restored $f"
   fi
 done
+# The recorded network intent (a static IP): exported, but never restored, so a
+# replacement unit came up on DHCP instead of the failed unit's address.
+if [[ -f "$STAGE/network/network.json" ]]; then
+  install -m 0600 "$STAGE/network/network.json" "$STATE_DIR/network.json"
+  log "restored network.json"
+fi
 [[ -f "$STAGE/etc/vision-nas.creds" ]] && install -m 0600 "$STAGE/etc/vision-nas.creds" /etc/vision-nas.creds
 if [[ -d "$STAGE/state/aoi_settings" ]]; then
   rm -rf "$STATE_DIR/aoi_settings"

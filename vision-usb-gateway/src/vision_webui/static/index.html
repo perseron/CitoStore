@@ -307,12 +307,11 @@
       <h2>Maintenance</h2>
       <div class="grid">
         <label>Resize USB LV Size <input id="RESIZE_SIZE" placeholder="100G" data-validate="size">
-          <span class="hint">e.g. 100G, 512M</span>
+          <span class="hint">e.g. 100G, 512M (all drives together must fit the USB pool)</span>
         </label>
       </div>
       <div class="actions">
         <button class="danger" id="resize-usb">Resize USB LVs</button>
-        <button class="danger" id="rebalance">Rebalance Storage</button>
         <button class="danger" id="wipe">Wipe All Data</button>
         <button class="danger" id="restore-defaults">Restore Defaults</button>
         <button class="danger" id="factory-reset">Factory Reset</button>

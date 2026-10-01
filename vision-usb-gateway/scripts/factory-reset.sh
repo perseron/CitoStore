@@ -125,10 +125,16 @@ case "$MODE" in
   # is the proven path.
   STATE_DIR="$MIRROR_MOUNT/.state"
   mkdir -p "$STATE_DIR"
-  if [[ -f /etc/vision-gw.conf ]]; then
-    cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf"
-    cp /etc/vision-gw.conf "$STATE_DIR/vision-gw.conf.last-good"
-    log "factory reset: shadow config seeded from /etc (factory)"
+  # The pristine golden copy when the image has one: on a unit run without
+  # the overlay, /etc holds the last applied config, not the factory one.
+  factory_conf=$SEED_CONF
+  [[ -f "$factory_conf" ]] || factory_conf=/etc/vision-gw.conf
+  if [[ -f "$factory_conf" ]]; then
+    cp "$factory_conf" "$STATE_DIR/vision-gw.conf"
+    cp "$factory_conf" "$STATE_DIR/vision-gw.conf.last-good"
+    ensure_gateway_home_in_conf "$STATE_DIR/vision-gw.conf"
+    ensure_gateway_home_in_conf "$STATE_DIR/vision-gw.conf.last-good"
+    log "factory reset: shadow config seeded from $factory_conf (factory)"
   fi
 
   # The marker is already gone, so this second boot is an ordinary one: the mirror

@@ -23,6 +23,11 @@ field() { sed -n "s/.*\"$1\": *\"\([^\"]*\)\".*/\1/p" "$pkg_dir/manifest.json" |
 version=$(field version)
 rev=$(field source_commit)
 [[ -n "$version" && -n "$rev" ]] || { echo "manifest.json needs version and source_commit" >&2; exit 1; }
+# Mandatory, on one line (the same sed the unit-side install.sh parses it with):
+# a package without it is never deleted after a reflash — vision-update-reapply
+# would re-run its whole-file copies over the newer image's code on every boot.
+compatible=$(sed -n 's/.*"compatible_builds": *\[\([^]]*\)\].*/\1/p' "$pkg_dir/manifest.json" | tr -d '"[:space:]')
+[[ -n "$compatible" ]] || { echo "manifest.json needs a non-empty one-line \"compatible_builds\": [...]" >&2; exit 1; }
 
 prefix=$(git -C "$GW" rev-parse --show-prefix)   # e.g. vision-usb-gateway/
 git -C "$GW" rev-parse --verify --quiet "$rev^{commit}" >/dev/null \
