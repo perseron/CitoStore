@@ -63,14 +63,47 @@ if ! id -u "$SMB_USER" >/dev/null 2>&1; then
   useradd -M -s /usr/sbin/nologin "$SMB_USER"
 fi
 
-if [[ -n "$SMB_PASS" ]]; then
-  printf '%s\n%s\n' "$SMB_PASS" "$SMB_PASS" | smbpasswd -s -a "$SMB_USER"
-  smbpasswd -e "$SMB_USER"
+set_smb_password() {  # <password>
+  printf '%s\n%s\n' "$1" "$1" | smbpasswd -s -a "$SMB_USER" >/dev/null
+  smbpasswd -e "$SMB_USER" >/dev/null
   # Mirror FTP (80_configure_mirror_ftp.sh) authenticates as this same user via
   # PAM/chpasswd, not smbpasswd's own passdb — keep both in sync.
-  printf '%s:%s\n' "$SMB_USER" "$SMB_PASS" | chpasswd
-else
-  log "SMB_PASS not set; skipping smbpasswd setup for $SMB_USER"
+  printf '%s:%s\n' "$SMB_USER" "$1" | chpasswd
+}
+
+# Factory default SMB password. A unit with no SMB user in its passdb (fresh
+# NVMe, factory reset, a wipe of old) had an unusable share — and no USB-export
+# login, which uses the SMB password — until someone set one in the WebUI. Only
+# when SMB_USER has NO passdb entry: a password set in the WebUI is never
+# overwritten. Change it after installation (WebUI -> SMB password).
+DEFAULT_SMB_PASS=citostore
+SMB_UNIX_CREDS="$MIRROR_MOUNT/.state/smb_unix.creds"
+
+if [[ -n "$SMB_PASS" ]]; then
+  set_smb_password "$SMB_PASS"
+elif ! pdbedit -L -u "$SMB_USER" >/dev/null 2>&1; then
+  # Into the NVMe passdb only (the bind above): seeded into the overlay's RAM
+  # copy it would vanish at reboot — the next boot with the bind does it.
+  if mountpoint -q "$SAMBA_LIB" && [[ -d "$MIRROR_MOUNT/.state" ]]; then
+    # A password the WebUI set earlier survives in smb_unix.creds even when the
+    # passdb lost the user: bring that one back rather than the default, so SMB
+    # and the mirror FTP (PAM, re-applied from the creds) keep one password.
+    # "|| true": no creds file makes sed fail, and under pipefail that aborted
+    # the whole script (set -e) before any password was set.
+    pw=$(sed -n 's/^password=//p' "$SMB_UNIX_CREDS" 2>/dev/null | head -1 || true)
+    if [[ -n "$pw" ]]; then
+      set_smb_password "$pw"
+      log "no SMB user in the passdb: recreated $SMB_USER with its saved password"
+    else
+      set_smb_password "$DEFAULT_SMB_PASS"
+      # The PAM copy is re-applied from here on every boot (/etc/shadow is on
+      # the overlay).
+      (umask 077; printf 'password=%s\n' "$DEFAULT_SMB_PASS" > "$SMB_UNIX_CREDS")
+      log "no SMB user in the passdb: created $SMB_USER with the default password (change it in the WebUI)"
+    fi
+  else
+    log "no SMB user yet, but the Samba state is not on the NVMe; default password on the next boot"
+  fi
 fi
 
 chown root:root /srv/vision_mirror
@@ -88,7 +121,7 @@ chmod 0755 /srv/vision_mirror/raw /srv/vision_mirror/bydate 2>/dev/null || true
 # smb.conf). A previous blanket `find .state -exec chmod 0644` re-published every
 # secret on each boot; do NOT reintroduce it.
 chmod 0700 /srv/vision_mirror/.state 2>/dev/null || true
-for secret in ftp.creds webui.secret webui.passwd vision-nas.creds network.json; do
+for secret in ftp.creds smb_unix.creds webui.secret webui.passwd vision-nas.creds network.json; do
   [[ -f "/srv/vision_mirror/.state/$secret" ]] && chmod 0600 "/srv/vision_mirror/.state/$secret"
 done
 if [[ -d /srv/vision_mirror/.state/samba/private ]]; then

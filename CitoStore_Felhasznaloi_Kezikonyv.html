@@ -542,7 +542,8 @@
 
       <h3 id="s5-smb">A hálózati megosztás (Samba) csatlakoztatása</h3>
       <p>Bejelentkezés: felhasználónév <code>smbuser</code>, jelszó az
-        <em>SMB share</em> szekcióban beállított SMB-jelszó. Két megosztást látsz:</p>
+        <em>SMB share</em> szekcióban beállított SMB-jelszó — amíg ezt nem állítod át,
+        a gyári alapértelmezett: <code>citostore</code>. Két megosztást látsz:</p>
       <div class="tbl-wrap">
       <table>
         <thead><tr><th>Megosztás</th><th>Tartalom</th><th>Jog</th></tr></thead>
@@ -618,7 +619,9 @@
           egy beállító oldalra visz, ahol megadod az adminisztrátori (WebUI) jelszót.</li>
         <li><h4>Állítsd be a többi jelszót</h4>
           Az <em>SMB share</em> szekcióban az SMB-jelszót — ez nyitja a hálózati
-          megosztást, a Mirror FTP-t, a kimásoló és a védett mappák oldalt is. Ha
+          megosztást, a Mirror FTP-t, a kimásoló és a védett mappák oldalt is. A gyári
+          alapértelmezett SMB-jelszó <code>citostore</code> (felhasználó: <code>smbuser</code>);
+          éles használat előtt változtasd meg. Ha
           Ethernet AOI-t használsz, az <em>Ethernet AOI</em> szekcióban az ingest
           (FTP/SFTP) jelszót.</li>
         <li><h4>Adj egyedi nevet az egységnek</h4>
