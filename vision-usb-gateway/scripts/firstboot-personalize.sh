@@ -55,9 +55,23 @@ else
 fi
 
 # 4) Initialise this unit's own empty NVMe if the mirror LV is absent.
+#    Only a genuinely BLANK disk may be wiped here. This also runs on every
+#    reflash of a unit in the field, whose NVMe holds the customer's images: if
+#    the mirror LV is not found for any other reason (the disk came up late on a
+#    weak supply, a renamed VG, a foreign disk), wiping it would erase them.
+#    Refuse instead and leave first boot unfinished (it retries next boot);
+#    Factory Reset is the explicit way to wipe a used disk.
 if ! lvdisplay "$LVM_VG/$MIRROR_LV" >/dev/null 2>&1; then
-  log "initialising empty NVMe (LVM)"
-  "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
+  : "${NVME_DEVICE:=/dev/nvme0n1}"
+  if [[ -b "$NVME_DEVICE" ]] \
+     && [[ -z "$(wipefs --noheadings -n "$NVME_DEVICE" 2>/dev/null)" ]] \
+     && [[ "$(lsblk -nro NAME "$NVME_DEVICE" 2>/dev/null | wc -l)" -le 1 ]]; then
+    log "initialising blank NVMe $NVME_DEVICE (LVM)"
+    "$GATEWAY_HOME/install/30_setup_nvme_lvm.sh" --wipe
+  else
+    log "ERROR: $LVM_VG/$MIRROR_LV not found, and $NVME_DEVICE is absent or NOT blank — refusing to wipe it (use Factory Reset to wipe a used disk); first boot left unfinished"
+    exit 1
+  fi
 fi
 mountpoint -q /srv/vision_mirror || mount /srv/vision_mirror 2>/dev/null || mount -a || true
 safe_mkdir "$STATE_DIR"

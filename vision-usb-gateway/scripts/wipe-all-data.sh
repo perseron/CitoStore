@@ -87,30 +87,30 @@ systemctl stop srv-vision_mirror.mount srv-vision_mirror.automount || true
 
 vgchange -ay "$VG" || true
 
-# Backup configs from SSD to RAM before wiping
+# Back up everything that is configuration, not captured data, before wiping:
+# "Wipe All Data" erases the images and keeps the unit's settings. It used to
+# keep only 5 files, so the SMB passdb (.state/samba — the share/export login),
+# the FTP/ingest and mirror-FTP passwords, the AOI's settings folder and an
+# installed field update were silently lost with the images.
+# The protected-folder list goes with the images it refers to.
+PRESERVE=(
+  vision-gw.conf vision-gw.conf.last-good vision-nas.creds network.json
+  webui.passwd webui.secret ftp.creds smb_unix.creds samba aoi_settings
+  updates update-history.json last-known-time
+)
 rm -rf "$BACKUP_DIR"
-mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR/state"
 if [[ -f /etc/vision-gw.conf ]]; then
   cp /etc/vision-gw.conf "$BACKUP_DIR/vision-gw.conf"
 fi
 if [[ -f /etc/vision-nas.creds ]]; then
   cp /etc/vision-nas.creds "$BACKUP_DIR/vision-nas.creds"
 fi
-if [[ -f "$MIRROR_MOUNT/.state/vision-gw.conf" ]]; then
-  cp "$MIRROR_MOUNT/.state/vision-gw.conf" "$BACKUP_DIR/vision-gw.shadow.conf"
-fi
-if [[ -f "$MIRROR_MOUNT/.state/vision-nas.creds" ]]; then
-  cp "$MIRROR_MOUNT/.state/vision-nas.creds" "$BACKUP_DIR/vision-nas.shadow.creds"
-fi
-if [[ -f "$MIRROR_MOUNT/.state/network.json" ]]; then
-  cp "$MIRROR_MOUNT/.state/network.json" "$BACKUP_DIR/network.json"
-fi
-if [[ -f "$MIRROR_MOUNT/.state/webui.passwd" ]]; then
-  cp "$MIRROR_MOUNT/.state/webui.passwd" "$BACKUP_DIR/webui.passwd"
-fi
-if [[ -f "$MIRROR_MOUNT/.state/webui.secret" ]]; then
-  cp "$MIRROR_MOUNT/.state/webui.secret" "$BACKUP_DIR/webui.secret"
-fi
+for item in "${PRESERVE[@]}"; do
+  if [[ -e "$MIRROR_MOUNT/.state/$item" ]]; then
+    cp -a "$MIRROR_MOUNT/.state/$item" "$BACKUP_DIR/state/"
+  fi
+done
 
 if mountpoint -q "$MIRROR_MOUNT"; then
   if ! umount "$MIRROR_MOUNT"; then
@@ -143,25 +143,18 @@ if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
   mkdir -p "$USB_PERSIST_BACKING"
 fi
 
-# Restore shadow config after wipe (from RAM backup)
-if [[ -f "$BACKUP_DIR/vision-gw.shadow.conf" ]]; then
-  cp "$BACKUP_DIR/vision-gw.shadow.conf" "$MIRROR_MOUNT/.state/vision-gw.conf"
-elif [[ -f "$BACKUP_DIR/vision-gw.conf" ]]; then
+# Restore the preserved state (from the RAM backup).
+for item in "${PRESERVE[@]}"; do
+  if [[ -e "$BACKUP_DIR/state/$item" ]]; then
+    cp -a "$BACKUP_DIR/state/$item" "$MIRROR_MOUNT/.state/"
+  fi
+done
+# No shadow config on the NVMe before the wipe: keep the running one.
+if [[ ! -f "$MIRROR_MOUNT/.state/vision-gw.conf" && -f "$BACKUP_DIR/vision-gw.conf" ]]; then
   cp "$BACKUP_DIR/vision-gw.conf" "$MIRROR_MOUNT/.state/vision-gw.conf"
 fi
-if [[ -f "$BACKUP_DIR/vision-nas.shadow.creds" ]]; then
-  cp "$BACKUP_DIR/vision-nas.shadow.creds" "$MIRROR_MOUNT/.state/vision-nas.creds"
-elif [[ -f "$BACKUP_DIR/vision-nas.creds" ]]; then
+if [[ ! -f "$MIRROR_MOUNT/.state/vision-nas.creds" && -f "$BACKUP_DIR/vision-nas.creds" ]]; then
   cp "$BACKUP_DIR/vision-nas.creds" "$MIRROR_MOUNT/.state/vision-nas.creds"
-fi
-if [[ -f "$BACKUP_DIR/network.json" ]]; then
-  cp "$BACKUP_DIR/network.json" "$MIRROR_MOUNT/.state/network.json"
-fi
-if [[ -f "$BACKUP_DIR/webui.passwd" ]]; then
-  cp "$BACKUP_DIR/webui.passwd" "$MIRROR_MOUNT/.state/webui.passwd"
-fi
-if [[ -f "$BACKUP_DIR/webui.secret" ]]; then
-  cp "$BACKUP_DIR/webui.secret" "$MIRROR_MOUNT/.state/webui.secret"
 fi
 
 for lv in "${USB_LVS[@]}"; do
@@ -179,6 +172,10 @@ for lv in "${USB_LVS[@]}"; do
     safe_mkdir "$persist_mnt"
     if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "$fs_dev" "$persist_mnt"; then
       safe_mkdir "$persist_mnt/$USB_PERSIST_DIR"
+      # Put the AOI's own settings back on its (now empty) drive.
+      if [[ -d "$USB_PERSIST_BACKING" ]]; then
+        cp -a "$USB_PERSIST_BACKING/." "$persist_mnt/$USB_PERSIST_DIR/" 2>/dev/null || true
+      fi
       umount "$persist_mnt" || true
     fi
   fi

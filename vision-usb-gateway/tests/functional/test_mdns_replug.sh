@@ -37,6 +37,7 @@ while read -r at what val; do
     carrier) echo "\$val" > "$TMP/carrier"
              [[ "\$val" == 0 ]] && : > "$TMP/addr" ;;
     lease)   [[ "\$val" == none ]] && : > "$TMP/addr" || echo "\$val" > "$TMP/addr" ;;
+    active)  echo "\$val:eth0" > "$TMP/active"; echo "\$val" > "$TMP/devcon" ;;
   esac
 done < "$TMP/timeline"
 exit 0
@@ -99,7 +100,7 @@ run_case() {
     : > "$TMP/active"; : > "$TMP/devcon"
   fi
   rm -f "$TMP/network.json"
-  [[ "$method" == "-" ]] || printf '{"interface": "eth0", "method": "%s"}' "$method" > "$TMP/network.json"
+  [[ "$method" == "-" ]] || printf '{"interface": "eth0", "method": "%s", "address": "10.10.10.50", "prefix": "24", "gateway": "", "dns": ""}' "$method" > "$TMP/network.json"
   printf '%s\n' "$@" > "$TMP/timeline"
   printf 'MDNS_ENABLED=true\nMDNS_INTERFACE=eth0\nMDNS_DIRECT_DHCP=true\nMDNS_DIRECT_SUBNET=10.10.10\nMDNS_NETWORK_WAIT_SEC=45\nNETBIOS_NAME=AOI1\n' > "$TMP/conf"
   PATH="$B:$PATH" CONF_FILE="$TMP/conf" NETWORK_STATE_FILE="$TMP/network.json" \
@@ -122,7 +123,7 @@ run_case down 0 0 -
 check "DHCP client, cable pulled -> carrier wait started too" "$(has_call 'systemd-run carrier-wait')" yes
 
 run_case down 0 1 manual
-check "static IP, cable pulled -> no carrier wait (NM restores the fixed IP)" "$(has_call 'systemd-run')" no
+check "static IP, cable pulled -> carrier wait too (re-applies the fixed IP on the next cable)" "$(has_call 'systemd-run carrier-wait')" yes
 
 run_case down 1 1 -
 check "'down' with the cable still in (boot switching connections) -> nothing" "$(calls)" ""
@@ -146,6 +147,17 @@ check "LAN plugged in (lease arrives) -> network mode, no DHCP server" "$(has_ca
 run_case carrier-wait 0 0 - "5 carrier 1" "15 carrier 0" "40 carrier 1"
 check "pulled again mid-probe -> no decision on the dead link" "$(has_call 'connection up citostore-direct')" yes
 check "  ... direct only after the cable came back + a full probe" "$(( $(tick_of 'connection up citostore-direct') >= 40 + 45 ))" 1
+
+echo "=== static IP ==="
+run_case carrier-wait 0 0 manual "5 carrier 1" "6 active Wired connection 1"
+check "cable appears, static configured -> static IP applied" "$(has_call 'connection modify --temporary Wired connection 1 ipv4.method manual ipv4.addresses 10.10.10.50/24')" yes
+check "  ... no DHCP probe on the LAN" "$(has_call 'citostore-probe')" no
+check "  ... and never a DHCP server" "$(has_call 'connection up citostore-direct')" no
+
+run_case boot 1 0 manual
+check "boot with cable, static inside 10.10.10.x -> no 45s probe" "$(has_call 'citostore-probe')" no
+check "  ... no DHCP server" "$(has_call 'connection up citostore-direct')" no
+check "  ... mode recorded as network" "$(cat /run/citostore-mdns.mode)" network
 
 echo
 if ((fail)); then echo "FAILED"; cat "$TMP/out"; exit 1; fi

@@ -79,7 +79,9 @@ if [[ "$MDNS_DIRECT_DHCP" == "true" && "$action" == "down" ]] && ! has_carrier; 
     log "mDNS: $MDNS_INTERFACE cable unplugged while serving DHCP -> stopping the DHCP server"
     nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
   fi
-  configured_static && exit 0
+  # A static IP gets a carrier wait too: if this boot started without a cable,
+  # apply-network.sh could not set it then, and the next cable must get the
+  # fixed address — not NM's DHCP default (see the carrier-wait branch below).
   log "mDNS: $MDNS_INTERFACE cable unplugged -> the next cable decides network vs direct again"
   spawn_carrier_wait
   exit 0
@@ -147,7 +149,23 @@ if [[ -z "$routable" && ( "$action" == "boot" || "$action" == "carrier-wait" ) ]
   while :; do
     if [[ "$action" == "carrier-wait" ]]; then
       while ! has_carrier; do sleep 3; done
+      # A fixed IP never probes for, or serves, DHCP. A unit that booted
+      # without a cable never got its static address (apply-network.sh needs
+      # an active eth0 connection), so NM brings eth0 up on its DHCP default:
+      # with no DHCP server on a static-IP factory LAN, the probe below used to
+      # end in "direct" and the unit served 10.10.10.x DHCP onto that LAN.
+      if configured_static; then
+        log "mDNS: carrier appeared on $MDNS_INTERFACE (static IP configured) -> applying it, no DHCP probe"
+        /bin/bash "$SCRIPT_DIR/apply-network.sh" || log "mDNS: applying the static IP failed"
+        exit 0
+      fi
       log "mDNS: carrier appeared on $MDNS_INTERFACE -> probing for a DHCP server"
+    elif configured_static; then
+      # Boot with the cable in: vision-gw-network already applied the address.
+      # (A static IP inside MDNS_DIRECT_SUBNET is not "routable" to this
+      # script; that must not cost a 45s probe or end in serving DHCP.)
+      log "mDNS: $MDNS_INTERFACE has a static IP configured -> no DHCP probe"
+      break
     fi
     probe_for_network
     if [[ -n "$routable" ]] || has_carrier; then
@@ -162,8 +180,8 @@ if [[ -z "$routable" && ( "$action" == "boot" || "$action" == "carrier-wait" ) ]
     log "mDNS: $MDNS_INTERFACE lost its cable while probing -> waiting for it to come back"
   done
   if [[ -n "$routable" ]]; then
-    log "mDNS: $MDNS_INTERFACE got a routable address after ${waited}s -> network"
-  else
+    log "mDNS: $MDNS_INTERFACE got a routable address after ${waited:-0}s -> network"
+  elif ! configured_static; then
     log "mDNS: no routable address on $MDNS_INTERFACE after ${MDNS_NETWORK_WAIT_SEC}s -> direct 1-1 link"
   fi
 fi
@@ -172,7 +190,7 @@ fi
 # AOI1.local), on a network and on a direct link alike, so operators reach the
 # unit by the name they gave it.
 target="$NETBIOS_NAME"
-if [[ -n "$routable" ]]; then
+if [[ -n "$routable" ]] || configured_static; then
   mode="network"
   # Leave a 1-1 link: hand control of the interface back to the DHCP client.
   if [[ "$MDNS_DIRECT_DHCP" == "true" ]] && shared_active; then
@@ -187,7 +205,9 @@ else
   # whenever a cable is plugged back in (carrier-wait). A static-IP unit always has a routable
   # address, so it takes the network branch above and never serves DHCP; that is
   # the reason to give a unit that lives on a LAN a fixed address.
-  if [[ ( "$action" == "boot" || "$action" == "carrier-wait" ) && "$MDNS_DIRECT_DHCP" == "true" ]] \
+  if configured_static; then
+    : # never serve DHCP on a unit configured with a fixed IP (network.json)
+  elif [[ ( "$action" == "boot" || "$action" == "carrier-wait" ) && "$MDNS_DIRECT_DHCP" == "true" ]] \
      && command -v nmcli >/dev/null 2>&1 && ! shared_active; then
     # Only if this interface is actually a DHCP client (not a deliberate static IP).
     con=$(nmcli -g GENERAL.CONNECTION device show "$MDNS_INTERFACE" 2>/dev/null || true)
@@ -216,6 +236,6 @@ fi
 # A cable pulled while this decision was being applied fires its "down" event
 # while this unit is still running, so no new wait is spawned for it: keep
 # waiting here instead.
-if [[ "$action" == "carrier-wait" ]] && ! has_carrier && ! configured_static; then
+if [[ "$action" == "carrier-wait" ]] && ! has_carrier; then
   exec /bin/bash "$SCRIPT_DIR/mdns-apply-mode.sh" carrier-wait
 fi

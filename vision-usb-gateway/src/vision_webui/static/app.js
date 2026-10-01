@@ -66,10 +66,20 @@ function showToast(text, kind) {
   setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 260); }, 3600);
 }
 
+// An action's error/warning stays in the status line until the next action.
+// The 10s status poll used to overwrite it with "OK" within seconds, so a failed
+// update upload read as "OK" to anyone who looked a moment later.
+let _statusSticky = false;
+
 function setStatus(text) {
   const el = document.getElementById("status-line");
-  el.classList.remove("status-ok", "status-warn", "status-error");
+  const fromPoll = _suppressToast;
   const lower = text.toLowerCase();
+  const isProblem = lower.startsWith("error") || lower.includes("failed")
+    || lower.includes("warn") || lower.includes("expired");
+  if (fromPoll && _statusSticky) return;
+  if (!fromPoll) _statusSticky = isProblem;
+  el.classList.remove("status-ok", "status-warn", "status-error");
   let kind = "ok";
   if (lower.startsWith("error") || lower.includes("failed")) {
     el.textContent = "\u2716 " + text;
@@ -470,7 +480,7 @@ async function applyNetwork() {
     dns: dns,
   };
   const res = await api("/api/network", { method: "POST", body: JSON.stringify(payload) });
-  setStatus(res && res.warning ? res.warning : "Network updated");
+  setStatus(res && res.warning ? "Warning: " + res.warning : "Network updated");
 }
 
 async function changeWebuiPassword() {
@@ -668,10 +678,14 @@ document.getElementById("import-config-file").addEventListener("change", async (
   const ok = await showModal("Import Config", "This will overwrite the current shadow config.", null, false);
   if (!ok) { e.target.value = ""; return; }
   const text = await file.text();
-  await api("/api/config/import", { method: "POST", body: JSON.stringify({ config: text }) });
   e.target.value = "";
-  setStatus("Config imported");
-  await loadConfig();
+  try {
+    const res = await api("/api/config/import", { method: "POST", body: JSON.stringify({ config: text }) });
+    setStatus((res && res.message) || "Config imported");
+    await loadConfig();
+  } catch (err) {
+    setStatus("Error: config import failed — " + err.message);
+  }
 });
 
 // Config bundle (replacement unit)

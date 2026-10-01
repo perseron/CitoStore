@@ -523,6 +523,57 @@ def parse_config(text: str) -> dict:
     return parse_config_text(text)
 
 
+# What an imported config line may look like. The shadow config is bash-SOURCED
+# by every script (load_config), so anything else is code execution as root or —
+# just as bad — a syntax error that stops vision-gw-config at boot and with it
+# the WebUI and the sync (both Require it).
+_IMPORT_KEY = r"[A-Z_][A-Z0-9_]*"
+_IMPORT_VALUE = re.compile(
+    r"""(
+        [A-Za-z0-9_./:,@%+=-]*                       # bare
+      | "[^"$`\\]*"                                   # double-quoted, nothing expanded
+      | '[^']*'                                       # single-quoted (literal in bash)
+      | \(\s*(?:[A-Za-z0-9_./:@%+-]+\s*)*\)           # array of bare words
+    )\s*(?:\#.*)?""",
+    re.VERBOSE,
+)
+
+
+def validate_import_config(text: str) -> tuple[str, str]:
+    """Return (normalized text, "") or ("", error) for an uploaded config file.
+
+    CRs are dropped (a Windows-saved file is otherwise a stray command per line).
+    """
+    lines = text.replace("\r", "").split("\n")
+    keys = 0
+    for n, line in enumerate(lines, 1):
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        m = re.fullmatch(rf"({_IMPORT_KEY})=(.*)", s)
+        if not m or not _IMPORT_VALUE.fullmatch(m.group(2)):
+            return "", f"line {n} is not a plain KEY=value setting: {s[:60]}"
+        keys += 1
+    if not keys:
+        return "", "no valid config entries found"
+    return "\n".join(lines).rstrip("\n") + "\n", ""
+
+
+def record_update_history(version: str, status: str) -> None:
+    """Append to the history apply-update.sh keeps, for rejections that never
+    reach it — otherwise a refused upload leaves no trace the operator can see."""
+    path = STATE_DIR / "update-history.json"
+    try:
+        history = json.loads(path.read_text(encoding="utf-8")) if path.exists() else []
+    except (OSError, json.JSONDecodeError):
+        history = []
+    history.append({"version": version, "status": status, "ts": time.strftime("%Y-%m-%dT%H:%M:%S")})
+    try:
+        path.write_text(json.dumps(history[-20:]), encoding="utf-8")
+    except OSError as exc:
+        log(f"update history write failed: {exc}")
+
+
 def parse_nas_creds(text: str) -> dict:
     creds = {"username": "", "password": "", "domain": ""}
     for line in text.splitlines():
@@ -1294,10 +1345,11 @@ class WebHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def is_authenticated(self) -> bool:
-        token = get_cookie(self.headers, "session")
-        if not token:
-            return False
-        return validate_session(token)
+        # Only a session issued to the admin. The export/protected pages hand an
+        # operator a token signed with the same secret (user "export"); checking
+        # the signature alone let that token, copied into a cookie named
+        # "session", open /admin — and with it /api/update, which runs as root.
+        return session_user(get_cookie(self.headers, "session")) == "admin"
 
     def is_export_authenticated(self) -> bool:
         """The export page runs on its own credential, deliberately.
@@ -1999,20 +2051,32 @@ class WebHandler(BaseHTTPRequestHandler):
         staging.mkdir(parents=True, exist_ok=True)
         archive = staging / "update.tar.gz"
         archive.write_bytes(body)
-        code, out, err = run_cmd(["tar", "xzf", str(archive), "-C", str(staging)])
+
+        # Every refusal before apply-update.sh runs also goes into the history:
+        # that list is what the operator checks, and the status line is
+        # overwritten by the next status poll.
+        def reject(error: str, version: str = "unknown"):
+            record_update_history(version, f"rejected: {error}")
+            return self.send_json({"ok": False, "error": error}, status=400)
+
+        # --no-same-owner: the WebUI runs without CAP_CHOWN, so restoring a
+        # package's foreign owner uid (e.g. the build host's) fails extraction.
+        code, out, err = run_cmd(
+            ["tar", "xzf", str(archive), "--no-same-owner", "-C", str(staging)]
+        )
         if code != 0:
             archive.unlink(missing_ok=True)
-            return self.send_json({"ok": False, "error": f"extraction failed: {err}"}, status=400)
+            return reject(f"extraction failed: {err.strip()[:200]}")
         manifest = staging / "manifest.json"
         if not manifest.exists():
-            return self.send_json({"ok": False, "error": "missing manifest.json"}, status=400)
+            return reject("missing manifest.json")
         install_sh = staging / "install.sh"
         if not install_sh.exists():
-            return self.send_json({"ok": False, "error": "missing install.sh"}, status=400)
+            return reject("missing install.sh")
         try:
             meta = json.loads(manifest.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
-            return self.send_json({"ok": False, "error": "invalid manifest.json"}, status=400)
+            return reject("invalid manifest.json")
         version = meta.get("version", "unknown")
         code, _, err = run_cmd(["/bin/systemctl", "start", "vision-update.service"])
         if code != 0:
@@ -2028,16 +2092,20 @@ class WebHandler(BaseHTTPRequestHandler):
         config_text = data.get("config", "")
         if not config_text.strip():
             return self.send_json({"ok": False, "error": "empty config"}, status=400)
-        parsed = parse_config_text(config_text)
-        if not parsed:
-            msg = "no valid config entries found"
-            return self.send_json({"ok": False, "error": msg}, status=400)
+        normalized, err = validate_import_config(config_text)
+        if err:
+            return self.send_json({"ok": False, "error": err}, status=400)
+        parsed = parse_config_text(normalized)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        SHADOW_CONF.write_text(config_text, encoding="utf-8")
-        last_good = STATE_DIR / "vision-gw.conf.last-good"
-        last_good.write_text(config_text, encoding="utf-8")
+        # Atomic, and last-good is left alone: it is what health-check rolls back
+        # to if this file turns out bad, so it must not become this file too.
+        tmp = SHADOW_CONF.with_suffix(".import-tmp")
+        tmp.write_text(normalized, encoding="utf-8")
+        os.replace(tmp, SHADOW_CONF)
         log(f"config imported ({len(parsed)} keys)")
-        return self.send_json({"ok": True})
+        return self.send_json(
+            {"ok": True, "message": "Config imported — press Save + Apply in any section or restart to apply it"}
+        )
 
     def handle_bundle_export(self):
         # Full portable unit definition: config + secrets + Samba passdb +
