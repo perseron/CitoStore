@@ -29,6 +29,7 @@ load_config
 : "${MIRROR_MOUNT:=/srv/vision_mirror}"
 
 FTP_CREDS="$MIRROR_MOUNT/.state/ftp.creds"
+DEFAULT_FTP_PASS=citostore
 SFTP_DROPIN=/etc/ssh/sshd_config.d/vision-sftp.conf
 VSFTPD_CONF=/etc/vsftpd.conf
 
@@ -86,6 +87,16 @@ setup_ingest_dirs_user() {
   usermod -d "$INGEST_DIR" "$FTP_USER" >/dev/null 2>&1 || true
   chown "$FTP_USER":"$FTP_USER" "$INGEST_DIR/data"
   chmod 0755 "$INGEST_DIR/data"
+  # Factory default ingest password (FTP + SFTP), like the SMB one. Without a
+  # password set in the WebUI the account kept whatever the golden image was
+  # built with — unknown to whoever sets up the AOI. Written to the NVMe secret
+  # once (only with the mirror mounted: the secret lives there), so it is
+  # re-applied on every boot below and the WebUI changes it as before; a
+  # password already set is never touched.
+  if [[ ! -f "$FTP_CREDS" ]] && mountpoint -q "$MIRROR_MOUNT" && [[ -d "$(dirname "$FTP_CREDS")" ]]; then
+    (umask 077; printf 'password=%s\n' "$DEFAULT_FTP_PASS" > "$FTP_CREDS")
+    log "no ingest password set: $FTP_USER gets the default password (change it in the WebUI)"
+  fi
   # Apply the password from the NVMe secret (overlay-safe; not in shell config).
   if [[ -f "$FTP_CREDS" ]]; then
     local pw
