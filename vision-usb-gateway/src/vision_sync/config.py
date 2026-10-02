@@ -29,6 +29,8 @@ class Config:
     sync_dir_index_file: Path
     mirror_free_min_mb: int
     mirror_retention_trigger_pct: int
+    # A slow aoi_settings walk (many files) is repeated at most this often.
+    usb_persist_recheck_sec: int = 120
 
 
 def _parse_line(line: str):
@@ -109,6 +111,7 @@ def get_config(path: str) -> Config:
     )
     mirror_free_min_mb = int(data.get("MIRROR_FREE_MIN_MB", "500"))
     mirror_retention_trigger_pct = int(data.get("MIRROR_RETENTION_TRIGGER_PCT", "90"))
+    usb_persist_recheck_sec = int(data.get("USB_PERSIST_RECHECK_SEC", "120"))
     return Config(
         mirror_mount=mirror_mount,
         state_dir=state_dir,
@@ -134,4 +137,5 @@ def get_config(path: str) -> Config:
         sync_dir_index_file=sync_dir_index_file,
         mirror_free_min_mb=mirror_free_min_mb,
         mirror_retention_trigger_pct=mirror_retention_trigger_pct,
+        usb_persist_recheck_sec=usb_persist_recheck_sec,
     )

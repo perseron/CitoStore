@@ -664,24 +664,61 @@ def _has_entries(path: Path) -> bool:
         return False
 
 
-def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
+# The aoi_settings change check walks the whole folder on a fresh snapshot,
+# i.e. with a cold cache, on every sync cycle (10-30 s). Measured on a CM5:
+# 1000 files 0.15 s, 5000 files 1.8 s — nearly all of that cycle's overhead, and
+# the snapshot (copy-on-write for the AOI's writes) is held that much longer.
+# A walk slower than this is repeated only every usb_persist_recheck_sec; a
+# small folder is still checked every cycle, as before.
+PERSIST_SLOW_WALK_SEC = 0.5
+
+
+def _persist_check_due(cfg, check_path: Path, now: float) -> bool:
+    try:
+        fields = dict(
+            line.split("=", 1) for line in check_path.read_text().split() if "=" in line
+        )
+        last_ts = float(fields.get("ts", "0"))
+        walk = float(fields.get("walk", "0"))
+    except (OSError, ValueError):
+        return True
+    if walk < PERSIST_SLOW_WALK_SEC:
+        return True
+    recheck = int(getattr(cfg, "usb_persist_recheck_sec", 120))
+    # now < last_ts: the clock was set back — check rather than wait it out.
+    return now - last_ts >= recheck or now < last_ts
+
+
+def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> bool:
+    """Back up / pre-seed the AOI's settings folder when it changed. Returns
+    False when a large folder's check is throttled this cycle: the image scan
+    then leaves the folder out too (its own cold walk cost the same again)."""
     if not persist_enabled(cfg):
-        return
+        return True
     persist_src = mount_root / cfg.usb_persist_dir
     if not persist_src.exists():
-        return
+        return True
     # An empty folder on the active drive while the NVMe copy holds settings
     # is a folder that was created bare (old install/clone code), not the AOI
     # deleting all of its settings: mirroring it (rsync --delete) erased the
     # copy every drive is restored from.
     if not any(persist_src.iterdir()) and _has_entries(cfg.usb_persist_backing):
-        return
+        return True
 
+    check_path = cfg.state_dir / "usb_persist.check"
+    now = time.time()
+    if not _persist_check_due(cfg, check_path, now):
+        return False
+    walk_start = time.monotonic()
     manifest_path = cfg.state_dir / "usb_persist.manifest"
     new_digest = compute_manifest(persist_src)
+    try:
+        check_path.write_text(f"ts={int(now)}\nwalk={time.monotonic() - walk_start:.3f}\n")
+    except OSError:
+        pass
     old_digest, _, _ = read_manifest_state(manifest_path)
     if new_digest == old_digest:
-        return
+        return True
 
     log(f"persist changed: syncing {cfg.usb_persist_dir}")
     cfg.usb_persist_backing.mkdir(parents=True, exist_ok=True)
@@ -700,6 +737,7 @@ def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
             umount(persist_mnt)
 
     write_manifest_state(manifest_path, new_digest, 0, "active")
+    return True
 
 
 def maybe_compute_sync_manifest(cfg, mount_root: Path) -> tuple[str, int, bool, str] | None:
@@ -800,8 +838,19 @@ def check_mirror_free_space(cfg) -> bool:
     return True
 
 
+def _outside_top(path: Path, mount_root: Path, skip_top: frozenset) -> bool:
+    if not skip_top or path == mount_root:
+        return True
+    try:
+        parts = path.relative_to(mount_root).parts
+    except ValueError:
+        return True
+    return not (parts and parts[0] in skip_top)
+
+
 def stable_and_copy(
-    cfg, mount_root: Path, conn, force_stable: bool = False, full_scan: bool = False
+    cfg, mount_root: Path, conn, force_stable: bool = False, full_scan: bool = False,
+    skip_top: frozenset = frozenset(),
 ) -> None:
     if not check_mirror_free_space(cfg):
         return
@@ -838,6 +887,10 @@ def stable_and_copy(
     # Files parked above SYNC_SCAN_DEPTH (snapshot root included) never appear
     # under a selected root, so scan those levels non-recursively every run.
     shallow_roots = [mount_root] + [mount_root / name for name in scan_plan["shallow"]]
+    # Top-level folders this cycle leaves out (a large aoi_settings between its
+    # throttled checks). Never on the offline export: full_scan, skip_top empty.
+    shallow_roots = [r for r in shallow_roots if _outside_top(r, mount_root, skip_top)]
+    selected_roots = [r for r in selected_roots if _outside_top(r, mount_root, skip_top)]
 
     scan_base = Path(scan_plan.get("base", str(mount_root)))
     observed_mtimes: dict[str, int] = {}
@@ -910,8 +963,9 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
         mount_ro(snap, cfg.snapshot_mount, active_offset)
         record_snapshot_usage(cfg.snapshot_mount, active)
         sync_manifest = None
+        scan_persist = True
         if not offline:
-            maybe_sync_persist(cfg, cfg.snapshot_mount, active)
+            scan_persist = maybe_sync_persist(cfg, cfg.snapshot_mount, active)
             sync_manifest = maybe_compute_sync_manifest(cfg, cfg.snapshot_mount)
             if sync_manifest:
                 digest, count, unchanged, mode = sync_manifest
@@ -930,7 +984,10 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
                     if prev_digest != digest or prev_count != count or prev_mode != mode:
                         write_manifest_state(cfg.sync_manifest_path, digest, count, mode)
                     return
-        stable_and_copy(cfg, cfg.snapshot_mount, conn)
+        stable_and_copy(
+            cfg, cfg.snapshot_mount, conn,
+            skip_top=frozenset() if scan_persist else frozenset({cfg.usb_persist_dir}),
+        )
         if not offline and sync_manifest:
             digest, count, _, mode = sync_manifest
             resume_scans = max(1, int(cfg.sync_change_resume_scans))

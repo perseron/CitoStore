@@ -75,6 +75,10 @@ BYDATE_USE_FILE_TIME=false
 USB_PERSIST_DIR=aoi_settings
 USB_PERSIST_BACKING=/srv/vision_mirror/.state/aoi_settings
 USB_PERSIST_DURATION_FILE=/srv/vision_mirror/aoi_settings_duration.txt
+# A large aoi_settings folder (its change check takes > 0.5 s on the cold
+# snapshot) is re-checked — and scanned for the mirror — at most this often;
+# a small one every sync cycle.
+USB_PERSIST_RECHECK_SEC=120
 
 # Rotation thresholds (percent)
 THRESH_HI=80
