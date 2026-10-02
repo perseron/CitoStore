@@ -1478,12 +1478,14 @@ def eth0_networks(cfg: dict) -> list:
 def validate_eth1(cfg: dict) -> tuple[bool, str]:
     """Cross-field checks on the merged (saved + submitted) eth1 settings.
 
-    The per-field checks let through what the unit then could not use: an IPv6
-    or a network/broadcast address (nmcli refuses it and the "|| true" in
-    70_configure_ingest hid that — eth1 silently kept its old address while
-    the WebUI showed the new one), a gateway outside eth1's network (same), and
-    a network overlapping eth0's: two routes to one subnet, and SMB/WebUI
-    replies to eth0's clients leave through eth1."""
+    The per-field checks let through what the unit then could not use
+    (checked against NetworkManager 1.42 on a CM5): an IPv6 address — nmcli
+    refuses it, and the "|| true" in 70_configure_ingest hid that: eth1 kept
+    its old address while the WebUI showed the new one; a network or broadcast
+    address — nmcli accepts it and eth1 ends up unreachable for the AOI; a
+    gateway outside eth1's network — accepted and never used; and a network
+    overlapping eth0's: two routes to one subnet, and SMB/WebUI replies to
+    eth0's clients leave through eth1."""
     if cfg.get("ETH1_ENABLED", "false") != "true":
         return True, ""
     addr = cfg.get("ETH1_ADDRESS", "")

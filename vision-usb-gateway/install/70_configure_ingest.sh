@@ -49,9 +49,9 @@ configure_eth1() {
   if ! nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$con"; then
     nmcli connection add save no type ethernet con-name "$con" ifname "$ETH1_INTERFACE" >/dev/null 2>&1 || true
   fi
-  # Not "|| true": a value NetworkManager refuses (an IPv6 or network
-  # address, a gateway outside the subnet) left eth1 on its OLD address while
-  # Save + Apply reported success. FTP/SFTP are still configured below; the
+  # Not "|| true": a value NetworkManager refuses (e.g. an IPv6 address — the
+  # WebUI now validates, but a config import can still carry one) left eth1 on
+  # its OLD address while Save + Apply reported success. FTP/SFTP are still configured below; the
   # script exits 1 at the end, so the apply reports the failure.
   local err
   if ! err=$(nmcli connection modify --temporary "$con" \
