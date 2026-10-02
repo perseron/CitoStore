@@ -223,15 +223,9 @@ def test_protected_refuses_a_path_that_is_not_a_folder(roots, monkeypatch):
 def test_protected_writes_a_list_retention_can_parse(roots, monkeypatch, tmp_path):
     # mirror-retention.sh aborts its whole run on a list it cannot parse, so a
     # malformed write here would stop retention dead.
-    written = {}
-
-    def fake_privileged(args, input_text=None, **kw):
-        if args[0].endswith("tee"):
-            written["payload"] = input_text
-        return 0, "", ""
-
-    monkeypatch.setattr(server, "run_privileged", fake_privileged)
+    target = tmp_path / "retention-protected.json"
+    monkeypatch.setattr(server, "PROTECTED_FILE", target)
     code, _, _ = server.set_protected_paths(["raw/2026", "raw/2026", "/raw//"])
     assert code == 0
-    data = json.loads(written["payload"])
+    data = json.loads(target.read_text(encoding="utf-8"))
     assert data["paths"] == ["raw", "raw/2026"], "deduped, normalised, sorted"

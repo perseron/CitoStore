@@ -27,13 +27,15 @@ async function api(path, options = {}) {
     throw new Error("Session expired");
   }
   if (!res.ok) {
-    let text;
+    // Read the body ONCE: res.json() consumes it even when it fails to parse,
+    // and the res.text() fallback then threw "body stream already read",
+    // hiding the server's actual error.
+    const body = await res.text();
+    let text = body || res.statusText;
     try {
-      const json = await res.json();
+      const json = JSON.parse(body);
       text = json.error || json.message || res.statusText;
-    } catch {
-      text = await res.text() || res.statusText;
-    }
+    } catch {}
     throw new Error(text);
   }
   return res.json();

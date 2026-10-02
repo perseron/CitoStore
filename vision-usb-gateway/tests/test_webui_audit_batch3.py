@@ -275,3 +275,89 @@ def test_clean_boot_leaves_live_health_alone(state, tmp_path, monkeypatch):
     live = {"status": "ok", "issues": [], "ts": "t"}
     assert _health(tmp_path, monkeypatch, live, {"status": "ok", "issues": [], "ts": "b"}) == live
     assert _health(tmp_path, monkeypatch, live, None) == live
+
+
+# --- /protected and /export saves: the two logins' CSRF tokens -----------------
+
+class CsrfReq:
+    require_csrf = server.WebHandler.require_csrf
+
+    def __init__(self, cookies: dict, header: str):
+        self.headers = {"Cookie": "; ".join(f"{k}={v}" for k, v in cookies.items()), "X-CSRF": header}
+
+
+def _export_csrf(req):
+    return server.WebHandler.require_export_csrf(req)
+
+
+def test_export_csrf_survives_a_later_admin_login(state):
+    # Seen on a freshly installed unit: SMB-password login, then admin login in
+    # the same browser -> the shared "csrf" cookie was the admin's, the export
+    # session still valid -> every save on /protected got 403.
+    export = server.make_session(server.EXPORT_SESSION_USER)
+    admin = server.make_session("admin")
+    req = CsrfReq({"export_session": export, "session": admin, "csrf": server.make_csrf(admin)},
+                  server.make_csrf(admin))
+    assert _export_csrf(req)
+
+
+def test_export_csrf_with_its_own_token(state):
+    export = server.make_session(server.EXPORT_SESSION_USER)
+    req = CsrfReq({"export_session": export, "export_csrf": server.make_csrf(export)},
+                  server.make_csrf(export))
+    assert _export_csrf(req)
+
+
+def test_export_csrf_still_rejects_a_forged_header(state):
+    export = server.make_session(server.EXPORT_SESSION_USER)
+    admin = server.make_session("admin")
+    assert not _export_csrf(CsrfReq({"export_session": export}, "forged"))
+    assert not _export_csrf(CsrfReq({"export_session": export, "session": admin,
+                                     "csrf": server.make_csrf(admin)}, "forged"))
+
+
+def test_export_login_sets_its_own_csrf_cookie():
+    import inspect
+    src = inspect.getsource(server.WebHandler.handle_export_login)
+    assert "export_csrf=" in src and '"Set-Cookie",\n            f"csrf=' not in src
+
+
+def test_api_errors_are_json(state):
+    sent = {}
+
+    class H:
+        path = "/api/protected"
+
+        def send_json(self, obj, status=200):
+            sent["obj"], sent["status"] = obj, status
+
+    server.WebHandler.send_error(H(), 403, "CSRF validation failed")
+    assert sent == {"obj": {"ok": False, "error": "CSRF validation failed"}, "status": 403}
+
+
+# --- protected-folder list ------------------------------------------------------
+
+@pytest.fixture
+def protected(tmp_path, monkeypatch, state):
+    mirror = tmp_path / "mirror"
+    (mirror / "raw" / "2026-10-02").mkdir(parents=True)
+    monkeypatch.setitem(server.EXPORT_ROOTS, "mirror", mirror)
+    monkeypatch.setattr(server, "PROTECTED_FILE", state / "retention-protected.json")
+    monkeypatch.setattr(server, "RETENTION_BLOCKED", state / "retention-blocked.json")
+    monkeypatch.setattr(server, "run_cmd", lambda args, **kw: (0, "123\tx", ""))
+    return mirror
+
+
+def test_protected_save_is_atomic_and_readable(protected, state):
+    assert server.set_protected_paths(["raw/2026-10-02"])[0] == 0
+    assert json.loads((state / "retention-protected.json").read_text())["paths"] == ["raw/2026-10-02"]
+    assert not (state / "retention-protected.json.tmp").exists()
+    status = server.get_protected_status()
+    assert status["paths"] == ["raw/2026-10-02"] and status["list_error"] == ""
+
+
+def test_an_unreadable_list_is_reported_not_shown_as_empty(protected, state):
+    (state / "retention-protected.json").write_text('{"paths": ["raw/2026')   # cut short
+    status = server.get_protected_status()
+    assert status["paths"] == []
+    assert "cannot be read" in status["list_error"]

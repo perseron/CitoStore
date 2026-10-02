@@ -291,12 +291,24 @@ def get_build_stamp() -> dict:
     return stamp
 
 
-def get_protected_paths() -> list:
+def read_protected_list() -> tuple[list, str]:
+    """(paths, error). An unreadable list used to read as "nothing protected":
+    the page showed no folders while mirror-retention.sh (rightly) refused to
+    run on it — and saving a new pick then silently replaced what was there."""
+    if not PROTECTED_FILE.exists():
+        return [], ""
     try:
         data = json.loads(PROTECTED_FILE.read_text(encoding="utf-8"))
-        return [str(p) for p in data.get("paths", [])]
-    except (OSError, ValueError):
-        return []
+        return [str(p) for p in data.get("paths", [])], ""
+    except (OSError, ValueError, AttributeError) as exc:
+        return [], (
+            f"The protected-folder list cannot be read ({exc.__class__.__name__}). "
+            "Retention is stopped until the list is saved again — pick the folders and Save."
+        )
+
+
+def get_protected_paths() -> list:
+    return read_protected_list()[0]
 
 
 def set_protected_paths(paths: list) -> tuple:
@@ -317,15 +329,17 @@ def set_protected_paths(paths: list) -> tuple:
             return 1, "", f"not a folder: {rel}"
         clean.append(rel)
     payload = json.dumps({"paths": sorted(set(clean))}, indent=2)
-    tmp = PROTECTED_FILE.with_suffix(".tmp")
-    code, out, err = run_privileged(["/usr/bin/tee", str(tmp)], input_text=payload)
-    if code != 0:
-        return code, out, err
-    return run_privileged(["/bin/mv", "-f", str(tmp), str(PROTECTED_FILE)])
+    # tmp + fsync + rename (atomic_write): the old tee + mv had no fsync, and
+    # a list cut short by a power cut stops retention until someone saves.
+    try:
+        atomic_write(PROTECTED_FILE, payload)
+    except OSError as exc:
+        return 1, "", str(exc)
+    return 0, "", ""
 
 
 def get_protected_status() -> dict:
-    paths = get_protected_paths()
+    paths, list_error = read_protected_list()
     total = 0
     for rel in paths:
         try:
@@ -348,6 +362,7 @@ def get_protected_status() -> dict:
         # The mirror then fills, the sync's guard trips, and capture stops — so
         # this must be visible here, not only in a log nobody reads.
         "blocked": blocked,
+        "list_error": list_error,
     }
 
 
@@ -1470,6 +1485,15 @@ class WebHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def send_error(self, code, message=None, explain=None):
+        # API callers parse JSON: the stock HTML error page made the pages'
+        # error handling fail on top of the real error, so the operator saw a
+        # browser message instead of what went wrong.
+        if self.path.startswith("/api/"):
+            status = HTTPStatus(code)
+            return self.send_json({"ok": False, "error": message or status.phrase}, status=status)
+        return super().send_error(code, message, explain)
+
     def redirect(self, location: str):
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", location)
@@ -1495,10 +1519,20 @@ class WebHandler(BaseHTTPRequestHandler):
         return self.is_authenticated()
 
     def require_export_csrf(self) -> bool:
+        # Either credential's token is fine. Both logins used to share ONE
+        # "csrf" cookie: signing in to the admin pages after the SMB-password
+        # login (a normal install sequence) overwrote it, and with the export
+        # session still valid every save on /protected and /export failed with
+        # 403 "CSRF validation failed" — shown in the browser as "body stream
+        # already read". The export login now sets its own "export_csrf".
         token = get_cookie(self.headers, "export_session")
-        if session_user(token) == EXPORT_SESSION_USER:
-            header = self.headers.get("X-CSRF", "")
-            return bool(header) and hmac.compare_digest(header, make_csrf(token))
+        header = self.headers.get("X-CSRF", "")
+        if (
+            header
+            and session_user(token) == EXPORT_SESSION_USER
+            and hmac.compare_digest(header, make_csrf(token))
+        ):
+            return True
         return self.require_csrf()
 
     def require_csrf(self) -> bool:
@@ -2076,7 +2110,7 @@ class WebHandler(BaseHTTPRequestHandler):
         )
         self.send_header(
             "Set-Cookie",
-            f"csrf={make_csrf(token)}; SameSite=Strict; Path=/; Max-Age={SESSION_TTL_SEC}",
+            f"export_csrf={make_csrf(token)}; SameSite=Strict; Path=/; Max-Age={SESSION_TTL_SEC}",
         )
         self.end_headers()
 

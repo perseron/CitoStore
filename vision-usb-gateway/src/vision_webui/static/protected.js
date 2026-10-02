@@ -40,7 +40,8 @@ function setStatus(text) {
 
 async function api(path, options = {}) {
   const headers = options.headers || {};
-  headers["X-CSRF"] = getCookie("csrf");
+  // Its own cookie: the admin login's "csrf" must not override it.
+  headers["X-CSRF"] = getCookie("export_csrf") || getCookie("csrf");
   headers["Content-Type"] = "application/json";
   options.headers = headers;
   const res = await fetch(path, options);
@@ -50,13 +51,15 @@ async function api(path, options = {}) {
     throw new Error("Session expired");
   }
   if (!res.ok) {
-    let text;
+    // Read the body ONCE: res.json() consumes it even when it fails to parse,
+    // and the res.text() fallback then threw "body stream already read",
+    // hiding the server's actual error.
+    const body = await res.text();
+    let text = body || res.statusText;
     try {
-      const j = await res.json();
+      const j = JSON.parse(body);
       text = j.error || j.message || res.statusText;
-    } catch {
-      text = (await res.text()) || res.statusText;
-    }
+    } catch {}
     throw new Error(text);
   }
   return res.json();
@@ -162,7 +165,10 @@ async function refresh() {
   // Retention said it is stuck. That means the mirror is filling and the sync
   // will stop capturing — the operator has to see it here, not only in a log.
   const bb = document.getElementById("blocked-banner");
-  if (s.blocked) {
+  if (s.list_error) {
+    bb.classList.remove("hidden");
+    bb.textContent = s.list_error;
+  } else if (s.blocked) {
     bb.classList.remove("hidden");
     bb.innerHTML =
       `<b>The unit cannot free up space.</b> The disk is at ${s.blocked.usage}% and everything` +
