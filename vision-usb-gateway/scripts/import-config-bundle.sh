@@ -46,8 +46,10 @@ if [[ -f "$STAGE/etc/vision-gw.conf" ]]; then
   log "staged vision-gw.conf -> shadow config"
 fi
 
-# Secrets + WebUI identity.
-for f in webui.passwd webui.secret vision-nas.creds; do
+# Secrets + WebUI identity. ftp.creds (AOI ingest) and smb_unix.creds (the
+# mirror-FTP copy of the SMB password) too — exported since batch 3, but this
+# importer still dropped them, unlike provision-from-bundle.
+for f in webui.passwd webui.secret vision-nas.creds ftp.creds smb_unix.creds; do
   if [[ -f "$STAGE/state/$f" ]]; then
     cp "$STAGE/state/$f" "$STATE_DIR/$f"
     chmod 0600 "$STATE_DIR/$f"
@@ -55,11 +57,27 @@ for f in webui.passwd webui.secret vision-nas.creds; do
   fi
 done
 
+# The recorded network intent (a static IP).
+if [[ -f "$STAGE/network/network.json" ]]; then
+  install -m 0600 "$STAGE/network/network.json" "$STATE_DIR/network.json"
+  log "staged network.json"
+fi
+
 # AOI persist folder.
 if [[ -d "$STAGE/state/aoi_settings" ]]; then
   rm -rf "$STATE_DIR/aoi_settings"
   cp -a "$STAGE/state/aoi_settings" "$STATE_DIR/aoi_settings"
   log "staged aoi_settings/"
+fi
+
+# The Ethernet AOI's settings folder (70_configure_ingest hands it to the FTP
+# user on the next apply).
+if [[ -d "$STAGE/ingest/aoi_settings" ]]; then
+  INGEST_SETTINGS=$(INGEST_DIR=$(. "$STAGE/etc/vision-gw.conf" 2>/dev/null; echo "${INGEST_DIR:-}") ingest_settings_dir)
+  mkdir -p "$(dirname "$INGEST_SETTINGS")"
+  rm -rf "$INGEST_SETTINGS"
+  cp -a "$STAGE/ingest/aoi_settings" "$INGEST_SETTINGS"
+  log "staged the Ethernet AOI's aoi_settings/"
 fi
 
 # Samba passdb (restore the existing SMB user/password).
@@ -75,7 +93,7 @@ if ls "$STAGE"/network/*.nmconnection >/dev/null 2>&1; then
   log "network profiles copied to $STATE_DIR (review, then nmcli connection import)"
 fi
 
-cat >&2 <<'REVIEW'
+cat >&2 <<'END_OF_REVIEW'
 
 ------------------------------------------------------------------
 REVIEW BEFORE APPLYING (hardware changed: 4GB->2GB, WiFi->none,
@@ -95,7 +113,7 @@ Edit the staged config if needed:
 Then apply:
   sudo scripts/apply-shadow-config.sh
 ------------------------------------------------------------------
-REVIEW
+END_OF_REVIEW
 
 if $APPLY; then
   log "applying shadow config"

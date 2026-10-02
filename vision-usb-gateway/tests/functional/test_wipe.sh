@@ -22,6 +22,8 @@ check() { if [[ "$2" == "$3" ]]; then echo "  PASS: $1"; else echo "  FAIL: $1 (
 FAKE=$TMP/gw
 mkdir -p "$FAKE/scripts"
 for f in common.sh wipe-all-data.sh; do tr -d '\r' < "$GW/scripts/$f" > "$FAKE/scripts/$f"; done
+mkdir -p "$FAKE/install"
+printf '#!/bin/bash\necho ran-70 >> %s/calls\n' "$TMP" > "$FAKE/install/70_configure_ingest.sh"
 
 # The mirror filesystem lives in $TMP/fs while unmounted; mounted, it IS $M.
 M=$TMP/mirror
@@ -52,7 +54,7 @@ chmod +x "$TMP/bin/fsctl"
 export PATH="$TMP/bin:$PATH"
 export GATEWAY_HOME=$FAKE
 
-printf 'GATEWAY_HOME=%s\nMIRROR_MOUNT=%s\nLVM_VG=vg0\nUSB_LVS=(usb_0 usb_1)\n' "$FAKE" "$M" > /etc/vision-gw.conf
+printf 'GATEWAY_HOME=%s\nMIRROR_MOUNT=%s\nLVM_VG=vg0\nUSB_LVS=(usb_0 usb_1)\nINGEST_DIR=%s/ingest\n' "$FAKE" "$M" "$M" > /etc/vision-gw.conf
 unit_with_data() {
   rm -rf "$M" "$TMP/fs" "$TMP/mounted" /mnt/vision_wipe_*
   mkdir -p "$M/.state/samba/private" "$M/.state/aoi_settings" "$M/.state/updates" "$M/raw/2026" "$M/bydate"
@@ -62,6 +64,8 @@ unit_with_data() {
   echo smbusers > "$M/.state/samba/private/passdb.tdb"
   echo ftp > "$M/.state/ftp.creds"; echo recipe > "$M/.state/aoi_settings/r.ini"
   echo img > "$M/raw/2026/a.bmp"
+  mkdir -p "$M/ingest/data" "$M/ingest/aoi_settings"
+  echo eth-aoi > "$M/ingest/aoi_settings/line.cfg"; echo upload > "$M/ingest/data/u.bmp"
   touch "$TMP/mounted"
   : > "$TMP/calls"
 }
@@ -86,6 +90,9 @@ check "AOI settings kept" "$(st aoi_settings/r.ini)" recipe
 check "AOI settings pushed onto the new USB drive" "$(cat /mnt/vision_wipe_usb_1/aoi_settings/r.ini 2>/dev/null)" recipe
 check "Samba bind restarted before smbd" "$(grep -n -e 'start var-lib-samba.mount' -e 'start smbd' "$TMP/calls" | head -1 | grep -c var-lib-samba)" 1
 check "fast-sync timer stopped too" "$(grep -c 'stop .*vision-sync-fast.timer' "$TMP/calls")" 1
+check "the Ethernet AOI's settings kept" "$(cat "$M/ingest/aoi_settings/line.cfg" 2>/dev/null)" eth-aoi
+check "  ... its uploads wiped like the images" "$(test -e "$M/ingest/data/u.bmp" && echo kept || echo gone)" gone
+check "  ... and the FTP root re-created right away (70 re-run)" "$(grep -c '^ran-70$' "$TMP/calls")" 1
 
 echo "=== no mirror mounted: nothing to back up, so nothing is wiped ==="
 unit_with_data

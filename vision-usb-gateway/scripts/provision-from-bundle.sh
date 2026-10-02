@@ -84,6 +84,7 @@ read_conf_vars() {
     printf 'SYNC_MOUNT=%q\n' "${SYNC_MOUNT:-/mnt/vision_snap}"
     printf 'USB_LV_SIZE=%q\n' "${USB_LV_SIZE:-16G}"
     printf 'USB_LV_NAMES=%q\n' "${USB_LVS[*]:-usb_0}"
+    printf 'BUNDLE_INGEST_DIR=%q\n' "${INGEST_DIR:-}"
   )
 }
 eval "$(read_conf_vars)"
@@ -316,6 +317,15 @@ if [[ -d "$STAGE/state/aoi_settings" ]]; then
     log "$lv: aoi_settings $st"
   done
   rm -f "$STATE_DIR/usb_persist.manifest"
+fi
+# The Ethernet AOI's settings folder; the apply below (70_configure_ingest)
+# hands it to the FTP user.
+if [[ -d "$STAGE/ingest/aoi_settings" ]]; then
+  INGEST_SETTINGS=$(INGEST_DIR=$BUNDLE_INGEST_DIR ingest_settings_dir)
+  mkdir -p "$(dirname "$INGEST_SETTINGS")"
+  rm -rf "$INGEST_SETTINGS"
+  cp -a "$STAGE/ingest/aoi_settings" "$INGEST_SETTINGS"
+  log "restored the Ethernet AOI's aoi_settings"
 fi
 
 # 6) Apply config (promotes shadow, configures Samba incl. the persist bind mount).

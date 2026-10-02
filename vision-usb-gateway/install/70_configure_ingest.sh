@@ -87,6 +87,15 @@ setup_ingest_dirs_user() {
   usermod -d "$INGEST_DIR" "$FTP_USER" >/dev/null 2>&1 || true
   chown "$FTP_USER":"$FTP_USER" "$INGEST_DIR/data"
   chmod 0755 "$INGEST_DIR/data"
+  # The AOI's settings folder (common.sh ingest_settings_dir): writable by the
+  # AOI, never pruned. Files restored from a wipe backup or a config bundle come
+  # in as root — hand them back, without walking the tree when all is right.
+  local settings
+  settings=$(ingest_settings_dir)
+  safe_mkdir "$settings"
+  chmod 0755 "$settings"
+  find "$settings" \( ! -user "$FTP_USER" -o ! -group "$FTP_USER" \) \
+    -exec chown "$FTP_USER":"$FTP_USER" {} + 2>/dev/null || true
   # Factory default ingest password (FTP + SFTP), like the SMB one. Without a
   # password set in the WebUI the account kept whatever the golden image was
   # built with — unknown to whoever sets up the AOI. Written to the NVMe secret

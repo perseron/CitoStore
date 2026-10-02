@@ -14,6 +14,7 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 require_root
+load_config
 
 STATE_DIR=/srv/vision_mirror/.state
 OUT="${1:-/tmp/citostore-config-$(hostname)-$(date +%Y%m%d_%H%M%S).tgz}"
@@ -43,6 +44,16 @@ done
 # 4) AOI persist folder (host settings preserved across USB rotations).
 if [[ -d "$STATE_DIR/aoi_settings" ]]; then
   cp -a "$STATE_DIR/aoi_settings" "$STAGE/state/aoi_settings"
+fi
+
+# 4b) The Ethernet AOI's own settings folder (FTP/SFTP root, next to data/).
+INGEST_SETTINGS=$(ingest_settings_dir)
+if [[ -d "$INGEST_SETTINGS" ]]; then
+  mkdir -p "$STAGE/ingest"
+  # Not -a: the WebUI runs this export in its sandbox without CAP_CHOWN, and
+  # these files belong to the FTP user — preserving that failed the whole
+  # download (500). 70_configure_ingest hands them back on the target unit.
+  cp -r --preserve=mode,timestamps "$INGEST_SETTINGS" "$STAGE/ingest/aoi_settings"
 fi
 
 # 5) Network: the recorded intent plus the live NetworkManager profiles.

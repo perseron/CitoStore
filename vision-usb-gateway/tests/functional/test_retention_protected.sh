@@ -165,12 +165,25 @@ rm -f "$MIRROR/.state/retention-protected.json"
 mkdir -p "$MIRROR/raw/more"
 head -c 1000000 /dev/zero >"$MIRROR/raw/more/filler.bin"
 sync
-before=$(usage)
 CONF_FILE="$CONF" DRY_RUN=false timeout 120 bash "$GW/scripts/mirror-retention.sh" \
   >"$TMP/out3.txt" 2>&1 || true
 check "the big file is deleted once unprotected" \
   "$(test -f "$MIRROR/raw/keep_me/important.bin" && echo still-there || echo gone)" "gone"
 check "no CRITICAL when nothing is protected" \
   "$(grep -q CRITICAL "$TMP/out3.txt" && echo yes || echo no)" "no"
+
+echo "=== the Ethernet AOI's settings folder is never pruned; its uploads are ==="
+mkdir -p "$MIRROR/ingest/data" "$MIRROR/ingest/aoi_settings"
+echo setting >"$MIRROR/ingest/aoi_settings/machine.cfg"
+fill_to "$MIRROR/ingest/data/upload.bin" 92
+touch -d "2019-01-01" "$MIRROR/ingest/aoi_settings/machine.cfg"   # the oldest file on the disk
+touch -d "2020-06-01" "$MIRROR/ingest/data/upload.bin"
+sync
+CONF_FILE="$CONF" DRY_RUN=false timeout 120 bash "$GW/scripts/mirror-retention.sh" \
+  >"$TMP/out4.txt" 2>&1 || true
+check "the FTP upload is reclaimed" \
+  "$(test -f "$MIRROR/ingest/data/upload.bin" && echo still-there || echo gone)" "gone"
+check "the AOI's settings survive (though the oldest file)" \
+  "$(cat "$MIRROR/ingest/aoi_settings/machine.cfg" 2>/dev/null)" "setting"
 
 exit $fail

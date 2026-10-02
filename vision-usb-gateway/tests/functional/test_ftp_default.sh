@@ -48,6 +48,7 @@ check "default written to the NVMe secret" "$(cat "$CREDS")" "password=citostore
 check "  ... private" "$(stat -c %a "$CREDS")" 600
 check "  ... applied to the account (FTP + SFTP both use it)" "$(grep -c '^chpasswd aoiftp:citostore$' "$TMP/calls")" 1
 check "  ... and said so" "$(grep -c 'default password' "$TMP/out")" 1
+check "the Ethernet AOI's settings folder exists next to data/" "$(stat -c %a "$M/ingest/aoi_settings" 2>/dev/null)" 755
 
 echo "=== a password set in the WebUI is never replaced ==="
 echo "password=Secret-1" > "$CREDS"

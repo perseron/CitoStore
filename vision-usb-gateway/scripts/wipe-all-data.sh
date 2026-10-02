@@ -87,6 +87,10 @@ restart_stack() {
   systemctl start var-lib-samba.mount || true
   systemctl start smbd.service nmbd.service wsdd.service || true
   systemctl start vision-webui.service || true
+  # The FTP/SFTP root (ingest/, its data/ and settings folders, owned and
+  # chrooted just so) went with the mirror's filesystem: until the next boot
+  # re-ran this, the Ethernet AOI could not log in at all.
+  bash "$GATEWAY_HOME/install/70_configure_ingest.sh" || log "re-creating the ingest root failed"
   systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
   # Not the rotator timer: it is off by design (the rotator runs after each sync).
   systemctl enable --now vision-sync.timer vision-monitor.timer || true
@@ -102,6 +106,9 @@ on_exit() {
     # Failed after the reformat: put the settings back before anything starts.
     if mountpoint -q "$MIRROR_MOUNT" && [[ -d "$BACKUP_DIR/state" && ! -e "$MIRROR_MOUNT/.state/vision-gw.conf" ]]; then
       state_restore "$BACKUP_DIR/state" "$MIRROR_MOUNT/.state" || true
+    fi
+    if mountpoint -q "$MIRROR_MOUNT" && [[ -d "$BACKUP_DIR/ingest_settings" && -n "${INGEST_SETTINGS:-}" && ! -e "$INGEST_SETTINGS" ]]; then
+      mkdir -p "$(dirname "$INGEST_SETTINGS")" && cp -a "$BACKUP_DIR/ingest_settings" "$INGEST_SETTINGS" || true
     fi
     restart_stack
   fi
@@ -140,7 +147,13 @@ fi
 if [[ -f /etc/vision-nas.creds ]]; then
   cp /etc/vision-nas.creds "$BACKUP_DIR/vision-nas.creds"
 fi
-log "settings backed up: $(ls "$BACKUP_DIR/state" | tr '\n' ' ')"
+# ...and the Ethernet AOI's settings folder (common.sh ingest_settings_dir) —
+# configuration too, though it sits in the FTP root on the mirror.
+INGEST_SETTINGS=$(ingest_settings_dir)
+if [[ -d "$INGEST_SETTINGS" ]]; then
+  cp -a "$INGEST_SETTINGS" "$BACKUP_DIR/ingest_settings"
+fi
+log "settings backed up: $(ls "$BACKUP_DIR/state" | tr '\n' ' ')$([[ -d "$BACKUP_DIR/ingest_settings" ]] && echo '+ ingest aoi_settings')"
 
 systemctl stop srv-vision_mirror.mount srv-vision_mirror.automount || true
 
@@ -179,6 +192,10 @@ fi
 
 # Restore the preserved state (from the RAM backup).
 state_restore "$BACKUP_DIR/state" "$MIRROR_MOUNT/.state"
+if [[ -d "$BACKUP_DIR/ingest_settings" ]]; then
+  mkdir -p "$(dirname "$INGEST_SETTINGS")"
+  cp -a "$BACKUP_DIR/ingest_settings" "$INGEST_SETTINGS"
+fi
 # No shadow config on the NVMe before the wipe: keep the running one.
 if [[ ! -f "$MIRROR_MOUNT/.state/vision-gw.conf" && -f "$BACKUP_DIR/vision-gw.conf" ]]; then
   cp "$BACKUP_DIR/vision-gw.conf" "$MIRROR_MOUNT/.state/vision-gw.conf"

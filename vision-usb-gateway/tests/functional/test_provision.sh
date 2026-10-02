@@ -21,7 +21,7 @@ G=$((1024 * 1024 * 1024))
 
 FAKE=$TMP/gw
 mkdir -p "$FAKE/scripts" "$FAKE/install"
-for f in common.sh provision-from-bundle.sh; do tr -d '\r' < "$GW/scripts/$f" > "$FAKE/scripts/$f"; done
+for f in common.sh provision-from-bundle.sh import-config-bundle.sh; do tr -d '\r' < "$GW/scripts/$f" > "$FAKE/scripts/$f"; done
 printf '#!/bin/bash\necho apply >> %s/calls\n' "$TMP" > "$FAKE/scripts/apply-shadow-config.sh"
 printf '#!/bin/bash\necho "gadget $*" >> %s/calls\n' "$TMP" > "$FAKE/scripts/usb-gadget.sh"
 printf '#!/bin/bash\necho "30_setup $*" >> %s/calls\n' "$TMP" > "$FAKE/install/30_setup_nvme_lvm.sh"
@@ -64,6 +64,7 @@ LVM_VG=vg0
 MIRROR_LV=mirror
 THINPOOL_LV=usbpool
 MIRROR_MOUNT=$MIRROR
+INGEST_DIR=$MIRROR/ingest
 USB_LVS=(usb_0 usb_1 usb_2)
 USB_LV_SIZE=$1
 NETBIOS_NAME=BUNDLEUNIT
@@ -71,6 +72,8 @@ EOF
   echo '{"hash":"x"}' > "$TMP/b/state/webui.passwd"
   echo '{"method":"manual","address":"192.168.2.50"}' > "$TMP/b/network/network.json"
   echo "recipe" > "$TMP/b/state/aoi_settings/recipe.ini"
+  mkdir -p "$TMP/b/ingest/aoi_settings"; echo "eth-aoi" > "$TMP/b/ingest/aoi_settings/line.cfg"
+  echo "password=ftp-x" > "$TMP/b/state/ftp.creds"; echo "password=smb-x" > "$TMP/b/state/smb_unix.creds"
   tar czf "$TMP/bundle.citostore" -C "$TMP/b" .
 }
 plan() { bash "$FAKE/scripts/provision-from-bundle.sh" "$TMP/bundle.citostore" --plan 2>"$TMP/err"; }
@@ -109,6 +112,7 @@ check "  shadow config written" "$(grep -c '^NETBIOS_NAME=BUNDLEUNIT$' "$MIRROR/
 check "  WebUI password restored" "$(cat "$MIRROR/.state/webui.passwd")" '{"hash":"x"}'
 check "  static IP restored" "$(grep -c 192.168.2.50 "$MIRROR/.state/network.json")" 1
 check "  AOI settings restored" "$(cat "$MIRROR/.state/aoi_settings/recipe.ini")" recipe
+check "  the Ethernet AOI's settings restored into the FTP root" "$(cat "$MIRROR/ingest/aoi_settings/line.cfg" 2>/dev/null)" eth-aoi
 check "  ... pushed onto all 3 USB drives (else the next rotation exports their old copy)" "$(grep -cE 'usb_[0-2]: aoi_settings ' "$TMP/out")" 3
 check "  ... old persist manifest dropped" "$(test -e "$MIRROR/.state/usb_persist.manifest" && echo yes || echo no)" no
 check "  config applied" "$(grep -c '^apply$' "$TMP/calls")" 1
@@ -158,6 +162,16 @@ bundle 512M
 p=$(plan)
 check "512M is 0.5 GiB, not 512 GiB (rounded up to 1)" "$(field usb_lv_size_gib <<<"$p")" 1
 check "  plan ok" "$(field ok <<<"$p")" true
+
+echo "=== import-config-bundle carries the same settings ==="
+bundle 16G
+rm -rf /srv/vision_mirror/.state "$MIRROR/ingest/aoi_settings"; mkdir -p /srv/vision_mirror/.state
+rc=0; bash "$FAKE/scripts/import-config-bundle.sh" "$TMP/bundle.citostore" >"$TMP/out" 2>&1 || rc=$?
+check "import succeeds" "$rc" 0
+check "  ingest (FTP) password imported" "$(cat /srv/vision_mirror/.state/ftp.creds 2>/dev/null)" "password=ftp-x"
+check "  mirror-FTP password imported" "$(cat /srv/vision_mirror/.state/smb_unix.creds 2>/dev/null)" "password=smb-x"
+check "  network setting imported" "$(grep -c 192.168.2.50 /srv/vision_mirror/.state/network.json 2>/dev/null)" 1
+check "  the Ethernet AOI's settings imported" "$(cat "$MIRROR/ingest/aoi_settings/line.cfg" 2>/dev/null)" eth-aoi
 
 echo
 if ((fail)); then echo "FAILED"; cat "$TMP/out"; exit 1; fi

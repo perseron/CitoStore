@@ -242,6 +242,14 @@ usb_persist_write() {
   echo "$status"
 }
 
+# The Ethernet AOI's own settings folder: in the FTP/SFTP root next to data/,
+# separate from the USB drives' aoi_settings (a unit can serve both kinds of
+# AOI). Retention prunes only data/, so nothing here is deleted to make room;
+# Wipe All Data and the config bundle carry it like the USB one.
+ingest_settings_dir() {
+  echo "${INGEST_DIR:-/srv/vision_mirror/ingest}/aoi_settings"
+}
+
 # Single source of truth for the systemd env file: ALWAYS the full key set.
 # Writing a subset (as the NAS step used to) drops the SMB/WebUI/RTC/sync keys
 # other units read via EnvironmentFile. Call after load_config so config values
