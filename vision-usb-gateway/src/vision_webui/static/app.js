@@ -593,7 +593,18 @@ async function saveAndApply(keys, label) {
   const payload = {};
   keys.forEach(k => { const el = document.getElementById(k); if (el) payload[k] = el.value; });
   await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
-  await api("/api/apply", { method: "POST", body: "{}" });
+  const res = await api("/api/apply", { method: "POST", body: "{}" });
+  // This page runs over the eth1 address being changed: the unit answers first
+  // and applies two seconds later, so follow it to the new address.
+  if (res && res.reconnect !== undefined) {
+    if (res.reconnect) {
+      setStatus(`Warning: ${label} saved — the unit moves to ${res.reconnect}; this page follows in 8 s`);
+      setTimeout(() => { window.location.href = res.reconnect; }, 8000);
+    } else {
+      setStatus(`Warning: ${label} saved — eth1 is now off, so this connection drops; reconnect through eth0`);
+    }
+    return;
+  }
   setStatus(label + " saved and applied");
 }
 const USB_KEYS = ["SYNC_INTERVAL_SEC", "SYNC_ONBOOT_SEC", "SYNC_ONACTIVE_SEC",

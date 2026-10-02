@@ -818,6 +818,16 @@
         <p>A feltöltött fájlok az ingest-mappába (<code>ingest/data</code>) kerülnek,
           és ugyanúgy elérhetők az SMB-megosztáson, mint a többi mentett adat.</p>
       </div>
+
+      <div class="note">
+        <span class="lab">Az eth1 címének átállítása</span>
+        <p>Az egység csak olyan címet fogad el, amely használható: IPv4-cím, nem a hálózat
+          vagy a broadcast címe, az átjáró (ha van) az eth1 hálózatán belül, és a hálózat
+          nem fedheti át az eth0-ét (sem a közvetlen laptopos <code>10.10.10.x</code>
+          tartományt). Ha a WebUI-t éppen az eth1-en keresztül használod, a mentés után
+          az oldal magától átirányít az új címre — a gépeden is legyen ebben a hálózatban
+          cím.</p>
+      </div>
     </section>
 
     <!-- 10 -->

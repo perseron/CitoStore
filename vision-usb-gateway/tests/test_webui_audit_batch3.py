@@ -361,3 +361,103 @@ def test_an_unreadable_list_is_reported_not_shown_as_empty(protected, state):
     status = server.get_protected_status()
     assert status["paths"] == []
     assert "cannot be read" in status["list_error"]
+
+
+# --- eth1 (AOI link) settings ------------------------------------------------------
+
+@pytest.fixture
+def eth(state, monkeypatch):
+    nets = {"eth0": [], "eth1": []}
+    monkeypatch.setattr(server, "iface_ipv4", lambda iface: [server.ipaddress.ip_interface(n) for n in nets[iface]])
+    monkeypatch.setattr(server, "NETWORK_STATE", state / "network.json")
+    return nets
+
+
+def _eth1(**kw):
+    cfg = {"ETH1_ENABLED": "true", "ETH1_ADDRESS": "192.168.100.1", "ETH1_PREFIX": "24",
+           "ETH1_GATEWAY": "", "MDNS_DIRECT_SUBNET": "10.10.10"}
+    cfg.update(kw)
+    return server.validate_eth1(cfg)
+
+
+def test_eth1_default_is_fine(eth):
+    assert _eth1() == (True, "")
+
+
+@pytest.mark.parametrize("kw, part", [
+    ({"ETH1_ADDRESS": "fe80::1"}, "IPv4"),
+    ({"ETH1_ADDRESS": "192.168.100.0"}, "network or broadcast"),
+    ({"ETH1_ADDRESS": "192.168.100.255"}, "network or broadcast"),
+    ({"ETH1_GATEWAY": "10.0.0.1"}, "not another host"),
+    ({"ETH1_GATEWAY": "192.168.100.1"}, "not another host"),
+    ({"ETH1_ADDRESS": "10.10.10.5"}, "direct laptop link"),
+])
+def test_eth1_values_the_unit_cannot_use_are_refused(eth, kw, part):
+    ok, err = _eth1(**kw)
+    assert not ok and part in err
+
+
+def test_eth1_must_not_overlap_eth0s_current_or_static_network(eth, state):
+    eth["eth0"] = ["192.168.2.164/24"]
+    ok, err = _eth1(ETH1_ADDRESS="192.168.2.50")
+    assert not ok and "eth0's current network" in err
+    eth["eth0"] = []
+    (state / "network.json").write_text(json.dumps({"method": "manual", "address": "172.16.5.10", "prefix": "16"}))
+    ok, err = _eth1(ETH1_ADDRESS="172.16.200.1")
+    assert not ok and "static network" in err
+
+
+def test_eth1_off_is_not_checked(eth):
+    assert _eth1(ETH1_ENABLED="false", ETH1_ADDRESS="nonsense") == (True, "")
+
+
+class _Conn:
+    def __init__(self, local):
+        self.local = local
+
+    def getsockname(self):
+        return (self.local, 80, 0, 0)
+
+
+def _apply_req(local):
+    r = Req({})
+    r.connection = _Conn(local)
+    r.eth1_move_target = types_method(server.WebHandler.eth1_move_target, r)
+    return r
+
+
+def types_method(fn, obj):
+    import types
+    return types.MethodType(fn, obj)
+
+
+def test_apply_over_the_changing_eth1_address_answers_first(eth, monkeypatch):
+    eth["eth1"] = ["192.168.100.1/24"]
+    monkeypatch.setattr(server, "load_config_text", lambda: "ETH1_ENABLED=true\nETH1_ADDRESS=192.168.100.2\nWEBUI_PORT=80\n")
+    ran = []
+    monkeypatch.setattr(server, "run_cmd", lambda args, **kw: (ran.append(args), (0, "", ""))[1])
+    monkeypatch.setattr(server, "run_privileged", lambda args, **kw: (ran.append(["PRIVILEGED"] + args), (0, "", ""))[1])
+    req = _apply_req("::ffff:192.168.100.1")
+    server.WebHandler.handle_apply(req)
+    assert req.sent == (200, {"ok": True, "reconnect": "http://192.168.100.2/admin"})
+    assert ran and ran[0][:4] == ["systemd-run", "--quiet", "--collect", "--on-active=2"]
+
+
+def test_apply_over_eth0_is_unchanged(eth, monkeypatch):
+    eth["eth1"] = ["192.168.100.1/24"]
+    monkeypatch.setattr(server, "load_config_text", lambda: "ETH1_ENABLED=true\nETH1_ADDRESS=192.168.100.2\n")
+    ran = []
+    monkeypatch.setattr(server, "run_privileged", lambda args, **kw: (ran.append(args), (0, "", ""))[1])
+    req = _apply_req("::ffff:10.10.10.1")
+    server.WebHandler.handle_apply(req)
+    assert req.sent == (200, {"ok": True})
+    assert len(ran) == 1   # the normal, waited-for apply
+
+
+def test_switching_eth1_off_over_eth1_says_so(eth, monkeypatch):
+    eth["eth1"] = ["192.168.100.1/24"]
+    monkeypatch.setattr(server, "load_config_text", lambda: "ETH1_ENABLED=false\n")
+    monkeypatch.setattr(server, "run_cmd", lambda args, **kw: (0, "", ""))
+    req = _apply_req("192.168.100.1")
+    server.WebHandler.handle_apply(req)
+    assert req.sent == (200, {"ok": True, "reconnect": ""})

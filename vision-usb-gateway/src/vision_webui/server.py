@@ -1445,6 +1445,73 @@ def validate_config_updates(updates: dict) -> tuple[bool, str]:
     return True, ""
 
 
+def iface_ipv4(iface: str) -> list:
+    """IPv4 interfaces (address/prefix) currently on <iface>."""
+    code, out, _ = run_cmd(["ip", "-4", "-o", "addr", "show", iface])
+    found = []
+    if code == 0:
+        for line in out.splitlines():
+            parts = line.split()
+            if "inet" in parts:
+                with contextlib.suppress(ValueError, IndexError):
+                    found.append(ipaddress.ip_interface(parts[parts.index("inet") + 1]))
+    return found
+
+
+def eth0_networks(cfg: dict) -> list:
+    """(network, what) pairs eth1 must stay clear of: what eth0 has now, its
+    configured static network, and the direct-link subnet it serves itself."""
+    nets = [(i.network, "eth0's current network") for i in iface_ipv4("eth0")]
+    with contextlib.suppress(OSError, ValueError, KeyError, TypeError):
+        net = json.loads(NETWORK_STATE.read_text(encoding="utf-8"))
+        if net.get("method") == "manual" and net.get("address"):
+            nets.append((
+                ipaddress.ip_interface(f"{net['address']}/{net.get('prefix') or 24}").network,
+                "eth0's static network",
+            ))
+    with contextlib.suppress(ValueError):
+        direct = cfg.get("MDNS_DIRECT_SUBNET", "10.10.10") or "10.10.10"
+        nets.append((ipaddress.ip_network(f"{direct}.0/24"), "the direct laptop link (eth0)"))
+    return nets
+
+
+def validate_eth1(cfg: dict) -> tuple[bool, str]:
+    """Cross-field checks on the merged (saved + submitted) eth1 settings.
+
+    The per-field checks let through what the unit then could not use: an IPv6
+    or a network/broadcast address (nmcli refuses it and the "|| true" in
+    70_configure_ingest hid that — eth1 silently kept its old address while
+    the WebUI showed the new one), a gateway outside eth1's network (same), and
+    a network overlapping eth0's: two routes to one subnet, and SMB/WebUI
+    replies to eth0's clients leave through eth1."""
+    if cfg.get("ETH1_ENABLED", "false") != "true":
+        return True, ""
+    addr = cfg.get("ETH1_ADDRESS", "")
+    try:
+        ip = ipaddress.IPv4Address(addr)
+        prefix = int(cfg.get("ETH1_PREFIX", "24") or "24")
+        net = ipaddress.IPv4Network(f"{addr}/{prefix}", strict=False)
+    except ValueError:
+        return False, "ETH1_ADDRESS must be an IPv4 address (e.g. 192.168.100.1)"
+    if prefix <= 30 and ip in (net.network_address, net.broadcast_address):
+        return False, f"ETH1_ADDRESS {addr} is the network or broadcast address of {net}"
+    gateway = cfg.get("ETH1_GATEWAY", "")
+    if gateway:
+        try:
+            gw = ipaddress.IPv4Address(gateway)
+        except ValueError:
+            return False, "ETH1_GATEWAY must be an IPv4 address"
+        if gw not in net or gw == ip:
+            return False, f"ETH1_GATEWAY {gateway} is not another host in eth1's network {net}"
+    for other, what in eth0_networks(cfg):
+        if net.overlaps(other):
+            return False, (
+                f"eth1's network {net} overlaps {what} ({other}). "
+                "The AOI link needs a subnet of its own."
+            )
+    return True, ""
+
+
 def setup_allowed() -> bool:
     """First-run setup is only reachable until a password exists."""
     return not PASS_FILE.exists()
@@ -1901,6 +1968,10 @@ class WebHandler(BaseHTTPRequestHandler):
         if not ok:
             return self.send_json({"ok": False, "error": error}, status=400)
         base_text = load_config_text()
+        if any(k.startswith("ETH1_") for k in updates):
+            ok, error = validate_eth1({**parse_config(base_text), **updates})
+            if not ok:
+                return self.send_json({"ok": False, "error": error}, status=400)
         new_text = update_config_file(base_text, updates)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         # Not last-good: apply-shadow-config promotes it only after the config
@@ -1910,9 +1981,41 @@ class WebHandler(BaseHTTPRequestHandler):
         log(f"config updated: {', '.join(sorted(updates.keys()))}")
         return self.send_json({"ok": True})
 
+    def eth1_move_target(self):
+        """None when this request did not come in on eth1's address, else where
+        that address goes after the apply: the new address, or "" if eth1 is
+        being switched off."""
+        try:
+            local = str(self.connection.getsockname()[0]).removeprefix("::ffff:")
+        except (OSError, AttributeError, IndexError):
+            return None
+        if local not in {str(i.ip) for i in iface_ipv4("eth1")}:
+            return None
+        cfg = parse_config(load_config_text())
+        if cfg.get("ETH1_ENABLED", "false") != "true":
+            return ""
+        new = cfg.get("ETH1_ADDRESS", "")
+        return new if new and new != local else None
+
     def handle_apply(self):
         with require_lock():
             gh = get_gateway_home()
+            target = self.eth1_move_target()
+            if target is not None:
+                # This request came in on the eth1 address the apply takes away:
+                # the reply would never arrive (seen live: the browser still
+                # waiting after 90 s, the operator not knowing the change took).
+                # Answer first, apply two seconds later in its own unit.
+                code, out, err = run_cmd([
+                    "systemd-run", "--quiet", "--collect", "--on-active=2",
+                    f"{gh}/scripts/apply-shadow-config.sh",
+                ])
+                log(f"apply-config deferred (request on eth1, moving to {target or 'off'}) rc={code} {err}")
+                if code != 0:
+                    return self.send_json({"ok": False, "error": err or out}, status=500)
+                port = parse_config(load_config_text()).get("WEBUI_PORT", "80") or "80"
+                where = f"http://{target}{'' if port == '80' else ':' + port}/admin" if target else ""
+                return self.send_json({"ok": True, "reconnect": where})
             code, out, err = run_privileged([f"{gh}/scripts/apply-shadow-config.sh"])
             log(f"apply-config rc={code} out={out} err={err}")
             if code != 0:

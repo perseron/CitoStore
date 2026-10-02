@@ -49,13 +49,22 @@ configure_eth1() {
   if ! nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$con"; then
     nmcli connection add save no type ethernet con-name "$con" ifname "$ETH1_INTERFACE" >/dev/null 2>&1 || true
   fi
-  nmcli connection modify --temporary "$con" \
-    connection.interface-name "$ETH1_INTERFACE" \
-    ipv4.method manual \
-    ipv4.addresses "$ETH1_ADDRESS/$ETH1_PREFIX" \
-    ipv4.gateway "${ETH1_GATEWAY:-}" \
-    ipv4.never-default yes \
-    ipv6.method ignore >/dev/null 2>&1 || true
+  # Not "|| true": a value NetworkManager refuses (an IPv6 or network
+  # address, a gateway outside the subnet) left eth1 on its OLD address while
+  # Save + Apply reported success. FTP/SFTP are still configured below; the
+  # script exits 1 at the end, so the apply reports the failure.
+  local err
+  if ! err=$(nmcli connection modify --temporary "$con" \
+      connection.interface-name "$ETH1_INTERFACE" \
+      ipv4.method manual \
+      ipv4.addresses "$ETH1_ADDRESS/$ETH1_PREFIX" \
+      ipv4.gateway "${ETH1_GATEWAY:-}" \
+      ipv4.never-default yes \
+      ipv6.method ignore 2>&1); then
+    log "ERROR: $ETH1_INTERFACE settings $ETH1_ADDRESS/$ETH1_PREFIX gw=${ETH1_GATEWAY:-none} refused: $err"
+    ETH1_FAILED=true
+    return 0
+  fi
   # Bounded activation (-w 8): eth1 is a point-to-point link to the AOI which may
   # have no carrier at boot; without a wait cap `nmcli up` blocks ~90s. NM keeps
   # autoconnect, so it still comes up on its own when carrier appears.
@@ -165,6 +174,7 @@ EOF
   fi
 }
 
+ETH1_FAILED=false
 configure_eth1
 
 if [[ "$INGEST_ENABLED" == "true" ]]; then
@@ -177,4 +187,8 @@ else
   rm -f "$SFTP_DROPIN"
   systemctl reload ssh >/dev/null 2>&1 || systemctl reload sshd >/dev/null 2>&1 || true
   log "ingest disabled"
+fi
+
+if [[ "$ETH1_FAILED" == true ]]; then
+  exit 1
 fi
