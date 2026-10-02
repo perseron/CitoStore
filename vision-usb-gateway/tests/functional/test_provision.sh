@@ -49,6 +49,7 @@ MIRROR=$TMP/mirror
 mknod "$TMP/nvme0n1" b 259 0
 golden_layout() {  # this unit as its first boot left it: 1 TB, 856G mirror, 64G pool, 3 x 16G
   rm -f "$TMP"/lv/*
+  mkdir -p "$MIRROR/.state" && echo "digest=old" > "$MIRROR/.state/usb_persist.manifest"
   echo $((856 * G)) > "$TMP/lv/mirror"; echo $((64 * G)) > "$TMP/lv/usbpool"
   for i in 0 1 2; do echo $((16 * G)) > "$TMP/lv/usb_$i"; done
   echo $((931 * G)) > "$TMP/disk_bytes"; echo $((9 * G)) > "$TMP/vg_free"
@@ -108,6 +109,8 @@ check "  shadow config written" "$(grep -c '^NETBIOS_NAME=BUNDLEUNIT$' "$MIRROR/
 check "  WebUI password restored" "$(cat "$MIRROR/.state/webui.passwd")" '{"hash":"x"}'
 check "  static IP restored" "$(grep -c 192.168.2.50 "$MIRROR/.state/network.json")" 1
 check "  AOI settings restored" "$(cat "$MIRROR/.state/aoi_settings/recipe.ini")" recipe
+check "  ... pushed onto all 3 USB drives (else the next rotation exports their old copy)" "$(grep -cE 'usb_[0-2]: aoi_settings ' "$TMP/out")" 3
+check "  ... old persist manifest dropped" "$(test -e "$MIRROR/.state/usb_persist.manifest" && echo yes || echo no)" no
 check "  config applied" "$(grep -c '^apply$' "$TMP/calls")" 1
 check "  monitor + retention timers back on" "$(grep -c 'start vision-sync.timer vision-monitor.timer mirror-retention.timer' "$TMP/calls")" 1
 

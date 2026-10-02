@@ -657,11 +657,24 @@ def resolve_mount_device(dev: str) -> str:
     return dev
 
 
+def _has_entries(path: Path) -> bool:
+    try:
+        return any(path.iterdir())
+    except OSError:
+        return False
+
+
 def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> None:
     if not persist_enabled(cfg):
         return
     persist_src = mount_root / cfg.usb_persist_dir
     if not persist_src.exists():
+        return
+    # An empty folder on the active drive while the NVMe copy holds settings
+    # is a folder that was created bare (old install/clone code), not the AOI
+    # deleting all of its settings: mirroring it (rsync --delete) erased the
+    # copy every drive is restored from.
+    if not any(persist_src.iterdir()) and _has_entries(cfg.usb_persist_backing):
         return
 
     manifest_path = cfg.state_dir / "usb_persist.manifest"

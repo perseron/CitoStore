@@ -628,6 +628,39 @@ def bundle_config_error(bundle: Path) -> str:
     return f"bundle config rejected: {err}" if err else ""
 
 
+HEALTH_FILES = (STATE_DIR / "health.json", Path("/run/vision-health.json"))
+BOOT_HEALTH_FILE = Path("/run/vision-health-boot.json")
+_HEALTH_RANK = {"ok": 0, "warn": 1, "unknown": 2, "error": 3}
+
+
+def read_health() -> dict:
+    """The live health (vision-monitor, rewritten after every sync) plus what
+    this boot's health-check found. The monitor's rewrite used to erase the
+    boot findings — a FAT repaired, a USB drive's aoi_settings restored, the
+    overlay off — within ~30 s, so the banner never showed them."""
+    health = {"status": "unknown", "issues": [], "ts": ""}
+    for path in HEALTH_FILES:
+        if path.exists():
+            try:
+                health = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                log(f"{path.name} parse error")
+                health = {"status": "unknown", "issues": [f"invalid {path.name}"], "ts": ""}
+            break
+    try:
+        boot = json.loads(BOOT_HEALTH_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return health
+    boot_issues = [f"boot: {i}" for i in boot.get("issues", []) if i]
+    if boot_issues:
+        health = dict(health)
+        health["issues"] = list(health.get("issues", [])) + boot_issues
+        live, at_boot = health.get("status", "unknown"), boot.get("status", "warn")
+        if _HEALTH_RANK.get(at_boot, 1) > _HEALTH_RANK.get(live, 2):
+            health["status"] = at_boot
+    return health
+
+
 def atomic_write(path: Path, data, mode: int = 0o644) -> None:
     """tmp + fsync + rename. These units lose power without warning, and an
     in-place write cut short leaves a truncated file on the NVMe: half a config
@@ -1577,29 +1610,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 return self.send_json({"error": err or out or "failed to read logs"}, status=500)
             return self.send_json({"service": service, "lines": lines_int, "text": out})
         if self.path.startswith("/api/health"):
-            health = STATE_DIR / "health.json"
-            fallback = Path("/run/vision-health.json")
-            if health.exists():
-                try:
-                    return self.send_json(json.loads(health.read_text(encoding="utf-8")))
-                except json.JSONDecodeError:
-                    log("health.json parse error")
-                    return self.send_json({
-                        "status": "unknown",
-                        "issues": ["invalid health.json"],
-                        "ts": "",
-                    })
-            if fallback.exists():
-                try:
-                    return self.send_json(json.loads(fallback.read_text(encoding="utf-8")))
-                except json.JSONDecodeError:
-                    log("vision-health.json parse error")
-                    return self.send_json({
-                        "status": "unknown",
-                        "issues": ["invalid vision-health.json"],
-                        "ts": "",
-                    })
-            return self.send_json({"status": "unknown", "issues": [], "ts": ""})
+            return self.send_json(read_health())
         if self.path == "/api/config":
             cfg = parse_config(load_config_text())
             payload = {k: cfg.get(k, "") for k in ALLOWED_CONFIG_KEYS}

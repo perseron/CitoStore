@@ -776,6 +776,11 @@
         <p>Az újraformázás egyébként törölne mindent a meghajtón. A CitoStore egy külön
           mappát (<code>aoi_settings</code>) minden rotáció során megőriz és visszaír az új
           kötetre, így a vizsgáló gép meghajtón tárolt beállításai nem vesznek el.</p>
+        <p>Minden indításkor — telepítés, újraflashelés, gyári visszaállítás után is —
+          az egység ellenőrzi, hogy a mappa mindhárom USB-köteten megvan-e; ha hiányzik,
+          a tárolt másolatból visszaállítja, és ezt a <em>Status</em> panel sávja
+          „boot:” kezdetű figyelmeztetésként jelzi. Egy üres mappa soha nem írja felül a
+          tárolt beállításokat.</p>
       </div>
 
       <h4>Kézi műveletek</h4>

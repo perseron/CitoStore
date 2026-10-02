@@ -307,6 +307,15 @@ if [[ -d "$STAGE/state/aoi_settings" ]]; then
   rm -rf "$STATE_DIR/aoi_settings"
   cp -a "$STAGE/state/aoi_settings" "$STATE_DIR/aoi_settings"
   log "restored aoi_settings"
+  # ...and onto every USB drive (the gadget is stopped above). Drives kept by
+  # the reuse path still held this unit's old folder: the next rotation would
+  # have exported that over the bundle's settings. The persist manifest went
+  # with the old content.
+  for lv in "${USB_LV_LIST[@]}"; do
+    st=$(usb_persist_write "/dev/$LVM_VG/$lv" "$STATE_DIR/aoi_settings" replace) || st="FAILED (mount)"
+    log "$lv: aoi_settings $st"
+  done
+  rm -f "$STATE_DIR/usb_persist.manifest"
 fi
 
 # 6) Apply config (promotes shadow, configures Samba incl. the persist bind mount).

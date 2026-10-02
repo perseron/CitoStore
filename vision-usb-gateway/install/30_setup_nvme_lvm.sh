@@ -87,6 +87,12 @@ for lv in "${USB_LVS[@]}"; do
     vol_serial=$(printf '%04X%04X' "$((RANDOM))" "$((RANDOM))")
     mkfs_opts=(-F 32 -n "$USB_LABEL" -i "$vol_serial")
     mkfs.vfat "${mkfs_opts[@]}" "/dev/$LVM_VG/$lv"
+    # The AOI's settings folder on the new drive (from the NVMe copy when the
+    # mirror is there): a bare FAT left the AOI without its settings until
+    # this drive's first rotation. Just created = not exported, safe to mount.
+    persist_backing="$MIRROR_MOUNT/.state/${USB_PERSIST_DIR:-aoi_settings}"
+    st=$(usb_persist_write "/dev/$LVM_VG/$lv" "$persist_backing" ensure) || st="not created (mount failed)"
+    log "$lv: ${USB_PERSIST_DIR:-aoi_settings} folder $st"
   fi
 done
 

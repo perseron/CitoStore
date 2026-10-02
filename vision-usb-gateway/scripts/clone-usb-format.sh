@@ -140,14 +140,12 @@ for lv in "${USB_LVS[@]}"; do
   sync
   blockdev --flushbufs "$dev" 2>/dev/null || true
 
-  if [[ -n "${USB_PERSIST_DIR:-}" && "${USB_PERSIST_DIR}" != "none" ]]; then
-    mnt="/mnt/vision_clone_${lv}"
-    safe_mkdir "$mnt"
-    if mount -t vfat -o utf8,shortname=mixed,nodev,nosuid,noexec "$fs_dev" "$mnt"; then
-      safe_mkdir "$mnt/$USB_PERSIST_DIR"
-      umount "$mnt" || true
-    fi
-  fi
+  # The AOI's settings folder, filled from the NVMe copy. It used to be created
+  # EMPTY: once that drive became active, the sync took the empty folder for
+  # the AOI's current settings and mirrored it over the backing — erasing them.
+  st=$(usb_persist_write "$dev" "${USB_PERSIST_BACKING:-/srv/vision_mirror/.state/$USB_PERSIST_DIR}" ensure) \
+    || st="not created (mount failed)"
+  log "$lv: $USB_PERSIST_DIR folder $st"
 done
 
 log "clone complete"

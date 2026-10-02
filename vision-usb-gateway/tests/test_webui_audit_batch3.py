@@ -240,3 +240,38 @@ def test_set_time_ok_when_the_rtc_took_it(state, monkeypatch):
     req = Req({"time": "2026-10-01 10:00:00"})
     server.WebHandler.handle_time(req)
     assert req.sent == (200, {"ok": True})
+
+
+# --- boot-time health findings stay visible ----------------------------------
+
+def _health(tmp_path, monkeypatch, live, boot):
+    live_f, boot_f = tmp_path / "health.json", tmp_path / "boot.json"
+    if live is not None:
+        live_f.write_text(json.dumps(live), encoding="utf-8")
+    if boot is not None:
+        boot_f.write_text(json.dumps(boot), encoding="utf-8")
+    monkeypatch.setattr(server, "HEALTH_FILES", (live_f, tmp_path / "none.json"))
+    monkeypatch.setattr(server, "BOOT_HEALTH_FILE", boot_f)
+    return server.read_health()
+
+
+def test_boot_findings_survive_the_monitors_rewrite(state, tmp_path, monkeypatch):
+    h = _health(tmp_path, monkeypatch,
+                {"status": "ok", "issues": [], "ts": "t"},
+                {"status": "warn", "issues": ["usb_1: aoi_settings folder was missing; restored"], "ts": "b"})
+    assert h["status"] == "warn"
+    assert h["issues"] == ["boot: usb_1: aoi_settings folder was missing; restored"]
+
+
+def test_live_error_is_not_downgraded_by_boot_warning(state, tmp_path, monkeypatch):
+    h = _health(tmp_path, monkeypatch,
+                {"status": "error", "issues": ["gadget down"], "ts": "t"},
+                {"status": "warn", "issues": ["fsck.fat repaired the FAT on usb_0"], "ts": "b"})
+    assert h["status"] == "error"
+    assert h["issues"] == ["gadget down", "boot: fsck.fat repaired the FAT on usb_0"]
+
+
+def test_clean_boot_leaves_live_health_alone(state, tmp_path, monkeypatch):
+    live = {"status": "ok", "issues": [], "ts": "t"}
+    assert _health(tmp_path, monkeypatch, live, {"status": "ok", "issues": [], "ts": "b"}) == live
+    assert _health(tmp_path, monkeypatch, live, None) == live

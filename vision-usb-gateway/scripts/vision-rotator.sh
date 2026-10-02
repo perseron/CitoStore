@@ -114,7 +114,15 @@ persist_check_next() {
     return 0
   fi
   local expected
-  expected=$(cat "$USB_PERSIST_MANIFEST" 2>/dev/null || true)
+  # The sync writes digest=/count=/mode= lines (vision_sync
+  # write_manifest_state). Comparing the whole file with a bare digest never
+  # matched: every rotation logged a "mismatch" and blindly rewrote the next
+  # drive's folder — the check itself never worked. (An older rotator wrote
+  # the bare digest: accepted too.)
+  expected=$(sed -n 's/^digest=//p' "$USB_PERSIST_MANIFEST" 2>/dev/null | head -1 || true)
+  if [[ -z "$expected" ]]; then
+    expected=$(head -1 "$USB_PERSIST_MANIFEST" 2>/dev/null | tr -d '[:space:]' || true)
+  fi
   if [[ -z "$expected" ]]; then
     log "persist manifest empty"
     return 0
@@ -132,7 +140,7 @@ persist_check_next() {
           repaired=$(persist_manifest_for "$PERSIST_MNT/$USB_PERSIST_DIR")
           umount "$PERSIST_MNT" || true
           if [[ -n "$repaired" ]]; then
-            echo "$repaired" > "$USB_PERSIST_MANIFEST" 2>/dev/null || true
+            printf 'digest=%s\ncount=0\nmode=active\n' "$repaired" > "$USB_PERSIST_MANIFEST" 2>/dev/null || true
           fi
           log "persist repaired on $(basename "$next_dev")"
         else

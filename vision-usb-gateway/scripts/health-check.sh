@@ -226,6 +226,37 @@ fi
   echo "\"ts\": \"$(date -Is)\"}"
 } > "$STATE_DIR/usb-fsck.json" 2>/dev/null || true
 
+# The AOI's settings folder on every USB drive (usb_persist_write in common.sh).
+# Every boot, after fsck and still Before=usb-gadget: no drive is exported to
+# the host yet, so each can be mounted. A drive that lacks the folder — every
+# LV fresh from install / first boot / factory reset / a self-heal used to —
+# gets it back, filled from the NVMe copy. Needs the mirror (the copy lives
+# there); without it the next boot does it. A run with the gadget up (not the
+# boot path) leaves the exported drive alone.
+: "${USB_PERSIST_DIR:=aoi_settings}"
+: "${USB_PERSIST_BACKING:=$STATE_DIR/$USB_PERSIST_DIR}"
+PERSIST_RESULTS=()
+if [[ "$MIRROR_OK" == true && -n "$USB_PERSIST_DIR" && "$USB_PERSIST_DIR" != none ]]; then
+  mkdir -p "$USB_PERSIST_BACKING"
+  exported=""
+  if systemctl is-active --quiet usb-gadget.service 2>/dev/null && [[ -f "$ACTIVE_FILE" ]]; then
+    exported=$(tr -d '[:space:]' < "$ACTIVE_FILE")
+  fi
+  for lv in "${USB_LVS[@]}"; do
+    dev="/dev/$VG/$lv"
+    [[ -e "$dev" && "$dev" != "$exported" ]] || continue
+    if ! st=$(usb_persist_write "$dev" "$USB_PERSIST_BACKING" ensure); then
+      st="unchecked (mount failed)"
+      health_warn "$lv: could not check the $USB_PERSIST_DIR folder (mount failed)"
+    elif [[ "$st" != ok ]]; then
+      log "$lv: $USB_PERSIST_DIR folder was missing; $st"
+      health_warn "$lv: $USB_PERSIST_DIR folder was missing; $st"
+    fi
+    PERSIST_RESULTS+=("$lv=$st")
+  done
+  log "$USB_PERSIST_DIR folder check: ${PERSIST_RESULTS[*]:-no drives}"
+fi
+
 # Validate active USB LV pointer (it lives on the NVMe).
 if [[ "$MIRROR_OK" == true && -n "${ACTIVE_FILE:-}" ]]; then
   if [[ -f "$ACTIVE_FILE" ]]; then
@@ -285,6 +316,11 @@ write_health() {
 }
 
 write_health "$HEALTH_STATE_FALLBACK"
+# This boot's findings, kept apart: vision-monitor rewrites health.json after
+# every sync (~30 s), so a boot-time repair (FAT fixed, USB LV recreated,
+# aoi_settings restored, overlay off) vanished from the WebUI before anyone
+# could see it. /run lives exactly as long as this boot; the WebUI merges it.
+write_health /run/vision-health-boot.json
 
 if mountpoint -q "$MIRROR_MOUNT"; then
   mkdir -p "$STATE_DIR"

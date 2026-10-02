@@ -169,6 +169,79 @@ state_restore() {  # <backup dir> <state dir>
   done
 }
 
+# The AOI keeps its own settings in a folder on the USB drive (USB_PERSIST_DIR,
+# default aoi_settings). The unit carries it across reformats through the NVMe
+# backing copy (.state/aoi_settings): exported from the drive being reformatted,
+# put back onto the fresh one. A drive without the folder — 30_setup only
+# formatted the LVs it created at install, first boot, factory reset or a
+# self-heal — handed the AOI a drive without its settings until that drive's
+# first rotation.
+#
+# usb_persist_write <lv device> <backing dir> <ensure|replace>
+#   ensure   create the folder if it is missing, filled from the backing
+#   replace  make the folder an exact copy of the backing (new settings from a
+#            bundle must reach every drive, or the next rotation exports the
+#            drive's old copy over them)
+# Only for a drive NOT exported to the host: a FAT mounted on both sides is
+# corrupted. Prints ok | created | restored | replaced; returns 1 when the drive
+# could not be mounted.
+usb_persist_fs_dev() {
+  local dump
+  dump=$(sfdisk -d "$1" 2>/dev/null || true)
+  if [[ "$dump" == *"label:"* ]]; then
+    resolve_usb_device "$1"     # a partitioned (cloned-format) drive
+  else
+    echo "$1"
+  fi
+}
+usb_persist_write() {
+  local dev=$1 backing=$2 mode=$3 dir=${USB_PERSIST_DIR:-aoi_settings}
+  local opts=utf8,shortname=mixed,nodev,nosuid,noexec fs mnt status
+  if [[ -z "$dir" || "$dir" == none ]]; then
+    echo ok
+    return 0
+  fi
+  fs=$(usb_persist_fs_dev "$dev")
+  mnt=$(mktemp -d /run/vision-persist.XXXXXX)
+  if [[ "$mode" == ensure ]]; then
+    if ! mount -t vfat -o "ro,$opts" "$fs" "$mnt" 2>/dev/null; then
+      rmdir "$mnt"
+      return 1
+    fi
+    if [[ -d "$mnt/$dir" ]]; then
+      umount "$mnt"
+      rmdir "$mnt"
+      echo ok
+      return 0
+    fi
+    umount "$mnt"
+  fi
+  if ! mount -t vfat -o "$opts" "$fs" "$mnt" 2>/dev/null; then
+    rmdir "$mnt"
+    return 1
+  fi
+  if [[ "$mode" == replace ]]; then
+    rm -rf "${mnt:?}/$dir"
+    status=replaced
+  else
+    status=created
+  fi
+  mkdir -p "$mnt/$dir"
+  if [[ -d "$backing" && -n "$(ls -A "$backing" 2>/dev/null)" ]]; then
+    # Timestamps kept: the persist manifest (rotator check) hashes size+mtime.
+    # No -a: FAT has no owners/modes, and cp then fails on every file.
+    if ! cp -r --preserve=timestamps "$backing/." "$mnt/$dir/"; then
+      log "copying $backing onto $dev failed"
+    elif [[ "$status" == created ]]; then
+      status=restored
+    fi
+  fi
+  sync
+  umount "$mnt"
+  rmdir "$mnt"
+  echo "$status"
+}
+
 # Single source of truth for the systemd env file: ALWAYS the full key set.
 # Writing a subset (as the NAS step used to) drops the SMB/WebUI/RTC/sync keys
 # other units read via EnvironmentFile. Call after load_config so config values

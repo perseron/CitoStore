@@ -75,7 +75,14 @@ if persist_enabled; then
   log "persist export: $USB_PERSIST_DIR -> $USB_PERSIST_BACKING"
   safe_mkdir "$PERSIST_MNT"
 if mount -t vfat -o ro,utf8,shortname=mixed,nodev,nosuid,noexec "$fs_dev" "$PERSIST_MNT"; then
-    if [[ -d "$PERSIST_MNT/$USB_PERSIST_DIR" ]]; then
+    # An EMPTY folder on the drive while the NVMe copy holds settings is a
+    # folder that was created bare (old install/clone code), not the AOI
+    # deleting all its settings: exporting it (rsync --delete) would erase the
+    # copy every drive is restored from. Keep the copy.
+    if [[ -d "$PERSIST_MNT/$USB_PERSIST_DIR" && -z "$(ls -A "$PERSIST_MNT/$USB_PERSIST_DIR" 2>/dev/null)" &&
+          -n "$(ls -A "$USB_PERSIST_BACKING" 2>/dev/null)" ]]; then
+      log "persist export skipped: $USB_PERSIST_DIR on $lv_name is empty, keeping the NVMe copy"
+    elif [[ -d "$PERSIST_MNT/$USB_PERSIST_DIR" ]]; then
       export_start=$(date +%s)
       persist_sync_dir "$PERSIST_MNT/$USB_PERSIST_DIR/" "$USB_PERSIST_BACKING/"
       export_end=$(date +%s)
