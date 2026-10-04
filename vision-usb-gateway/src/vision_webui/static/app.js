@@ -487,8 +487,8 @@ async function applyNetwork() {
   // away the address this page runs over.
   if (res.reconnect !== undefined) {
     if (res.reconnect) {
-      setStatus(`Warning: network saved — the unit moves to ${res.reconnect} (reachable from that network only); this page follows in 8 s`);
-      setTimeout(() => { window.location.href = res.reconnect; }, 8000);
+      setStatus(`Warning: network saved — the unit moves to ${res.reconnect} (reachable from that network only); this page follows in 12 s`);
+      setTimeout(() => { window.location.href = res.reconnect; }, 12000);
     } else {
       setStatus(`Warning: network saved — the unit now takes its address from DHCP, so this connection drops. Reconnect at ${res.hint} — on a direct laptop link at ${res.direct}, after about a minute`);
     }
@@ -619,8 +619,8 @@ async function saveAndApply(keys, label) {
   // and applies two seconds later, so follow it to the new address.
   if (res && res.reconnect !== undefined) {
     if (res.reconnect) {
-      setStatus(`Warning: ${label} saved — the unit moves to ${res.reconnect}; this page follows in 8 s`);
-      setTimeout(() => { window.location.href = res.reconnect; }, 8000);
+      setStatus(`Warning: ${label} saved — the unit moves to ${res.reconnect}; this page follows in 12 s`);
+      setTimeout(() => { window.location.href = res.reconnect; }, 12000);
     } else {
       setStatus(`Warning: ${label} saved — eth1 is now off, so this connection drops; reconnect through eth0`);
     }

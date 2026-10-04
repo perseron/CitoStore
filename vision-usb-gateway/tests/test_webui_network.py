@@ -188,3 +188,16 @@ def test_import_refuses_an_eth1_the_unit_cannot_use(unit, monkeypatch, tmp_path)
     server.WebHandler.handle_config_import(req)
     assert req.sent[0] == 400 and "overlaps" in req.sent[1]["error"]
     assert not (tmp_path / "vision-gw.conf").exists()
+
+
+def test_a_failed_apply_shows_its_error_lines_not_the_whole_log():
+    log_text = (
+        "[2026-10-04T19:38:13+02:00] samba configured\n"
+        "[2026-10-04T19:38:16+02:00] ERROR: 192.168.2.121 is already used by another host (9C:93:4E:B0:02:77) on the cable in eth1\n"
+        "[2026-10-04T19:38:16+02:00] ingest configured (ftp=true sftp=true dir=/srv/vision_mirror/ingest)\n"
+        "[2026-10-04T19:38:16+02:00] apply-shadow-config: step 'ingest' FAILED\n"
+    )
+    assert server.apply_error(log_text) == (
+        "ERROR: 192.168.2.121 is already used by another host (9C:93:4E:B0:02:77) on the cable in eth1")
+    assert server.apply_error("[t] x\n[t] apply-shadow-config: step 'nas' FAILED\n") == "apply-shadow-config: step 'nas' FAILED"
+    assert server.apply_error("something odd") == "something odd"

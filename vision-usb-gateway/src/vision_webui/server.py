@@ -1250,8 +1250,18 @@ NETWORK_RESULT = Path("/run/vision-network-apply.json")
 NETWORK_APPLY_UNIT = "vision-network-apply"
 # "Answer first, apply two seconds later": a transient timer. AccuracySec, as a
 # timer's default 1 min of slack let it fire anywhere up to a minute late
-# (measured 6 s) while the page follows the unit after 8 s.
+# (measured 6 s) while the page follows the unit after 12 s.
 DEFERRED_RUN = ["systemd-run", "--quiet", "--collect", "--on-active=2", "--timer-property=AccuracySec=100ms"]
+
+
+def apply_error(text: str) -> str:
+    """What a failed apply tells the operator: its ERROR lines, without the log
+    timestamps — not the whole log of every step (the status line showed ~10
+    lines with the reason somewhere in the middle)."""
+    lines = [re.sub(r"^\[[^\]]*\]\s*", "", line) for line in text.splitlines()]
+    errors = [line for line in lines if line.startswith("ERROR")]
+    errors = errors or [line for line in lines if "FAILED" in line]
+    return "\n".join(errors) or text
 
 
 def mgmt_iface(cfg: dict) -> str:
@@ -2049,7 +2059,7 @@ class WebHandler(BaseHTTPRequestHandler):
             code, out, err = run_privileged([f"{gh}/scripts/apply-shadow-config.sh"])
             log(f"apply-config rc={code} out={out} err={err}")
             if code != 0:
-                return self.send_json({"ok": False, "error": err or out}, status=500)
+                return self.send_json({"ok": False, "error": apply_error(err or out)}, status=500)
             return self.send_json({"ok": True})
 
     def handle_webui_password(self):
