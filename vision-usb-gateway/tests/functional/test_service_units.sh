@@ -34,6 +34,10 @@ export ETH1_INTERFACE=eth1   # read by the eval below
 conf=$(eval "${block/cat > \/etc\/NetworkManager\/conf.d\/90-citostore.conf/cat}")
 check "  ... for eth1 only (eth0 keeps its auto profile)" "$(grep '^no-auto-default=' <<<"$conf")" "no-auto-default=interface-name:eth1"
 
+echo "=== the AOI link has no IPv6 (no SLAAC address or default route from that network) ==="
+check "70 sets ipv6.method disabled on eth1" \
+  "$(tr -d '\r' < "$GW/install/70_configure_ingest.sh" | grep -cE '^ +ipv6\.method disabled')" 1
+
 echo
 if ((fail)); then echo "FAILED"; exit 1; fi
 echo "ALL PASSED"

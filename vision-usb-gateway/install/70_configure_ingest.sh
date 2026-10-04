@@ -50,6 +50,10 @@ configure_eth1() {
   if ! nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$con"; then
     nmcli connection add save no type ethernet con-name "$con" ifname "$ETH1_INTERFACE" >/dev/null 2>&1 || true
   fi
+  # IPv6 "disabled", not "ignore": with ignore the kernel still ran SLAAC on
+  # eth1 — seen on a home switch: a ULA address from the router's RA; behind an
+  # IPv6 router also a default route, so IPv6 traffic left through the AOI
+  # link. The AOI talks IPv4 (FTP/SFTP to ETH1_ADDRESS) only.
   # Not "|| true": a value NetworkManager refuses (e.g. an IPv6 address — the
   # WebUI now validates, but a config import can still carry one) left eth1 on
   # its OLD address while Save + Apply reported success. FTP/SFTP are still configured below; the
@@ -61,7 +65,7 @@ configure_eth1() {
       ipv4.addresses "$ETH1_ADDRESS/$ETH1_PREFIX" \
       ipv4.gateway "${ETH1_GATEWAY:-}" \
       ipv4.never-default yes \
-      ipv6.method ignore 2>&1); then
+      ipv6.method disabled 2>&1); then
     log "ERROR: $ETH1_INTERFACE settings $ETH1_ADDRESS/$ETH1_PREFIX gw=${ETH1_GATEWAY:-none} refused: $err"
     ETH1_FAILED=true
     return 0
