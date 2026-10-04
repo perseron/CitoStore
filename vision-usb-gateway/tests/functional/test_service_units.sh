@@ -27,6 +27,13 @@ if command -v systemd-analyze >/dev/null 2>&1; then
   check "systemd-analyze accepts the drop-in" "$out" ""
 fi
 
+echo "=== no NetworkManager auto DHCP profile on the AOI link (eth1) ==="
+block=$(tr -d '\r' < "$GW/install/40_install_services.sh" | sed -n '/^cat > \/etc\/NetworkManager\/conf.d\/90-citostore.conf <<EOF$/,/^EOF$/p')
+check "installer writes the NM conf" "$(grep -c 'no-auto-default=interface-name:' <<<"$block")" 1
+export ETH1_INTERFACE=eth1   # read by the eval below
+conf=$(eval "${block/cat > \/etc\/NetworkManager\/conf.d\/90-citostore.conf/cat}")
+check "  ... for eth1 only (eth0 keeps its auto profile)" "$(grep '^no-auto-default=' <<<"$conf")" "no-auto-default=interface-name:eth1"
+
 echo
 if ((fail)); then echo "FAILED"; exit 1; fi
 echo "ALL PASSED"

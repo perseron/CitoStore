@@ -90,6 +90,20 @@ cat > /etc/sysctl.d/90-citostore.conf <<EOF
 net.ipv4.ip_nonlocal_bind = 1
 EOF
 
+# No auto-generated "Wired connection N" DHCP profile for the AOI link (eth1):
+# 70_configure_ingest owns it (vision-eth1: static, never-default). Without
+# this, NetworkManager put its DHCP default on eth1 at boot before vision-eth1
+# existed — and kept it for good while eth1 was disabled: a lease and a
+# default route from the AOI network competing with eth0's. eth0 keeps its
+# auto profile (network mode relies on it).
+log "installing NetworkManager config: no auto DHCP profile on ${ETH1_INTERFACE:-eth1}"
+mkdir -p /etc/NetworkManager/conf.d
+cat > /etc/NetworkManager/conf.d/90-citostore.conf <<EOF
+# Managed by 40_install_services.sh.
+[main]
+no-auto-default=interface-name:${ETH1_INTERFACE:-eth1}
+EOF
+
 # Re-bind smbd / vsftpd-mirror when the LAN interface's address appears or
 # changes after they started (direct 1-1 link, slow DHCP) — see lan-rebind.sh.
 # Baked here, not generated at boot: the address can arrive before anything
