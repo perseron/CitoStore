@@ -250,6 +250,78 @@ ingest_settings_dir() {
   echo "${INGEST_DIR:-/srv/vision_mirror/ingest}/aoi_settings"
 }
 
+ip2int() { local IFS=. a b c d; read -r a b c d <<< "$1"; echo $(( (10#$a << 24) | (10#$b << 16) | (10#$c << 8) | 10#$d )); }
+
+# Health issues of the AOI link (eth1), one per line, for vision-monitor:
+# - a cable in but no address: NetworkManager refused it (duplicate address
+#   detection: another host on that cable has it — a LAN cable in the AOI
+#   port). Only once it has lasted 20 s, so an activation in progress never
+#   counts;
+# - eth0 on a network overlapping eth1's (the AOI subnet chosen first, the unit
+#   then installed on a LAN that uses it): replies to the AOI can leave via eth0.
+aoi_link_issues() {
+  local since_file=${AOI_NOADDR_FILE:-/run/vision-eth1-noaddr}
+  local if1=${ETH1_INTERFACE:-eth1} addr=${ETH1_ADDRESS:-} prefix=${ETH1_PREFIX:-24}
+  if [[ "${ETH1_ENABLED:-false}" != "true" || ! "$addr" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]]; then
+    rm -f "$since_file"
+    return 0
+  fi
+  if [[ "$(cat "/sys/class/net/$if1/carrier" 2>/dev/null)" == 1 ]] \
+     && ! ip -4 -o addr show dev "$if1" 2>/dev/null | grep -qF " $addr/"; then
+    [[ -f "$since_file" ]] || date +%s > "$since_file" 2>/dev/null || true
+    local since
+    since=$(cat "$since_file" 2>/dev/null || true)
+    [[ "$since" =~ ^[0-9]+$ ]] || since=$(date +%s)
+    if (( $(date +%s) - since >= 20 )); then
+      echo "AOI link ($if1): cable in, but $addr could not be set - already used by another host on that cable?"
+    fi
+  else
+    rm -f "$since_file"
+  fi
+  [[ "$prefix" =~ ^[0-9]+$ ]] && (( prefix <= 32 )) || return 0
+  local cidr p mask
+  while read -r cidr; do
+    [[ "$cidr" =~ ^[0-9.]+/[0-9]+$ ]] || continue
+    p=$(( ${cidr#*/} < prefix ? ${cidr#*/} : prefix ))
+    mask=$(( p == 0 ? 0 : (0xFFFFFFFF << (32 - p)) & 0xFFFFFFFF ))
+    if (( ($(ip2int "${cidr%/*}") & mask) == ($(ip2int "$addr") & mask) )); then
+      echo "eth0 is on $cidr, overlapping the AOI link ($addr/$prefix): give eth1 another subnet"
+      break
+    fi
+  done < <(ip -4 -o addr show dev "${MDNS_INTERFACE:-eth0}" 2>/dev/null | awk '{print $4}')
+  return 0
+}
+
+# sshd drop-in for the service accounts: the ingest user (FTP_USER) and the SMB
+# user (SMB_USER) have passwords — factory default "citostore" — and a nologin
+# shell, which does not stop SSH: `ssh -N -L` as either opened port forwards
+# from the LAN into the AOI network (seen live), and the AOI's SFTP login
+# worked on eth0 too. Both get no SSH login and no forwarding at all, except
+# the AOI's SFTP, and that only on <sftp address> (eth1's). Prints the file;
+# 70_configure_ingest.sh installs it on every boot/apply, the image bake too.
+render_sshd_service_accounts() {  # <ftp user> <smb user> <ingest dir> [sftp address]
+  local ftp=$1 smb=$2 dir=$3 addr=${4:-}
+  echo "# Managed by 70_configure_ingest.sh (render_sshd_service_accounts, scripts/common.sh)."
+  # First match wins per keyword: the SFTP block, when present, must come first.
+  if [[ -n "$addr" ]]; then
+    cat <<EOF
+Match User $ftp LocalAddress $addr
+    ChrootDirectory $dir
+    ForceCommand internal-sftp -d /data
+    PasswordAuthentication yes
+EOF
+  fi
+  cat <<EOF
+Match User $ftp,$smb
+    PasswordAuthentication no
+    PubkeyAuthentication no
+    KbdInteractiveAuthentication no
+    DisableForwarding yes
+    PermitTunnel no
+    PermitTTY no
+EOF
+}
+
 # Single source of truth for the systemd env file: ALWAYS the full key set.
 # Writing a subset (as the NAS step used to) drops the SMB/WebUI/RTC/sync keys
 # other units read via EnvironmentFile. Call after load_config so config values

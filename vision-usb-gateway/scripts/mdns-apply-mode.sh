@@ -62,6 +62,14 @@ spawn_carrier_wait() {
   systemd-run --quiet --collect --no-block --unit="$CARRIER_WAIT_UNIT"     --setenv=GATEWAY_HOME="$GATEWAY_HOME"     /bin/bash "$SCRIPT_DIR/mdns-apply-mode.sh" carrier-wait >/dev/null 2>&1 || true
 }
 
+# apply-network.sh, when a switch to DHCP found no DHCP server: decide again
+# like a re-plug (a late lease -> network, none -> serve DHCP), in the
+# background. Nothing else would — no cable event follows.
+if [[ "$action" == "redecide" ]]; then
+  spawn_carrier_wait
+  exit 0
+fi
+
 # Cable UNPLUGGED: a "down" event with no carrier. (A "down" also fires when the
 # boot decision itself switches the interface from the DHCP client to the shared
 # connection — the cable is still up then, and acting on it would tear down the
@@ -79,9 +87,8 @@ if [[ "$MDNS_DIRECT_DHCP" == "true" && "$action" == "down" ]] && ! has_carrier; 
     log "mDNS: $MDNS_INTERFACE cable unplugged while serving DHCP -> stopping the DHCP server"
     nmcli connection down "$SHARED_CON" >/dev/null 2>&1 || true
   fi
-  # A static IP gets a carrier wait too: if this boot started without a cable,
-  # apply-network.sh could not set it then, and the next cable must get the
-  # fixed address — not NM's DHCP default (see the carrier-wait branch below).
+  # A static IP gets a carrier wait too: the next cable must get the fixed
+  # address — never NM's DHCP default (see the carrier-wait branch below).
   log "mDNS: $MDNS_INTERFACE cable unplugged -> the next cable decides network vs direct again"
   spawn_carrier_wait
   exit 0
@@ -149,11 +156,10 @@ if [[ -z "$routable" && ( "$action" == "boot" || "$action" == "carrier-wait" ) ]
   while :; do
     if [[ "$action" == "carrier-wait" ]]; then
       while ! has_carrier; do sleep 3; done
-      # A fixed IP never probes for, or serves, DHCP. A unit that booted
-      # without a cable never got its static address (apply-network.sh needs
-      # an active eth0 connection), so NM brings eth0 up on its DHCP default:
-      # with no DHCP server on a static-IP factory LAN, the probe below used to
-      # end in "direct" and the unit served 10.10.10.x DHCP onto that LAN.
+      # A fixed IP never probes for, or serves, DHCP: with no DHCP server on a
+      # static-IP factory LAN, the probe below used to end in "direct" and the
+      # unit served 10.10.10.x DHCP onto that LAN. Re-applied here as well, so
+      # the cable gets the static address whatever profile NM brought up.
       if configured_static; then
         log "mDNS: carrier appeared on $MDNS_INTERFACE (static IP configured) -> applying it, no DHCP probe"
         /bin/bash "$SCRIPT_DIR/apply-network.sh" || log "mDNS: applying the static IP failed"

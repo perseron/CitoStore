@@ -283,6 +283,9 @@ soc_temp_c=""
 soc_temp_raw=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo "")
 [[ "$soc_temp_raw" =~ ^[0-9]+$ ]] && soc_temp_c=$((soc_temp_raw / 1000))
 
+# The AOI link (eth1): problems nothing else would show (see aoi_link_issues).
+mapfile -t net_msgs < <(aoi_link_issues)
+
 # Write health JSON for WebUI /api/health (refreshed every monitor cycle)
 write_health() {
   local health_status="ok"
@@ -334,6 +337,11 @@ write_health() {
       issues+=("SoC temperature ${soc_temp_c}C")
     fi
   fi
+  local m
+  for m in "${net_msgs[@]}"; do
+    [[ "$health_status" == "ok" ]] && health_status="warn"
+    issues+=("$m")
+  done
   local out="$1"
   {
     echo '{'

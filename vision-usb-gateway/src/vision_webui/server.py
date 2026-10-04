@@ -1238,105 +1238,124 @@ def units_to_tb(units) -> float | None:
         return None
 
 
-# network.json is the only persistent source of truth (apply-network.sh
-# re-applies it at every boot), so NetworkManager profiles are only ever changed
-# in memory: a plain `nmcli connection modify` wrote the profile to /etc, and on
-# an overlay-off boot (the first boot after a flash) that landed on the eMMC —
-# the static IP then outlived network.json and came back on every boot.
-NMCLI_MODIFY = ["nmcli", "connection", "modify", "--temporary"]
-# Bounded: DHCP activation with no server answering (a direct laptop link)
-# otherwise holds the request for NetworkManager's whole DHCP timeout.
-NMCLI_UP = ["nmcli", "--wait", "20", "connection", "up"]
+# network.json is the persistent truth for the base network (eth0). The WebUI
+# only saves it; scripts/apply-network.sh applies it — at boot, when a cable is
+# plugged into a static-IP unit, and two seconds after the WebUI answered a
+# change. Applied from the request itself, the change took away the address the
+# browser was using, so the reply never arrived (as on eth1); and on a direct
+# laptop link the active profile is the DHCP server itself, which the request
+# rewrote into a DHCP client (no address for the next laptop until a reboot) or
+# into the static address.
+NETWORK_RESULT = Path("/run/vision-network-apply.json")
+NETWORK_APPLY_UNIT = "vision-network-apply"
+# "Answer first, apply two seconds later": a transient timer. AccuracySec, as a
+# timer's default 1 min of slack let it fire anywhere up to a minute late
+# (measured 6 s) while the page follows the unit after 8 s.
+DEFERRED_RUN = ["systemd-run", "--quiet", "--collect", "--on-active=2", "--timer-property=AccuracySec=100ms"]
 
 
-def apply_network_config(
-    iface: str, method: str, address: str, prefix: str, gateway: str, dns: str
-):
-    conn = get_nm_active_connection(iface)
-    if not conn:
-        return 1, "", "no active connection for interface"
-    if method == "auto":
-        args = [
-            *NMCLI_MODIFY,
-            conn,
-            "ipv4.method",
-            "auto",
-            "ipv4.addresses",
-            "",
-            "ipv4.gateway",
-            "",
-            "ipv4.dns",
-            "",
-        ]
-        code, out, err = run_cmd(args)
-        if code != 0:
-            return code, out, err
-        return run_cmd([*NMCLI_UP, conn])
+def mgmt_iface(cfg: dict) -> str:
+    """The management interface the base network setting is for (SMB, WebUI,
+    direct laptop link). Never taken from the request: the form's free-text
+    interface field let "eth1" rewrite the AOI link's profile."""
+    return cfg.get("MDNS_INTERFACE", "eth0") or "eth0"
+
+
+def eth1_network(cfg: dict):
+    """eth1's (AOI link) network when it is enabled, else None."""
+    if cfg.get("ETH1_ENABLED", "false") != "true":
+        return None
     try:
-        ipaddress.ip_address(address)
-        prefix_int = int(prefix)
-        if prefix_int < 1 or prefix_int > 32:
-            raise ValueError("prefix out of range")
-        if gateway:
-            ipaddress.ip_address(gateway)
-    except Exception as exc:
-        return 1, "", f"invalid network parameters: {exc}"
-    addr = f"{address}/{prefix_int}"
-    args = [
-        *NMCLI_MODIFY,
-        conn,
-        "ipv4.method",
-        "manual",
-        "ipv4.addresses",
-        addr,
-        "ipv4.gateway",
-        gateway,
-        "ipv4.dns",
-        dns,
-    ]
-    code, out, err = run_cmd(args)
-    if code != 0:
-        return code, out, err
-    return run_cmd([*NMCLI_UP, conn])
+        prefix = int(cfg.get("ETH1_PREFIX", "24") or "24")
+        return ipaddress.IPv4Network(f"{cfg.get('ETH1_ADDRESS', '')}/{prefix}", strict=False)
+    except ValueError:
+        return None
 
 
-def apply_and_save_network(
-    iface: str, method: str, address: str, prefix: str, gateway: str, dns: str
-) -> tuple[bool, str]:
-    """Apply live, then save network.json for apply-network.sh to re-apply at boot.
+def host_address_error(ip: ipaddress.IPv4Address, net: ipaddress.IPv4Network) -> str:
+    """Why <ip> cannot be an interface's own address in <net> ("" if it can)."""
+    if ip.is_loopback or ip.is_multicast or ip.is_unspecified or ip.is_link_local or ip.is_reserved:
+        return f"{ip} is not a usable host address"
+    if net.prefixlen <= 30 and ip in (net.network_address, net.broadcast_address):
+        return f"{ip} is the network or broadcast address of {net}"
+    return ""
 
-    Returns (ok, message): the error when not ok, otherwise a warning or "".
-    """
-    code, out, err = apply_network_config(iface, method, address, prefix, gateway, dns)
-    log(f"network update iface={iface} rc={code} out={out} err={err}")
-    warning = ""
-    if code != 0:
-        if method != "auto":
-            return False, err or out
-        # Switching to DHCP is valid even when nothing answers right now: on a
-        # direct laptop link there is no DHCP server, activation times out, and
-        # refusing to save left the unit stuck on its static address with no
-        # way back from the WebUI.
-        warning = (
-            f"No DHCP server answered on {iface}. DHCP is saved and takes effect "
-            "after a restart; on a direct laptop link the unit then gives itself "
-            "10.10.10.1."
+
+def validate_network(cfg: dict, data: dict) -> tuple[str, dict]:
+    """("", the network.json record) or (error, {}) for a base network change."""
+    record = {
+        "interface": mgmt_iface(cfg),
+        "method": str(data.get("method", "auto")),
+        "address": "",
+        "prefix": "",
+        "gateway": "",
+        "dns": "",
+    }
+    if record["method"] == "auto":
+        return "", record
+    if record["method"] != "manual":
+        return "method must be auto (DHCP) or manual (static)", {}
+    try:
+        ip = ipaddress.IPv4Address(str(data.get("address", "")).strip())
+        prefix = int(str(data.get("prefix", "")).strip())
+        if not 1 <= prefix <= 32:
+            raise ValueError
+        net = ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False)
+    except ValueError:
+        return "a static address needs an IPv4 address and a prefix of 1-32", {}
+    error = host_address_error(ip, net)
+    if error:
+        return error, {}
+    gateway = str(data.get("gateway", "")).strip()
+    if gateway:
+        try:
+            gw = ipaddress.IPv4Address(gateway)
+        except ValueError:
+            return "the gateway must be an IPv4 address", {}
+        if gw not in net or gw == ip:
+            return f"gateway {gateway} is not another host in {net}", {}
+    servers = [s.strip() for s in str(data.get("dns", "")).split(",") if s.strip()]
+    try:
+        for server in servers:
+            ipaddress.IPv4Address(server)
+    except ValueError:
+        return "DNS servers must be IPv4 addresses, comma-separated", {}
+    aoi = eth1_network(cfg)
+    if aoi is not None and net.overlaps(aoi):
+        return (
+            f"{net} overlaps the AOI link (eth1, {aoi}): eth0 needs a subnet of "
+            "its own — or change eth1's address first.",
+            {},
         )
-    atomic_write(
-        NETWORK_STATE,
-        json.dumps(
-            {
-                "interface": iface,
-                "method": method,
-                "address": address,
-                "prefix": prefix,
-                "gateway": gateway,
-                "dns": dns,
-            }
-        ),
-        0o600,
-    )
-    return True, warning
+    record.update(address=str(ip), prefix=str(prefix), gateway=gateway, dns=",".join(servers))
+    return "", record
+
+
+def read_network_state() -> dict:
+    with contextlib.suppress(OSError, ValueError):
+        data = json.loads(NETWORK_STATE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
+    return {}
+
+
+def get_network_setting(cfg: dict) -> dict:
+    """The saved base network setting (what the form edits) — not the live
+    profile, which on a direct laptop link is the DHCP server's ("shared")."""
+    iface = mgmt_iface(cfg)
+    saved = read_network_state()
+    out = {"interface": iface, "method": "auto", "address": "", "gateway": "", "dns": ""}
+    if saved.get("method") == "manual" and saved.get("address"):
+        out.update(
+            method="manual",
+            address=f"{saved['address']}/{saved.get('prefix') or 24}",
+            gateway=saved.get("gateway") or "",
+            dns=saved.get("dns") or "",
+        )
+    out["live"] = ", ".join(str(i) for i in iface_ipv4(iface))
+    with contextlib.suppress(OSError, ValueError):
+        out["last_apply"] = json.loads(NETWORK_RESULT.read_text(encoding="utf-8"))
+    return out
 
 
 # USB LV size: what lvcreate -V and the resize script both accept. A whole
@@ -1495,8 +1514,11 @@ def validate_eth1(cfg: dict) -> tuple[bool, str]:
         net = ipaddress.IPv4Network(f"{addr}/{prefix}", strict=False)
     except ValueError:
         return False, "ETH1_ADDRESS must be an IPv4 address (e.g. 192.168.100.1)"
-    if prefix <= 30 and ip in (net.network_address, net.broadcast_address):
-        return False, f"ETH1_ADDRESS {addr} is the network or broadcast address of {net}"
+    if prefix == 32:
+        return False, "ETH1_PREFIX /32 leaves no address for the AOI (1-31)"
+    error = host_address_error(ip, net)
+    if error:
+        return False, f"ETH1_ADDRESS: {error}"
     gateway = cfg.get("ETH1_GATEWAY", "")
     if gateway:
         try:
@@ -1727,9 +1749,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 creds = {"username": "", "password": "", "domain": ""}
             return self.send_json(creds)
         if self.path.startswith("/api/network"):
-            cfg = parse_config(load_config_text())
-            iface = cfg.get("SMB_BIND_INTERFACE", "eth0")
-            return self.send_json(get_network_config(iface))
+            return self.send_json(get_network_setting(parse_config(load_config_text())))
         if self.path.startswith("/api/me"):
             token = get_cookie(self.headers, "session")
             expiry = None
@@ -1983,16 +2003,29 @@ class WebHandler(BaseHTTPRequestHandler):
         log(f"config updated: {', '.join(sorted(updates.keys()))}")
         return self.send_json({"ok": True})
 
+    def local_address(self) -> str:
+        """The unit's address this request came in on ("" if unknown)."""
+        try:
+            return str(self.connection.getsockname()[0]).removeprefix("::ffff:")
+        except (OSError, AttributeError, IndexError):
+            return ""
+
+    def came_in_on(self, iface: str) -> bool:
+        local = self.local_address()
+        return bool(local) and local in {str(i.ip) for i in iface_ipv4(iface)}
+
+    @staticmethod
+    def admin_url(address: str) -> str:
+        port = parse_config(load_config_text()).get("WEBUI_PORT", "80") or "80"
+        return f"http://{address}{'' if port == '80' else ':' + port}/admin"
+
     def eth1_move_target(self):
         """None when this request did not come in on eth1's address, else where
         that address goes after the apply: the new address, or "" if eth1 is
         being switched off."""
-        try:
-            local = str(self.connection.getsockname()[0]).removeprefix("::ffff:")
-        except (OSError, AttributeError, IndexError):
+        if not self.came_in_on("eth1"):
             return None
-        if local not in {str(i.ip) for i in iface_ipv4("eth1")}:
-            return None
+        local = self.local_address()
         cfg = parse_config(load_config_text())
         if cfg.get("ETH1_ENABLED", "false") != "true":
             return ""
@@ -2008,16 +2041,11 @@ class WebHandler(BaseHTTPRequestHandler):
                 # the reply would never arrive (seen live: the browser still
                 # waiting after 90 s, the operator not knowing the change took).
                 # Answer first, apply two seconds later in its own unit.
-                code, out, err = run_cmd([
-                    "systemd-run", "--quiet", "--collect", "--on-active=2",
-                    f"{gh}/scripts/apply-shadow-config.sh",
-                ])
+                code, out, err = run_cmd([*DEFERRED_RUN, f"{gh}/scripts/apply-shadow-config.sh"])
                 log(f"apply-config deferred (request on eth1, moving to {target or 'off'}) rc={code} {err}")
                 if code != 0:
                     return self.send_json({"ok": False, "error": err or out}, status=500)
-                port = parse_config(load_config_text()).get("WEBUI_PORT", "80") or "80"
-                where = f"http://{target}{'' if port == '80' else ':' + port}/admin" if target else ""
-                return self.send_json({"ok": True, "reconnect": where})
+                return self.send_json({"ok": True, "reconnect": self.admin_url(target) if target else ""})
             code, out, err = run_privileged([f"{gh}/scripts/apply-shadow-config.sh"])
             log(f"apply-config rc={code} out={out} err={err}")
             if code != 0:
@@ -2111,17 +2139,40 @@ class WebHandler(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length).decode("utf-8")
         data = json.loads(body or "{}")
-        iface = data.get("interface", "eth0")
-        method = data.get("method", "auto")
-        address = data.get("address", "")
-        prefix = data.get("prefix", "24")
-        gateway = data.get("gateway", "")
-        dns = data.get("dns", "")
         with require_lock():
-            ok, message = apply_and_save_network(iface, method, address, prefix, gateway, dns)
-            if not ok:
-                return self.send_json({"ok": False, "error": message}, status=500)
-            return self.send_json({"ok": True, "warning": message} if message else {"ok": True})
+            cfg = parse_config(load_config_text())
+            error, record = validate_network(cfg, data)
+            if error:
+                return self.send_json({"ok": False, "error": error}, status=400)
+            before = read_network_state()
+            on_iface = self.came_in_on(record["interface"])
+            atomic_write(NETWORK_STATE, json.dumps(record), 0o600)
+            # Answer first, apply two seconds later in its own unit (see
+            # NETWORK_RESULT). A fixed unit name: a second change while one is
+            # still being applied is refused instead of racing it.
+            gh = get_gateway_home()
+            code, out, err = run_cmd([
+                *DEFERRED_RUN, f"--unit={NETWORK_APPLY_UNIT}", f"{gh}/scripts/apply-network.sh",
+            ])
+            log(f"network saved: {record['method']} {record['address']}/{record['prefix']}; "
+                f"apply scheduled rc={code} {err}")
+            if code != 0:
+                return self.send_json({
+                    "ok": False,
+                    "error": "Saved, but not applied — a previous network change may still be "
+                             f"in progress; try again shortly ({err or out})",
+                }, status=500)
+            reply = {"ok": True, "since": int(time.time())}
+            if on_iface:
+                # This browser reaches the unit through the address being changed.
+                if record["method"] == "manual":
+                    if record["address"] != self.local_address():
+                        reply["reconnect"] = self.admin_url(record["address"])
+                elif before.get("method") == "manual":
+                    reply["reconnect"] = ""
+                    reply["hint"] = self.admin_url(f"{cfg.get('NETBIOS_NAME', 'CITOSTORE')}.local")
+                    reply["direct"] = self.admin_url(f"{cfg.get('MDNS_DIRECT_SUBNET', '10.10.10')}.1")
+            return self.send_json(reply)
 
     def handle_nas_creds(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -2392,6 +2443,11 @@ class WebHandler(BaseHTTPRequestHandler):
         if err:
             return self.send_json({"ok": False, "error": err}, status=400)
         parsed = parse_config_text(normalized)
+        # The same eth1 checks as a WebUI save: 70_configure_ingest applies
+        # whatever the file says on the next Save + Apply or boot.
+        ok, err = validate_eth1(parsed)
+        if not ok:
+            return self.send_json({"ok": False, "error": f"imported config: {err}"}, status=400)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         # Atomic, and last-good is left alone: it is what health-check rolls back
         # to if this file turns out bad, so it must not become this file too.

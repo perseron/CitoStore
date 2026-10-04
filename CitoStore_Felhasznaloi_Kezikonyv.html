@@ -822,6 +822,24 @@
       </div>
 
       <div class="note">
+        <span class="lab">Csak az eth1-en</span>
+        <p>Az FTP és az SFTP kizárólag az eth1-címen fogad. Az <code>aoiftp</code> (és az
+          SMB-) fiókkal az eth0 felől, vagyis a gyári hálózatról semmilyen SSH/SFTP-belépés
+          vagy alagút nem lehetséges, akkor sem, ha a jelszó még a gyári alapértelmezett.</p>
+      </div>
+
+      <div class="note warn">
+        <span class="lab">Ne a gyári hálózatot dugd az eth1-be</span>
+        <p>Ha az eth1 címét már használja egy másik eszköz a kábel túloldalán
+          (például tévedésből a gyári LAN került az AOI-portba, ahol a
+          <code>192.168.100.1</code> akár a router címe is lehet), a CitoStore
+          <strong>nem veszi fel</strong> a címet, így nem zavarja meg azt a
+          hálózatot. A <em>Save + Apply</em> ilyenkor hibát ad (a másik eszköz
+          MAC-címével), az állapotjelzés pedig figyelmeztet: <em>„cable in, but …
+          could not be set”</em>. Megoldás: a helyes kábel, vagy másik eth1-cím.</p>
+      </div>
+
+      <div class="note">
         <span class="lab">AOI-beállítások mappája</span>
         <p>Az FTP/SFTP-gyökérben a <code>data</code> mellett van egy <code>aoi_settings</code>
           mappa a vizsgáló gép saját beállításainak (az USB-s AOI mappájától független).
@@ -1012,8 +1030,8 @@
       <table>
         <thead><tr><th>Interfész</th><th>Szerep</th><th>Beállítás</th></tr></thead>
         <tbody>
-          <tr><td class="mono">eth0</td><td>Menedzsment + SMB + Mirror FTP</td><td>DHCP (alap) vagy statikus IP a <em>Base network</em> szekcióban. Az <em>Apply Network (live)</em> azonnal érvényesíti. Router nélkül, közvetlen laptop-kábelnél az egység maga oszt címet (<code>10.10.10.1</code>).</td></tr>
-          <tr><td class="mono">eth1</td><td>Ethernet AOI (izolált)</td><td>Statikus, alapból <code>192.168.100.1/24</code>, üres átjáróval. Az <em>Ethernet AOI</em> szekcióban.</td></tr>
+          <tr><td class="mono">eth0</td><td>Menedzsment + SMB + Mirror FTP</td><td>DHCP (alap) vagy statikus IP a <em>Base network</em> szekcióban. Az <em>Apply Network (live)</em> elmenti, és 2 másodperc múlva érvényesíti; ha a böngésző épp a megváltozó címen éri el az egységet, az oldal magától átvált az új címre. Router nélkül, közvetlen laptop-kábelnél az egység maga oszt címet (<code>10.10.10.1</code>) — statikusról DHCP-re váltás után is, kb. egy percen belül, újraindítás nélkül.</td></tr>
+          <tr><td class="mono">eth1</td><td>Ethernet AOI (izolált)</td><td>Statikus, alapból <code>192.168.100.1/24</code>, üres átjáróval. Az <em>Ethernet AOI</em> szekcióban. Az eth1 és az eth0 hálózata nem fedheti egymást: a WebUI ezt elutasítja, és ha később az eth0 kerül egy ilyen hálózatra, az állapotjelzés figyelmeztet.</td></tr>
           <tr><td class="mono">WiFi</td><td>Opcionális</td><td>Kliens vagy hotspot mód.</td></tr>
         </tbody>
       </table>

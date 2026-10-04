@@ -483,7 +483,28 @@ async function applyNetwork() {
     dns: dns,
   };
   const res = await api("/api/network", { method: "POST", body: JSON.stringify(payload) });
-  setStatus(res && res.warning ? "Warning: " + res.warning : "Network updated");
+  // The unit answers first and applies two seconds later: the change may take
+  // away the address this page runs over.
+  if (res.reconnect !== undefined) {
+    if (res.reconnect) {
+      setStatus(`Warning: network saved — the unit moves to ${res.reconnect} (reachable from that network only); this page follows in 8 s`);
+      setTimeout(() => { window.location.href = res.reconnect; }, 8000);
+    } else {
+      setStatus(`Warning: network saved — the unit now takes its address from DHCP, so this connection drops. Reconnect at ${res.hint} — on a direct laptop link at ${res.direct}, after about a minute`);
+    }
+    return;
+  }
+  setStatus("Network saved — applying");
+  for (let i = 0; i < 20; i++) {
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    const net = await api("/api/network", { method: "GET" });
+    const last = net.last_apply;
+    if (last && last.ts >= res.since) {
+      setStatus(last.ok ? `Network: ${last.message}` : `Error: network NOT applied: ${last.message}`);
+      return;
+    }
+  }
+  setStatus("Warning: network saved, but the unit has not reported applying it yet");
 }
 
 async function changeWebuiPassword() {

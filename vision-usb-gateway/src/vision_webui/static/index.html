@@ -225,14 +225,16 @@
     <section>
       <h2>Base network (management)</h2>
       <p class="hint">
-        The primary interface (usually eth0) used for the SMB share and this Web
-        UI. "Apply Network" changes the LIVE IP immediately via NetworkManager
-        &mdash; distinct from the eth1 ingest link above, which is set under
-        "Ethernet AOI".
+        The primary interface (eth0) used for the SMB share and this Web UI.
+        "Apply Network" saves the setting and applies it two seconds later; if
+        this page runs over the address being changed, it follows the unit to
+        its new address. With DHCP and a laptop plugged in directly (no DHCP
+        server), the unit serves the laptop an address itself. Distinct from
+        the eth1 ingest link above, which is set under "Ethernet AOI".
       </p>
       <div class="grid">
-        <label>Interface <input id="NET_IFACE" value="eth0" data-validate="iface">
-          <span class="hint">e.g. eth0</span>
+        <label>Interface <input id="NET_IFACE" value="eth0" readonly>
+          <span class="hint">fixed: the management port</span>
         </label>
         <label>Method
           <select id="NET_METHOD">

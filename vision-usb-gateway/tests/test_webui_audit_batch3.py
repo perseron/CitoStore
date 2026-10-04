@@ -391,6 +391,10 @@ def test_eth1_default_is_fine(eth):
     ({"ETH1_GATEWAY": "10.0.0.1"}, "not another host"),
     ({"ETH1_GATEWAY": "192.168.100.1"}, "not another host"),
     ({"ETH1_ADDRESS": "10.10.10.5"}, "direct laptop link"),
+    ({"ETH1_ADDRESS": "127.0.0.2", "ETH1_PREFIX": "8"}, "not a usable host"),
+    ({"ETH1_ADDRESS": "169.254.10.1", "ETH1_PREFIX": "16"}, "not a usable host"),
+    ({"ETH1_ADDRESS": "224.0.0.5"}, "not a usable host"),
+    ({"ETH1_PREFIX": "32"}, "no address for the AOI"),
 ])
 def test_eth1_values_the_unit_cannot_use_are_refused(eth, kw, part):
     ok, err = _eth1(**kw)
@@ -419,10 +423,12 @@ class _Conn:
         return (self.local, 80, 0, 0)
 
 
-def _apply_req(local):
-    r = Req({})
+def _apply_req(local, payload=None):
+    r = Req(payload or {})
     r.connection = _Conn(local)
-    r.eth1_move_target = types_method(server.WebHandler.eth1_move_target, r)
+    for name in ("eth1_move_target", "local_address", "came_in_on"):
+        setattr(r, name, types_method(getattr(server.WebHandler, name), r))
+    r.admin_url = server.WebHandler.admin_url
     return r
 
 

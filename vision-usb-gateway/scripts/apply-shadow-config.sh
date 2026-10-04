@@ -55,7 +55,7 @@ step mirror-ftp "$GATEWAY_HOME/install/80_configure_mirror_ftp.sh"
 webui_after=$(grep -hE '^(WEBUI_BIND|WEBUI_PORT)=' /etc/vision-gw.conf 2>/dev/null | sort | tr '\n' ' ' || true)
 if [[ "$webui_before" != "$webui_after" ]]; then
   log "WebUI bind/port changed; scheduling out-of-band restart"
-  systemd-run --quiet --collect --on-active=2 systemctl restart vision-webui.service || systemctl restart vision-webui.service || true
+  systemd-run --quiet --collect --on-active=2 --timer-property=AccuracySec=100ms systemctl restart vision-webui.service || systemctl restart vision-webui.service || true
 fi
 
 # last-good = a config that was actually applied without errors; health-check
