@@ -297,6 +297,7 @@ def bydate_links(ino: int) -> list:
 
 
 pending_blank = []
+unlink_failed = {"inodes": set(), "first": ""}  # once per file, not per round
 
 
 def flush_blanks() -> None:
@@ -338,9 +339,17 @@ def delete(path: str, ino: int, nlink: int, root: Path) -> bool:
     for p, stop in [(path, root)] + [(p, bydate_root) for p in links]:
         try:
             os.unlink(p)
-        except OSError:
+        except FileNotFoundError:
             pass
-        remove_empty_ancestors(Path(p), stop)
+        except OSError as exc:
+            # Counted, not swallowed: a delete refused (EACCES) left files that
+            # only looked "kept on purpose" in the blocked alarm.
+            unlink_failed["inodes"].add(ino)
+            unlink_failed["first"] = unlink_failed["first"] or f"{p}: {exc.strerror}"
+        # Not in ingest/data: those folders are the Ethernet AOI's, which may
+        # upload into a fixed one it does not recreate (as for the sweep).
+        if stop != ingest_data:
+            remove_empty_ancestors(Path(p), stop)
     pending_blank.extend(row["id"] for row in rows)
     if len(pending_blank) >= 500:
         flush_blanks()
@@ -413,6 +422,11 @@ if not sweep_only:
         if bydate_root.exists():
             free_space([(c, p, i, n, bydate_root) for c, p, i, n in scan(bydate_root, only_single_link=True)])
     flush_blanks()
+    if unlink_failed["inodes"]:
+        print(
+            f"retention: {len(unlink_failed['inodes'])} file(s) could not be deleted, first: {unlink_failed['first']}",
+            flush=True,
+        )
 
 
 # Protection holds: protected data is never deleted to make room. But retention
@@ -435,7 +449,8 @@ elif not dry and final > ret_lo:
     try:
         tmp = blocked_file.with_name(blocked_file.name + ".tmp")
         tmp.write_text(
-            json.dumps({"usage": final, "target": ret_lo, "protected": len(protected), "ts": now}),
+            json.dumps({"usage": final, "target": ret_lo, "protected": len(protected),
+                        "undeletable": len(unlink_failed["inodes"]), "ts": now}),
             encoding="utf-8",
         )
         tmp.replace(blocked_file)
@@ -443,7 +458,8 @@ elif not dry and final > ret_lo:
         pass
     print(
         f"CRITICAL: mirror at {final}% and retention cannot reach {ret_lo}% — "
-        + (f"{len(protected)} protected folder(s) are keeping the rest. " if protected else
+        + (f"{len(unlink_failed['inodes'])} file(s) could not be deleted. " if unlink_failed["inodes"] else
+           f"{len(protected)} protected folder(s) are keeping the rest. " if protected else
            "nothing it may delete is left. ")
         + "When the mirror fills, USB drives are recycled without their images.",
         flush=True,

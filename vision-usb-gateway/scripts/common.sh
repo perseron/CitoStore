@@ -399,9 +399,10 @@ retention_blocked_issues() {
   local m=${MIRROR_MOUNT:-/srv/vision_mirror}
   local f=${RETENTION_BLOCKED_FILE:-$m/.state/retention-blocked.json}
   [[ -f "$f" ]] || return 0
-  local target prot blocks bfree pct
+  local target prot undel blocks bfree pct
   target=$(sed -n 's/.*"target": *\([0-9]*\).*/\1/p' "$f")
   prot=$(sed -n 's/.*"protected": *\([0-9]*\).*/\1/p' "$f")
+  undel=$(sed -n 's/.*"undeletable": *\([0-9]*\).*/\1/p' "$f")
   [[ "$target" =~ ^[0-9]+$ ]] || target=${RETENTION_LO:-85}
   # Used/total as retention counts it (shutil.disk_usage: blocks - free).
   read -r blocks bfree < <(stat -f -c '%b %f' "$m" 2>/dev/null) || return 0
@@ -410,6 +411,7 @@ retention_blocked_issues() {
   (( pct > target )) || return 0
   local why="nothing else may be deleted"
   [[ "${prot:-0}" =~ ^[1-9] ]] && why="$prot protected folder(s) hold the rest"
+  [[ "${undel:-0}" =~ ^[1-9] ]] && why="$undel file(s) could not be deleted (see the mirror-retention log)"
   echo "$( ((pct >= 95)) && echo error || echo warn)|Mirror ${pct}% full and retention cannot free space below ${target}%: $why. Full, USB drives are recycled WITHOUT their images - unprotect or copy off and remove data."
 }
 

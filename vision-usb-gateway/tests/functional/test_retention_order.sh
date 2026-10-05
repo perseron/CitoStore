@@ -131,6 +131,34 @@ retention
 check "once a day only (stamp)" "$(grep -c 'empty folder' "$TMP/out")" 0
 rm -f "$MIRROR/.state/retention-protected.json"
 
+echo "=== the Ethernet AOI's uploads belong to the FTP user: deleted under the unit's own capability limit ==="
+# mirror-retention.service runs as root with a CapabilityBoundingSet; with
+# CAP_SYS_ADMIN alone root may not unlink in the FTP user's folders (EACCES),
+# and the uploads were kept forever (found live). Run it as limited as there.
+bset() { local s="-all" c; for c in $1; do c=${c#CAP_}; s+=",+${c,,}"; done; echo "$s"; }
+unit_caps=$(sed -n 's/^CapabilityBoundingSet=//p' "$GW/systemd/mirror-retention.service" | tr -d '\r')
+limited() { CONF_FILE=$CONF setpriv --bounding-set="$(bset "$1")" --inh-caps=-all bash "$GW/scripts/mirror-retention.sh" > "$TMP/out" 2>&1 || true; }
+ftp_fill() {
+  fresh_fs 64M; mkdir -p "$MIRROR/ingest/data/LINE0" "$MIRROR/ingest/data/LINE1"
+  ingest_file LINE0/old.bmp       # the oldest: its folder is emptied
+  n=0; while (($(usage) < 93)); do ingest_file "LINE1/u$n.bmp"; n=$((n+1)); done
+  chown -R 1002:1002 "$MIRROR/ingest/data"
+}
+ftp_fill
+limited "$unit_caps"
+check "with the unit's capabilities ($unit_caps): back at the target" "$(( $(usage) <= 85 ))" 1
+check "  ... the oldest uploads went, the newest stayed" "$(exists "$MIRROR/ingest/data/LINE1/u0.bmp" "$MIRROR/ingest/data/LINE1/u$((n-1)).bmp")" "01"
+check "  ... nothing refused" "$(grep -c 'could not be deleted' "$TMP/out")" 0
+check "  ... a folder of the AOI's it emptied is kept (it may upload into it again)" \
+  "$(exists "$MIRROR/ingest/data/LINE0/old.bmp" "$MIRROR/ingest/data/LINE0")" "01"
+ftp_fill
+limited "CAP_SYS_ADMIN"
+check "a refused delete is not hidden: logged" "$(grep -c '[0-9][0-9]* file(s) could not be deleted, first: .*Permission denied' "$TMP/out")" 1
+# shellcheck source=/dev/null
+alarm=$(source <(tr -d '\r' < "$GW/scripts/common.sh"); MIRROR_MOUNT=$MIRROR retention_blocked_issues)
+check "  ... and the banner names it (not \"nothing else may be deleted\")" \
+  "$([[ "$alarm" == *"file(s) could not be deleted"* ]] && echo yes || echo "$alarm")" yes
+
 echo "=== many protected files do not stall it (one walk, not one per deletion) ==="
 fresh_fs 256M 120000
 mkdir -p "$MIRROR/raw/keep" "$MIRROR/raw/new"

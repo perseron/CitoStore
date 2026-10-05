@@ -20,7 +20,9 @@ IOSchedulingClass=best-effort
 IOSchedulingPriority=7
 ReadWritePaths=/srv/vision_mirror /run
 NoNewPrivileges=true
-CapabilityBoundingSet=CAP_SYS_ADMIN
+# DAC_OVERRIDE: the Ethernet AOI's uploads (ingest/data) belong to the FTP
+# user; without it root could not delete them (EACCES) and they were kept forever.
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_OVERRIDE
 
 [Install]
 WantedBy=multi-user.target
