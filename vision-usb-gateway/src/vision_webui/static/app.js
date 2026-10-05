@@ -349,6 +349,8 @@ async function loadStatus() {
     ? `Mirror usage: ${usage.percent} (${usage.used} / ${usage.size})`
     : "Mirror usage: n/a";
   let nvmeLine = "NVMe SMART: n/a";
+  // No SMART at all is an error too: the NVMe holds every image.
+  const nvmeHealth = nvme.health || (nvme.error ? "error" : "");
   if (nvme.error) {
     nvmeLine = `NVMe SMART: ${nvme.error}`;
   } else if (nvme.device) {
@@ -370,18 +372,18 @@ async function loadStatus() {
     const unsafe = nvme.unsafe_shutdowns !== undefined && nvme.unsafe_shutdowns !== null
       ? `${nvme.unsafe_shutdowns}`
       : "n/a";
-    let nvmeStatus = "OK";
-    const mediaNum = Number(nvme.media_errors);
-    const usedNum = Number(nvme.percentage_used);
-    if (!Number.isNaN(mediaNum) && mediaNum > 0) {
-      nvmeStatus = "ERROR";
-    } else if (
-      (!Number.isNaN(usedNum) && usedNum >= 90) ||
-      (nvme.temperature_c !== null && nvme.temperature_c !== undefined && nvme.temperature_c >= 70)
-    ) {
-      nvmeStatus = "WARN";
-    }
-    nvmeLine = `NVMe ${nvme.device}: ${nvmeStatus} | temp ${temp}, ${used}, POH ${poh}, media ${media}, unsafe ${unsafe}`;
+    // Judged on the unit (nvme-health.sh): the drive's own failure flags,
+    // spare blocks, wear, media errors and temperature limits.
+    const nvmeStatus = { ok: "OK", warn: "WARN", error: "ERROR" }[nvme.health] || "n/a";
+    const spare = nvme.available_spare !== null && nvme.available_spare !== undefined
+      ? `, spare ${nvme.available_spare}% (min ${nvme.spare_threshold}%)`
+      : "";
+    const written = nvme.data_units_written_tb !== null && nvme.data_units_written_tb !== undefined
+      && nvme.percentage_used !== null && nvme.percentage_used !== undefined
+      ? ` (${nvme.data_units_written_tb} TB written)`
+      : "";
+    nvmeLine = `NVMe ${nvme.device}: ${nvmeStatus} | temp ${temp}, ${used}${written}${spare}, POH ${poh}, media ${media}, unsafe ${unsafe}`;
+    if (nvme.issues && nvme.issues.length) nvmeLine += `\n${nvme.issues.join("\n")}`;
   }
   document.getElementById("status-network").textContent =
     `Network: ${net.interface || ""} ${net.address || ""} ${net.gateway || ""}\n${timerLine}\n${usageLine}`;
@@ -398,11 +400,11 @@ async function loadStatus() {
   const nvmeEl = document.getElementById("status-nvme");
   nvmeEl.textContent = nvmeLine;
   nvmeEl.classList.remove("status-ok", "status-warn", "status-error");
-  if (nvmeLine.includes("ERROR")) {
+  if (nvmeHealth === "error") {
     nvmeEl.classList.add("status-error");
-  } else if (nvmeLine.includes("WARN")) {
+  } else if (nvmeHealth === "warn") {
     nvmeEl.classList.add("status-warn");
-  } else if (nvmeLine.startsWith("NVMe")) {
+  } else if (nvmeHealth === "ok") {
     nvmeEl.classList.add("status-ok");
   }
   setStatus("OK");

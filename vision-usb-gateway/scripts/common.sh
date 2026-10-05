@@ -292,6 +292,23 @@ aoi_link_issues() {
   return 0
 }
 
+# The NVMe SMART verdict for the health banner, one "<warn|error>|<message>"
+# per line: what nvme-health.sh (every 10 min) found, and whether it is still
+# reading at all — a verdict older than 30 min, or none 30 min after boot, means
+# nobody is looking at the drive any more.
+nvme_health_issues() {
+  local f=${NVME_ISSUES_FILE:-/run/vision-nvme.issues} max=${NVME_HEALTH_MAX_AGE_SEC:-1800} age up
+  if [[ ! -f "$f" ]]; then
+    up=$(cut -d. -f1 /proc/uptime 2>/dev/null || echo 0)
+    (( up < max )) || echo "warn|NVMe SMART has not been read since boot"
+    return 0
+  fi
+  age=$(( $(date +%s) - $(stat -c %Y "$f" 2>/dev/null || echo 0) ))
+  (( age <= max )) || echo "warn|NVMe SMART last read $(( age / 60 )) min ago"
+  cat "$f"
+  return 0
+}
+
 # sshd drop-in for the service accounts: the ingest user (FTP_USER) and the SMB
 # user (SMB_USER) have passwords — factory default "citostore" — and a nologin
 # shell, which does not stop SSH: `ssh -N -L` as either opened port forwards

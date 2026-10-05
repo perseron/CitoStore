@@ -285,6 +285,8 @@ soc_temp_raw=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo "")
 
 # The AOI link (eth1): problems nothing else would show (see aoi_link_issues).
 mapfile -t net_msgs < <(aoi_link_issues)
+# The NVMe's SMART verdict ("<warn|error>|<message>", see nvme_health_issues).
+mapfile -t nvme_msgs < <(nvme_health_issues)
 
 # Write health JSON for WebUI /api/health (refreshed every monitor cycle)
 write_health() {
@@ -341,6 +343,15 @@ write_health() {
   for m in "${net_msgs[@]}"; do
     [[ "$health_status" == "ok" ]] && health_status="warn"
     issues+=("$m")
+  done
+  for m in "${nvme_msgs[@]}"; do
+    [[ "$m" == *"|"* ]] || continue
+    if [[ "${m%%|*}" == "error" ]]; then
+      health_status="error"
+    elif [[ "$health_status" == "ok" ]]; then
+      health_status="warn"
+    fi
+    issues+=("${m#*|}")
   done
   local out="$1"
   {

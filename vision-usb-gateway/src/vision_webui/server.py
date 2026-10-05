@@ -1202,7 +1202,7 @@ def get_nvme_smart() -> dict:
             except json.JSONDecodeError:
                 return {"error": "failed to parse nvme cache"}
             if payload.get("status") != "ok":
-                return {"error": payload.get("error", "nvme smart unavailable")}
+                return {"error": payload.get("error", "nvme smart unavailable"), "health": "error"}
             smart = payload.get("smart", {})
             device = payload.get("device", "")
             temp = smart.get("temperature")
@@ -1211,18 +1211,38 @@ def get_nvme_smart() -> dict:
                 temp_c = round(temp - 273.15, 1)
             elif isinstance(temp, (int, float)):
                 temp_c = temp
+            # nvme-cli's JSON key is percent_used; percentage_used (its text
+            # output's name) was read here, so the wear level never showed.
+            used = smart_int(smart.get("percent_used", smart.get("percentage_used")))
             return {
                 "device": device,
+                "ts": payload.get("ts", ""),
+                # Judged by nvme-health.sh (critical warning flags, spare, wear,
+                # media errors, the drive's own temperature limits).
+                "health": payload.get("health", "unknown"),
+                "issues": [msg for _, msg in payload.get("issues", [])],
                 "temperature_c": temp_c,
-                "percentage_used": smart.get("percentage_used"),
+                "percentage_used": used,
+                "available_spare": smart_int(smart.get("avail_spare")),
+                "spare_threshold": smart_int(smart.get("spare_thresh")),
                 "data_units_read": smart.get("data_units_read"),
                 "data_units_written": smart.get("data_units_written"),
                 "data_units_written_tb": units_to_tb(smart.get("data_units_written")),
-                "power_on_hours": smart.get("power_on_hours"),
-                "unsafe_shutdowns": smart.get("unsafe_shutdowns"),
-                "media_errors": smart.get("media_errors"),
+                "power_on_hours": smart_int(smart.get("power_on_hours")),
+                "unsafe_shutdowns": smart_int(smart.get("unsafe_shutdowns")),
+                "media_errors": smart_int(smart.get("media_errors")),
             }
     return {"error": "nvme smart cache not available"}
+
+
+def smart_int(value) -> int | None:
+    """nvme-cli prints big counters as "2,752,848" strings."""
+    if isinstance(value, str):
+        value = value.replace(",", "").strip()
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def units_to_tb(units) -> float | None:

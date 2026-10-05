@@ -698,7 +698,7 @@
           <tr><td>Hálózat</td><td>Az interfészek címei.</td></tr>
           <tr><td>USB</td><td>Az aktív USB-kötet és telítettsége.</td></tr>
           <tr><td>Sync</td><td>A legutóbbi szinkron-ciklus eredménye.</td></tr>
-          <tr><td>NVMe</td><td>SSD-egészség: hőmérséklet, kopás (%), üzemórák, médiahibák, váratlan leállások. <em>WARN</em>: ≥ 70 °C vagy ≥ 90% kopás; <em>ERROR</em>: médiahiba.</td></tr>
+          <tr><td>NVMe</td><td>SSD-egészség (SMART, 10 percenként): hőmérséklet, kopás (%), kiírt TB, tartalékblokkok, üzemórák, médiahibák, váratlan leállások. <em>ERROR</em> (a figyelmeztető sávban is): a meghajtó saját hibajelzése (megbízhatóság romlott, csak olvasható mód, tartalék a küszöb alatt), kritikus hőmérséklet, vagy a SMART nem olvasható — <strong>cseréld az SSD-t</strong>. <em>WARN</em>: ≥ 90% kopás, médiahiba, a meghajtó saját figyelmeztető hőmérséklete (pl. 90 °C) felett, vagy 30 perce nincs friss SMART-adat. A váratlan leállások száma önmagában nem hiba (áramkimaradás-tűrő kialakítás).</td></tr>
           <tr><td>USB health</td><td>Az USB-kötetek legutóbbi fájlrendszer-ellenőrzésének eredménye.</td></tr>
           <tr><td>NAS</td><td>A legutóbbi NAS-replikáció állapota (ha be van kapcsolva).</td></tr>
           <tr><td>Time</td><td>Rendszeridő, RTC-állapot.</td></tr>
