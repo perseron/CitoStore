@@ -1,6 +1,9 @@
 [Unit]
 Description=Offline Maintenance for %i
 After=local-fs.target
+# Never without the mirror: the export would go into the bare mount point (the
+# RAM root) and the drive then be formatted — its images gone at the next boot.
+RequiresMountsFor=/srv/vision_mirror
 
 [Service]
 Type=oneshot

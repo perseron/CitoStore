@@ -49,6 +49,8 @@ case \"\$1\" in
   start) [[ \"\$*\" == *vision-sync.service* && -f $TMP/sync_fails ]] && exit 1; exit 0 ;;
   *) exit 0 ;;
 esac"
+# The offline export of each LV before it goes (anything else: the real python3).
+stub python3 "if [[ \"\$1 \$2\" == \"-m vision_sync.sync\" ]]; then echo \"export \${@: -2:1}\" >> $TMP/calls; exit 0; fi; exec /usr/bin/python3 \"\$@\""
 export PATH="$TMP/bin:$PATH"
 export GATEWAY_HOME=$FAKE
 
@@ -128,6 +130,7 @@ check "new size in the shadow (survives the reboot)" "$(grep -c '^USB_LV_SIZE=20
 check "  ... and in /etc" "$(grep -c '^USB_LV_SIZE=20G$' /etc/vision-gw.conf)" 1
 check "sync timer restarted" "$(grep -c 'systemctl start vision-sync.timer' "$TMP/calls")" 1
 check "no self-heal needed" "$(grep -c selfheal "$TMP/calls")" 0
+check "each LV exported in full before it is removed" "$(grep -E "^(export|lvremove)" "$TMP/calls" | cut -d" " -f1 | paste -sd" ")" "export lvremove export lvremove export lvremove"
 
 echo "=== resize: an LV that cannot be removed ==="
 base_conf

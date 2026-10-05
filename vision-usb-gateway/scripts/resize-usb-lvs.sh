@@ -206,10 +206,23 @@ if [[ "$DRY_RUN" != "true" ]]; then
   done
 fi
 
+[[ "$DRY_RUN" == "true" ]] || usb_lock || exit 1
+
 for lv in "${LVS[@]}"; do
   ensure_not_active "$lv"
   dev="/dev/$VG/$lv"
   log "recreate $dev"
+  if [[ "$DRY_RUN" != "true" && "$SKIP_SYNC" != "true" ]]; then
+    # Every image on it, now that the AOI no longer writes to it: the one live
+    # sync above copies only what it has seen settle (first-seen files wait a
+    # cycle) in the folders it scans that cycle — the rest was destroyed with
+    # the LV, along with whatever the AOI wrote during the resize.
+    log "exporting $lv to the mirror before it is recreated"
+    if ! python3 -m vision_sync.sync --config /etc/vision-gw.conf --dev "$dev" --offline; then
+      echo "export of $lv to the mirror failed; stopping before it is removed" >&2
+      exit 1
+    fi
+  fi
   if [[ "$DRY_RUN" != "true" ]]; then
     # Not "|| true": an LV that cannot be removed (still open) made lvcreate
     # fail with "already exists" — say what actually went wrong.
@@ -232,6 +245,7 @@ for lv in "${LVS[@]}"; do
         umount "$persist_mnt" || true
       fi
     fi
+    rm -f "$(usb_maint_marker "$lv")"   # exported above, freshly made now
   fi
 done
 

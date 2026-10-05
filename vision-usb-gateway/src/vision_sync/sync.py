@@ -1,4 +1,7 @@
 import argparse
+import errno
+import fcntl
+import hashlib
 import json
 import os
 import shutil
@@ -15,6 +18,13 @@ from .fsops import SKIP_DIRS, atomic_copy, compute_manifest, iter_files, safe_jo
 ACTIVE_FILE = "/run/vision-usb-active"
 USB_USAGE_FILE = "/run/vision-usb-usage.json"
 SYNC_INDEX_VERSION = 1
+# Held by the rotator, offline-maint, clone and resize while they switch,
+# export or format USB LVs (see scripts/common.sh usb_lock).
+USB_LOCK_FILE = "/run/vision-usb.lock"
+# What a file may be called on the mirror (ext4: 255 bytes). FAT long names
+# reach 255 UTF-16 characters (~765 bytes); the copy also adds a temp prefix
+# and suffix, and a collision adds _<mtime>_<hash>.
+NAME_BYTES_MAX = 180
 
 
 def log(msg: str) -> None:
@@ -725,7 +735,14 @@ def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> bool:
     sync_dir(persist_src, cfg.usb_persist_backing)
 
     next_dev = next_lv(active_dev, cfg.lvm_vg, cfg.usb_lvs)
-    if next_dev:
+    lock = usb_lock_nowait()
+    if next_dev and lock is None:
+        # The rotator/offline-maint/clone/resize is at work on the USB LVs —
+        # possibly formatting this very drive, which a read-write mount here
+        # (unseen by them: this unit's private mount namespace) broke. The
+        # rotator checks and repairs the next drive's folder before switching.
+        log(f"persist preseed of {next_dev} skipped: USB maintenance in progress")
+    elif next_dev:
         persist_mnt = Path("/mnt/vision_persist_next")
         try:
             mount_rw(next_dev, persist_mnt)
@@ -735,6 +752,8 @@ def maybe_sync_persist(cfg, mount_root: Path, active_dev: str) -> bool:
             log(f"persist preseed failed for {next_dev}: {exc}")
         finally:
             umount(persist_mnt)
+    if lock is not None:
+        lock.close()
 
     write_manifest_state(manifest_path, new_digest, 0, "active")
     return True
@@ -784,7 +803,7 @@ def _process_file(
     date_path = bydate_dir / dt.strftime("%Y/%m/%d")
 
     raw_subdir = safe_join(raw_dir, rel.parent)
-    name = rel.name
+    name = fit_name(rel.name)
     stem = Path(name).stem
     suffix = Path(name).suffix
     collision = (raw_subdir / name).exists()
@@ -808,6 +827,10 @@ def _process_file(
 
     date_path.mkdir(parents=True, exist_ok=True)
     link_path = date_path / final_path.name
+    # Same name, same day, another folder (S1/BOARD001.jpg, S2/BOARD001.jpg):
+    # the second image had no bydate entry, and its row named the first one's.
+    if link_path.exists() and not _same_file(link_path, final_path):
+        link_path = date_path / f"{Path(final_path.name).stem}_{digest[:8]}{Path(final_path.name).suffix}"
     if not link_path.exists():
         os.link(final_path, link_path)
 
@@ -818,24 +841,87 @@ def _process_file(
         log(f"sync progress: synced={counters['synced']} scanned={counters['scanned']}")
 
 
+def fit_name(name: str) -> str:
+    """The mirror's name for a file: as on the drive, unless too long for
+    ext4 — then shortened, with a hash of the full name so it stays unique.
+    Too long, the copy failed with ENAMETOOLONG on every cycle."""
+    if len(name.encode("utf-8")) <= NAME_BYTES_MAX:
+        return name
+    suffix = Path(name).suffix
+    if len(suffix.encode("utf-8")) > 16:
+        suffix = ""
+    tag = "~" + hashlib.sha1(name.encode("utf-8")).hexdigest()[:8]
+    budget = NAME_BYTES_MAX - len(tag.encode("utf-8")) - len(suffix.encode("utf-8"))
+    stem = Path(name).stem if suffix else name
+    stem = stem.encode("utf-8")[:budget].decode("utf-8", "ignore")
+    return f"{stem}{tag}{suffix}"
+
+
+def usb_lock_nowait():
+    """The USB-LV lock (scripts/common.sh usb_lock), if free right now; the
+    open file holds it until closed. None when someone else has it."""
+    try:
+        fh = open(USB_LOCK_FILE, "a")
+    except OSError:
+        return None
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+class MirrorFull(Exception):
+    """The mirror ran out of space in the middle of a cycle."""
+
+
 def check_mirror_free_space(cfg) -> bool:
     try:
         usage = shutil.disk_usage(str(cfg.mirror_mount))
         free_mb = usage.free // (1024 * 1024)
         used_pct = int(usage.used * 100 / usage.total) if usage.total > 0 else 0
+        # Asked for first: the low-space return below used to come before it,
+        # so the sync never asked retention exactly when it was most needed.
+        # --no-block: a full retention run (minutes) held the cycle — and its
+        # snapshot — until it finished.
+        if used_pct >= cfg.mirror_retention_trigger_pct or free_mb < cfg.mirror_free_min_mb:
+            threshold = cfg.mirror_retention_trigger_pct
+            log(f"mirror usage {used_pct}% (threshold {threshold}%), {free_mb}MB free: triggering retention")
+            subprocess.run(
+                ["/bin/systemctl", "start", "--no-block", "mirror-retention.service"],
+                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            )
         if free_mb < cfg.mirror_free_min_mb:
             log(f"mirror free space low: {free_mb}MB < {cfg.mirror_free_min_mb}MB, skipping sync")
             return False
-        if used_pct >= cfg.mirror_retention_trigger_pct:
-            threshold = cfg.mirror_retention_trigger_pct
-            log(f"mirror usage {used_pct}% >= {threshold}%, triggering retention")
-            subprocess.run(
-                ["/bin/systemctl", "start", "mirror-retention.service"],
-                check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            )
     except OSError as exc:
         log(f"mirror free space check failed: {exc}")
     return True
+
+
+def record_not_saved(cfg, dev: str, reason: str, count: int | None = None) -> None:
+    """A drive recycled (formatted) without all its images on the mirror —
+    policy: the AOI keeps a drive to write to (availability first), but the
+    loss is never silent: vision-monitor shows it in the health banner."""
+    entry = {"ts": int(time.time()), "dev": dev, "reason": reason}
+    if count is not None:
+        entry["files"] = count
+    path = cfg.state_dir / "export-not-saved.json"
+    try:
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(entry), encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        log(f"could not record the unsaved export: {exc}")
+    log(f"EXPORT INCOMPLETE: {dev}: {reason}")
 
 
 def _outside_top(path: Path, mount_root: Path, skip_top: frozenset) -> bool:
@@ -848,12 +934,36 @@ def _outside_top(path: Path, mount_root: Path, skip_top: frozenset) -> bool:
     return not (parts and parts[0] in skip_top)
 
 
+def _process_or_skip(path: Path, st, mount_root: Path, cfg, conn, raw_dir, bydate_dir, now,
+                     counters: dict, force_stable: bool) -> None:
+    """One file. A file that cannot be copied is skipped, not fatal: it used to
+    abort the whole cycle and roll back every copy it had recorded, every
+    cycle — a damaged FAT entry (EIO after a power cut), a name too long for
+    ext4 or a name clash stopped all capture until the next rotation, and the
+    files before it were copied again and again as duplicates."""
+    try:
+        _process_file(path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now, counters, force_stable)
+    except (OSError, ValueError) as exc:
+        if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+            raise MirrorFull(str(exc)) from exc
+        counters["failed"] += 1
+        if counters["failed"] <= 5:
+            log(f"sync: skipped {path.relative_to(mount_root)}: {exc}")
+        return
+    # Recorded as it goes: a cycle cut short (power, stop, timeout) no longer
+    # loses the record of what it copied — the next one copied it all again.
+    if counters["synced"] and counters["synced"] % 100 == 0:
+        conn.commit()
+
+
 def stable_and_copy(
     cfg, mount_root: Path, conn, force_stable: bool = False, full_scan: bool = False,
     skip_top: frozenset = frozenset(),
-) -> None:
+) -> dict | None:
+    """Copy what is new; the counters, or None when nothing could be copied
+    (mirror out of space)."""
     if not check_mirror_free_space(cfg):
-        return
+        return None
     raw_dir = cfg.mirror_mount / "raw"
     bydate_dir = cfg.mirror_mount / "bydate"
     now = int(time.time())
@@ -861,6 +971,8 @@ def stable_and_copy(
         "scanned": 0,
         "synced": 0,
         "skipped_large": 0,
+        "failed": 0,
+        "mirror_full": False,
         "log_every": max(0, int(getattr(cfg, "sync_log_every", 0))),
     }
     selected_roots, scan_plan = select_scan_roots(cfg, mount_root, full_scan=full_scan)
@@ -898,7 +1010,7 @@ def stable_and_copy(
         # Every level from the root down to SYNC_SCAN_DEPTH, non-recursive.
         for shallow in shallow_roots:
             for path, st in iter_root_files(shallow):
-                _process_file(
+                _process_or_skip(
                     path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now,
                     counters, force_stable,
                 )
@@ -911,16 +1023,21 @@ def stable_and_copy(
             for path, st in iter_files(root):
                 if st.st_mtime > newest:
                     newest = int(st.st_mtime)
-                _process_file(
+                _process_or_skip(
                     path, st, mount_root, cfg, conn, raw_dir, bydate_dir, now,
                     counters, force_stable,
                 )
             if newest:
                 observed_mtimes[root_name] = newest
-        conn.commit()
+    except MirrorFull as exc:
+        # Keep what was copied; retention is asked to make room.
+        counters["mirror_full"] = True
+        log(f"sync: mirror full mid-cycle ({exc}); stopping here")
+        check_mirror_free_space(cfg)
     except Exception:
         conn.rollback()
         raise
+    conn.commit()
     # Feed the depth-proof hotness signal back for the next selection (the
     # live path only — the offline export has no next cycle).
     if not full_scan:
@@ -929,10 +1046,19 @@ def stable_and_copy(
         f"sync summary: scanned={counters['scanned']}"
         f" synced={counters['synced']}"
         f" skipped_large={counters['skipped_large']}"
+        f" failed={counters['failed']}"
     )
+    return counters
 
 
 def run(cfg, dev_override: str | None, offline: bool) -> None:
+    # The mirror mount is nofail: after a failed fsck the unit boots without
+    # it, and the sync wrote a fresh vision.db and the images into the bare
+    # mount point — the RAM root, gone at the next reboot — while offline-maint
+    # "exported" there and then formatted the drive. Nothing is copied then;
+    # exit non-zero, so offline-maint keeps the drive's images too.
+    if not os.path.ismount(cfg.mirror_mount):
+        raise SystemExit(f"mirror not mounted at {cfg.mirror_mount}: nothing copied")
     conn = init_db(cfg.state_dir / "vision.db")
 
     if dev_override:
@@ -949,9 +1075,18 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
             # full_scan this inherited the live hot/cold 2-dir selection and
             # the subsequent reformat silently destroyed everything else —
             # measured 46% total loss under the real nested AOI layout.
-            stable_and_copy(
+            result = stable_and_copy(
                 cfg, cfg.snapshot_mount, conn, force_stable=True, full_scan=True
             )
+            # The drive is formatted next. Out of space — retention blocked by
+            # protected folders — it used to return silently with nothing
+            # copied and the images were simply gone.
+            if result is None:
+                record_not_saved(cfg, dev, "the mirror is full: nothing could be copied")
+            elif result["mirror_full"]:
+                record_not_saved(cfg, dev, "the mirror filled up during the copy", result["synced"])
+            elif result["failed"]:
+                log(f"offline export: {result['failed']} unreadable file(s) on {dev} not copied")
         finally:
             umount(cfg.snapshot_mount)
         return
@@ -965,7 +1100,12 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
         sync_manifest = None
         scan_persist = True
         if not offline:
-            scan_persist = maybe_sync_persist(cfg, cfg.snapshot_mount, active)
+            # The settings backup failing (rsync 23 on a damaged FAT entry)
+            # must not stop the image copy: it raised, every cycle, before it.
+            try:
+                scan_persist = maybe_sync_persist(cfg, cfg.snapshot_mount, active)
+            except Exception as exc:
+                log(f"persist: settings backup failed ({exc}); images are copied anyway")
             sync_manifest = maybe_compute_sync_manifest(cfg, cfg.snapshot_mount)
             if sync_manifest:
                 digest, count, unchanged, mode = sync_manifest

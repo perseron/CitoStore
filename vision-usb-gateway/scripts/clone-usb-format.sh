@@ -52,6 +52,9 @@ if [[ "$CONFIRM" != "true" ]]; then
   exit 1
 fi
 
+# Not while a rotation or an export is at work on the drives (usb_lock).
+usb_lock || exit 1
+
 # Remove stale LVM snapshots that reference our USB LVs.  Orphaned
 # snapshots (e.g. usb_bf_*, usb_sync_snap) keep LVs in snapshot-origin
 # mode and prevent clean reformatting / offline-maint.
@@ -91,6 +94,15 @@ for lv in "${USB_LVS[@]}"; do
   dev="/dev/$VG/$lv"
   if [[ "$dev" == "$active" ]]; then
     continue
+  fi
+  # A drive whose images were never exported (usb_maint_marker): export them
+  # first — formatting it here destroyed them. Kept as it is if that fails.
+  if [[ -e "$(usb_maint_marker "$lv")" ]]; then
+    log "$lv: images not exported yet; exporting before formatting"
+    if ! python3 -m vision_sync.sync --config /etc/vision-gw.conf --dev "$dev" --offline; then
+      log "ERROR: export of $lv failed; $lv left as it is"
+      continue
+    fi
   fi
 
   # Discard all thin-pool blocks so old data is truly gone.
@@ -146,6 +158,7 @@ for lv in "${USB_LVS[@]}"; do
   st=$(usb_persist_write "$dev" "${USB_PERSIST_BACKING:-/srv/vision_mirror/.state/$USB_PERSIST_DIR}" ensure) \
     || st="not created (mount failed)"
   log "$lv: $USB_PERSIST_DIR folder $st"
+  rm -f "$(usb_maint_marker "$lv")"
 done
 
 log "clone complete"

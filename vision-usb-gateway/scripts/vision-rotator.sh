@@ -7,6 +7,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 require_root
 load_config "${CONF_FILE:-}"
 
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 STATE_FILE=/run/vision-rotate.state
 ACTIVE_FILE=/run/vision-usb-active
 
@@ -157,43 +158,65 @@ persist_check_next() {
   fi
 }
 
-if [[ ! -f "$STATE_FILE" ]]; then
-  exit 0
-fi
-
-state=$(grep '^state=' "$STATE_FILE" | cut -d= -f2)
-active=$(cat "$ACTIVE_FILE" 2>/dev/null || true)
-
-if [[ -z "$state" || -z "$active" ]]; then
-  exit 1
-fi
-
-do_switch=false
-if [[ "$state" == "panic" ]]; then
-  do_switch=true
-elif [[ "$state" == "rotate_pending" ]]; then
-  if within_window; then
-    do_switch=true
+rotation_due() {
+  [[ -f "$STATE_FILE" ]] || return 1
+  state=$(grep '^state=' "$STATE_FILE" | cut -d= -f2)
+  active=$(cat "$ACTIVE_FILE" 2>/dev/null || true)
+  [[ -n "$state" && -n "$active" ]] || return 1
+  if [[ "$state" == "panic" ]]; then
+    return 0
   fi
-fi
+  [[ "$state" == "rotate_pending" ]] && within_window
+}
 
-if [[ "$do_switch" != "true" ]]; then
-  exit 0
-fi
+rotation_due || exit 0
+
+# One switch/export/format at a time (usb_lock, common.sh) — and decided again
+# once held: a rotation that ran meanwhile may have done this one's work.
+usb_lock
+rotation_due || exit 0
 
 old_lv=$(basename "$active")
-log "switching USB gadget from $old_lv"
+next_dev=$(next_lv "$active")
+next_name=$(basename "$next_dev")
+log "switching USB gadget from $old_lv to $next_name"
 
-if persist_enabled; then
-  next_dev=$(next_lv "$active")
-  if [[ -n "$next_dev" ]]; then
-    persist_check_next "$next_dev"
+# The next drive must be ready before the AOI gets it:
+# - its last export/reformat finished (interrupted: power, timeout, error) —
+#   otherwise the AOI got its old images back with 10-20% free;
+# - it holds a FAT at all (a power cut between discard and mkfs left none,
+#   and an unformatted drive was handed to the AOI).
+# Both are done here, on a drive the AOI does not see. If either fails the
+# switch is not made: the AOI keeps its current drive.
+if [[ -e "$(usb_maint_marker "$next_name")" ]]; then
+  log "$next_name: its last export/reformat did not finish; finishing it first"
+  if ! /bin/bash "$SCRIPT_DIR/offline-maint.sh" "$next_name"; then
+    log "ERROR: $next_name could not be exported/reformatted; staying on $old_lv"
+    exit 1
+  fi
+elif ! usb_has_fat "$next_dev"; then
+  log "$next_name holds no FAT filesystem; formatting it first"
+  if ! /bin/bash "$SCRIPT_DIR/offline-maint.sh" "$next_name" --format-only; then
+    log "ERROR: $next_name could not be formatted; staying on $old_lv"
+    exit 1
   fi
 fi
 
-/bin/bash "$(dirname "${BASH_SOURCE[0]}")/usb-gadget.sh" switch
+if persist_enabled; then
+  # A failure here (a damaged FAT entry: EIO, rsync 23) only means the
+  # settings folder was not checked; under set -e it aborted every rotation,
+  # panic included, and the AOI's drive filled to 100%.
+  persist_check_next "$next_dev" || log "persist check of $next_name failed; switching anyway"
+fi
 
-systemctl start "offline-maint@${old_lv}.service"
+# Marked BEFORE the switch: whatever happens after it, the old drive's images
+# get exported before the drive is used again.
+touch "$(usb_maint_marker "$old_lv")" || log "WARNING: could not mark $old_lv for export"
+
+/bin/bash "$SCRIPT_DIR/usb-gadget.sh" switch
 
 echo "state=ok" > "$STATE_FILE"
+# The export takes minutes; the lock is offline-maint's from here.
+usb_unlock
+systemctl start "offline-maint@${old_lv}.service"
 log "rotation complete"

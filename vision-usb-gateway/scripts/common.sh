@@ -242,6 +242,49 @@ usb_persist_write() {
   echo "$status"
 }
 
+# One switch / export / format of the USB LVs at a time: the rotator (the
+# sync's and "Rotate USB Now"'s), offline-maint, Clone USB Format and resize.
+# Without it two rotations (an automatic one, then the button) let the
+# offline-maint of the first format the drive the second had just handed to
+# the AOI. Waits up to $1 seconds (default 25 min); held on fd 8 until the
+# script exits. A child run by a holder (VISION_USB_LOCK_HELD=1) shares it.
+# The sync's settings preseed only takes it when free (vision_sync).
+USB_LOCK_FILE=/run/vision-usb.lock
+usb_lock() {
+  [[ "${VISION_USB_LOCK_HELD:-}" == 1 ]] && return 0
+  exec 8>>"$USB_LOCK_FILE"
+  if ! flock -w "${1:-1500}" 8; then
+    log "USB drives busy: another switch/export/format still running"
+    return 1
+  fi
+  export VISION_USB_LOCK_HELD=1
+}
+usb_unlock() {
+  [[ "${VISION_USB_LOCK_HELD:-}" == 1 ]] || return 0
+  flock -u 8 2>/dev/null || true
+  exec 8>&-
+  unset VISION_USB_LOCK_HELD
+}
+
+# Marker: this LV left the AOI with images not yet exported to the mirror.
+# Set by the rotator BEFORE the switch, cleared by offline-maint once exported
+# and reformatted. A power cut, a timeout or an error in between used to leave
+# the old images on the drive with nothing to finish the job — two rotations
+# later the AOI got it back 80-90% full. Health-check (boot) and the rotator
+# (before switching to it) finish it.
+usb_maint_marker() {  # <lv name>
+  echo "${MIRROR_MOUNT:-/srv/vision_mirror}/.state/usb-maint-pending.$1"
+}
+
+# True if the LV holds a FAT the AOI can use (blkid's verdict on its
+# filesystem device). A power cut between discard/create and mkfs left LVs
+# with none — exported anyway, and nothing ever reformatted them.
+usb_has_fat() {  # <lv device>
+  local fs
+  fs=$(resolve_usb_device "$1" 2>/dev/null || echo "$1")
+  [[ "$(blkid -p -o value -s TYPE "$fs" 2>/dev/null)" == vfat ]]
+}
+
 # The Ethernet AOI's own settings folder: in the FTP/SFTP root next to data/,
 # separate from the USB drives' aoi_settings (a unit can serve both kinds of
 # AOI). Retention prunes only data/, so nothing here is deleted to make room;
@@ -307,6 +350,20 @@ nvme_health_issues() {
   (( age <= max )) || echo "warn|NVMe SMART last read $(( age / 60 )) min ago"
   cat "$f"
   return 0
+}
+
+# A USB drive recycled without its images on the mirror (written by the sync's
+# offline export: mirror full). Shown for a week: "<level>|<message>".
+export_loss_issues() {
+  local f=${EXPORT_LOSS_FILE:-${MIRROR_MOUNT:-/srv/vision_mirror}/.state/export-not-saved.json}
+  [[ -f "$f" ]] || return 0
+  local ts dev reason
+  ts=$(sed -n 's/.*"ts": *\([0-9]*\).*/\1/p' "$f")
+  dev=$(sed -n 's/.*"dev": *"\([^"]*\)".*/\1/p' "$f")
+  reason=$(sed -n 's/.*"reason": *"\([^"]*\)".*/\1/p' "$f")
+  [[ "$ts" =~ ^[0-9]+$ ]] || return 0
+  (( $(date +%s) - ts < 7 * 86400 )) || return 0
+  echo "error|USB drive ${dev##*/} was recycled with images NOT saved on $(date -d "@$ts" '+%Y-%m-%d %H:%M'): $reason"
 }
 
 # sshd drop-in for the service accounts: the ingest user (FTP_USER) and the SMB

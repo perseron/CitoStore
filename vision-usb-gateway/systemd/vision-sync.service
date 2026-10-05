@@ -1,6 +1,9 @@
 [Unit]
 Description=Vision Snapshot Sync
 After=local-fs.target usb-gadget.service vision-gw-config.service
+# Never without the mirror (nofail: a failed fsck boots without it): the copy
+# went into the bare mount point, the RAM root, lost at the next boot.
+RequiresMountsFor=/srv/vision_mirror
 Requires=vision-gw-config.service
 
 [Service]

@@ -226,6 +226,34 @@ fi
   echo "\"ts\": \"$(date -Is)\"}"
 } > "$STATE_DIR/usb-fsck.json" 2>/dev/null || true
 
+# Drives that cannot be used as they are, while none is exported yet:
+# - no FAT at all (a power cut between discard/create and mkfs in a factory
+#   reset, self-heal, resize or offline-maint): exported anyway before, and
+#   nothing ever reformatted it — formatted now (nothing on it to save);
+# - an export/reformat that never finished (usb_maint_marker): finished in
+#   the background (it needs the mirror and takes minutes), the AOI's own
+#   drive is not one of them.
+if ! systemctl is-active --quiet usb-gadget.service 2>/dev/null; then
+  boot_active=$(tr -d '[:space:]' < "$ACTIVE_FILE" 2>/dev/null || true)
+  for lv in "${USB_LVS[@]}"; do
+    dev="/dev/$VG/$lv"
+    [[ -e "$dev" ]] || continue
+    if ! usb_has_fat "$dev"; then
+      log "$lv holds no FAT filesystem: formatting it"
+      if bash "$SCRIPT_DIR/offline-maint.sh" "$lv" --format-only; then
+        health_warn "$lv had no FAT filesystem; formatted"
+        rm -f "$(usb_maint_marker "$lv")"
+      else
+        health_warn "$lv has no FAT filesystem and could not be formatted"
+      fi
+    elif [[ "$MIRROR_OK" == true && -e "$(usb_maint_marker "$lv")" && "$dev" != "$boot_active" ]]; then
+      log "$lv: its export/reformat did not finish; resuming it in the background"
+      health_warn "$lv: unfinished export/reformat resumed"
+      systemctl --no-block start "offline-maint@$lv.service" || true
+    fi
+  done
+fi
+
 # The AOI's settings folder on every USB drive (usb_persist_write in common.sh).
 # Every boot, after fsck and still Before=usb-gadget: no drive is exported to
 # the host yet, so each can be mounted. A drive that lacks the folder — every

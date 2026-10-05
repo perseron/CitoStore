@@ -8,7 +8,9 @@ RequiresMountsFor=/srv/vision_mirror
 
 [Service]
 Type=oneshot
-TimeoutStartSec=10min
+# Waits its turn for the USB lock (a running export: minutes) and may finish an
+# interrupted export of the next drive first.
+TimeoutStartSec=60min
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/vision-rotator.sh
