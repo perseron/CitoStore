@@ -1,7 +1,9 @@
 [Unit]
 Description=System Clock to RTC
 After=local-fs.target
-ConditionPathExists=/dev/rtc0
+# No ConditionPathExists=/dev/rtc0: this also saves the clock to the NVMe
+# (persist_save) every 10 min, which a unit without an RTC needs most; with
+# no RTC the hwclock step is skipped by the script itself.
 
 [Service]
 Type=oneshot

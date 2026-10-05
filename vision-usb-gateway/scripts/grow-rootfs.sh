@@ -24,10 +24,18 @@ fi
 dev=$(findmnt -no SOURCE "$mnt" 2>/dev/null)
 [[ "$dev" == /dev/* ]] || exit 0
 
-# Best-effort: make sure the partition itself fills the disk (idempotent).
+# Best-effort: make sure the partition itself fills the disk — only when it
+# does not yet: parted rewrote the partition table (sector 0 of the eMMC, 32
+# sectors measured) on EVERY boot even with nothing to change, in the first
+# seconds of boot when weak supplies brown out; a torn write there is a unit
+# that no longer boots.
 disk=$(lsblk -no PKNAME "$dev" 2>/dev/null | head -1)
 pnum=$(printf '%s' "$dev" | grep -oE '[0-9]+$')
-if [[ -n "$disk" && -n "$pnum" ]] && command -v parted >/dev/null 2>&1; then
+part=$(basename "$dev")
+disk_sectors=$(cat "/sys/block/$disk/size" 2>/dev/null || echo 0)
+part_end=$(( $(cat "/sys/class/block/$part/start" 2>/dev/null || echo 0) + $(cat "/sys/class/block/$part/size" 2>/dev/null || echo 0) ))
+if [[ -n "$disk" && -n "$pnum" ]] && (( disk_sectors - part_end > 2048 )) && command -v parted >/dev/null 2>&1; then
+  log "growing partition $dev to the end of /dev/$disk"
   # `-s` answers *No* to parted's own "Partition ... is being used" warning and
   # exits 1, so this never grew a mounted root — feed it an explicit Yes over a
   # pretend tty. See the same fix in firstboot-personalize.sh.

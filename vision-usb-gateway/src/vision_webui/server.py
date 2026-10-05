@@ -2513,6 +2513,15 @@ class WebHandler(BaseHTTPRequestHandler):
                 status=413,
             )
         body = self.rfile.read(content_length)
+        # An install still running (one that outlasted this request's wait): a
+        # retry deleted the directory it ran from, and the archive persisted
+        # for every later boot was then the retry, never applied.
+        code, _, _ = run_cmd(["/bin/systemctl", "is-active", "--quiet", "vision-update.service"])
+        if code == 0:
+            return self.send_json(
+                {"ok": False, "error": "an update is still being installed — wait for it to finish"},
+                status=409,
+            )
         staging = STATE_DIR / "update-staging"
         if staging.exists():
             import shutil
@@ -2548,7 +2557,9 @@ class WebHandler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return reject("invalid manifest.json")
         version = meta.get("version", "unknown")
-        code, _, err = run_cmd(["/bin/systemctl", "start", "vision-update.service"])
+        # Waits for install.sh (bounded by the unit: 15 min); 120 s answered
+        # "no answer" while a long install went on.
+        code, _, err = run_cmd(["/bin/systemctl", "start", "vision-update.service"], timeout=960)
         if code != 0:
             msg = err or "failed to start update"
             return self.send_json({"ok": False, "error": msg}, status=500)

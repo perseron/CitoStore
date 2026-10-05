@@ -6,7 +6,9 @@ After=local-fs.target
 # measured, and a slower mount (fsck after a power cut) silently skipped the
 # update for that boot — "no persisted update to reapply".
 RequiresMountsFor=/srv/vision_mirror
-Before=vision-gw-config.service usb-gadget.service vision-sync.service vision-webui.service
+# Also before the early scripts a package may fix (health-check,
+# apply-network): they used to race it and could run the old copy.
+Before=vision-gw-config.service usb-gadget.service vision-sync.service vision-webui.service vision-gw-health.service vision-gw-network.service
 
 [Service]
 Type=oneshot
@@ -14,6 +16,9 @@ Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/apply-update.sh reapply
 RemainAfterExit=yes
+# Bounded: a package hanging at boot holds everything ordered after this unit
+# (gadget, sync, WebUI) — the unit fails instead, and the boot goes on.
+TimeoutStartSec=10min
 
 [Install]
 WantedBy=multi-user.target

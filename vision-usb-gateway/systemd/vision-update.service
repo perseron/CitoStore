@@ -7,3 +7,6 @@ Type=oneshot
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/apply-update.sh apply
+
+# Bounded: an install.sh that hangs must not hold the upload (and the lock) forever.
+TimeoutStartSec=15min

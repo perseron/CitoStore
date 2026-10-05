@@ -56,13 +56,18 @@ if [[ "$MODE" == "reapply" ]]; then
   rm -rf "$STAGING_DIR"
   mkdir -p "$STAGING_DIR"
   if ! tar xzf "$PERSIST_DIR/current.tar.gz" --no-same-owner -C "$STAGING_DIR"; then
-    # A corrupt archive (power cut while it was being stored) would fail this
-    # unit on every boot from now on; it can never apply again — remove it.
-    log "persisted update archive is corrupt; removed (upload the package again)"
-    rm -f "$PERSIST_DIR/current.tar.gz"
     rm -rf "$STAGING_DIR"
-    record_history "unknown" "removed: corrupt archive"
-    exit 0
+    # Only a really corrupt archive (power cut while it was being stored) is
+    # removed — it would fail every boot from now on. A full disk or an I/O
+    # error made tar fail too, and a good package was thrown away.
+    if ! gzip -t "$PERSIST_DIR/current.tar.gz" 2>/dev/null; then
+      log "persisted update archive is corrupt; removed (upload the package again)"
+      rm -f "$PERSIST_DIR/current.tar.gz"
+      record_history "unknown" "removed: corrupt archive"
+      exit 0
+    fi
+    log "persisted update could not be unpacked this boot (archive intact; kept)"
+    exit 1
   fi
 fi
 
@@ -110,13 +115,28 @@ log "applying update: $version (mode=$MODE)"
 
 chmod +x "$STAGING_DIR/install.sh"
 cd "$STAGING_DIR"
+# At boot this runs before vision-webui, smbd, the gadget, the sync: a package
+# that restarts one of them (the natural thing for a fix to the WebUI) queued
+# a job behind this very unit — which waited for it — and the boot hung for
+# good (the watchdog does not fire: PID 1 is fine). Its systemctl calls do not
+# wait at boot (--no-block; the units start after this anyway), and the
+# package can tell the two runs apart (CITOSTORE_UPDATE_MODE=apply|reapply).
+export CITOSTORE_UPDATE_MODE="$MODE"
+if [[ "$MODE" == "reapply" ]]; then
+  shim=$(mktemp -d)
+  printf '#!/bin/sh\nexec /bin/systemctl --no-block "$@"\n' > "$shim/systemctl"
+  chmod 0755 "$shim/systemctl"
+  export PATH="$shim:$PATH"
+fi
 if ! bash install.sh 2>&1 | tee "$STAGING_DIR/install.log"; then
   log "update install.sh failed"
-  record_history "$version" "failed"
+  record_history "$version" "failed$([[ "$MODE" == reapply ]] && echo " (at boot)")"
   exit 1
 fi
 
-record_history "$version" "ok"
+# The history is the operator's: an upload, not every boot's re-application
+# (capped at 20 entries, 20 reboots pushed every real upload out of it).
+[[ "$MODE" == "reapply" ]] || record_history "$version" "ok"
 log "update $version applied successfully"
 
 if [[ "$MODE" == "apply" ]]; then

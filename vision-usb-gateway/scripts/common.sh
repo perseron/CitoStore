@@ -91,13 +91,25 @@ ensure_gateway_home_in_conf() {
 restore_shadow_conf() {
   # No shadow (NVMe not mounted, or empty): keep the image's own /etc config —
   # the golden, tuned one — rather than replacing it with the generic example.
-  local factory
+  local factory src="" content
   if [[ -f "$SHADOW_CONF_DEFAULT" ]]; then
-    cp "$SHADOW_CONF_DEFAULT" "$CONF_FILE_DEFAULT"
+    src=$SHADOW_CONF_DEFAULT
   elif [[ ! -f "$CONF_FILE_DEFAULT" ]] && factory=$(golden_conf); then
-    cp "$factory" "$CONF_FILE_DEFAULT"
+    src=$factory
   fi
-  ensure_gateway_home_in_conf "$CONF_FILE_DEFAULT"
+  if [[ -z "$src" ]]; then
+    ensure_gateway_home_in_conf "$CONF_FILE_DEFAULT"
+    return 0
+  fi
+  # The whole new content first (GATEWAY_HOME re-asserted), written over /etc
+  # only when it differs, in one go and in place — the same inode: the WebUI's
+  # sandbox binds this very file. It used to be cp then sed -i on every boot
+  # and every Save + Apply: truncated for a moment while the sync, rotator and
+  # monitor source it, and sed -i swapped the inode under the WebUI.
+  content=$(sed '/^GATEWAY_HOME=/d' "$src"; echo "GATEWAY_HOME=$GATEWAY_HOME")
+  if [[ "$(cat "$CONF_FILE_DEFAULT" 2>/dev/null)" != "$content" ]]; then
+    printf '%s\n' "$content" > "$CONF_FILE_DEFAULT"
+  fi
 }
 
 # The unit's factory configuration: the golden image's own, tuned config — NOT

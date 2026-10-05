@@ -103,7 +103,8 @@ check "  ... and leaves the script alone" "$(installed)" "$(sha "$TMP/old.sh")"
 overlay_boot
 check "reapply succeeds" "$(run_update reapply)" 0
 check "fix is back" "$(installed)" "$(sha "$TMP/new.sh")"
-check "history shows both runs" "$(history)" "$version=ok;$version=ok"
+# Re-applications at boot are not history (20 reboots pushed every upload out).
+check "history: the upload only" "$(history)" "$version=ok"
 overlay_off
 
 echo "=== persisted archive corrupted (power cut while it was stored) ==="
@@ -152,6 +153,21 @@ rc=0; "$GW/scripts/build-update-package.sh" "$TMP/nocompat" "$TMP/dist2" >"$TMP/
 check "build fails" "$rc" 1
 check "  ... saying why" "$(grep -c compatible_builds "$TMP/out")" 1
 check "  ... and writes no package" "$(find "$TMP/dist2" -type f 2>/dev/null | wc -l)" 0
+
+echo "=== at boot a package's systemctl calls do not wait (the units start after it) ==="
+# A package restarting vision-webui at boot queued a job behind the reapply
+# unit, which waited for it: the boot hung for good.
+mkdir -p "$TMP/shimpkg"
+printf '{"version": "shimtest", "compatible_builds": ["4bd1db0"]}\n' > "$TMP/shimpkg/manifest.json"
+cat > "$TMP/shimpkg/install.sh" <<EOF
+#!/bin/bash
+echo "\$CITOSTORE_UPDATE_MODE \$(cat "\$(command -v systemctl)" | tail -1)" > "$TMP/shim.out"
+EOF
+mkdir -p "$TMP/mirror/.state/updates"
+tar czf "$TMP/mirror/.state/updates/current.tar.gz" -C "$TMP/shimpkg" .
+overlay_boot
+check "reapply runs it" "$(run_update reapply)" 0
+check "  ... told it is the boot run, systemctl without waiting" "$(cat "$TMP/shim.out" 2>/dev/null)" 'reapply exec /bin/systemctl --no-block "$@"'
 
 echo
 if ((fail)); then echo "FAILED"; cat "$TMP/out"; exit 1; fi

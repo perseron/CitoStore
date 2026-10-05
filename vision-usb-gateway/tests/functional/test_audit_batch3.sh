@@ -80,6 +80,19 @@ check "other keys untouched" "$(grep -c '^RETENTION_HI=90$' "$MIRROR/.state/visi
 check "no duplicate key" "$(grep -c '^USB_LV_SIZE=' /etc/vision-gw.conf)" 1
 check "/etc rewritten in place (the WebUI sandbox binds this inode)" "$(stat -c %i /etc/vision-gw.conf)" "$ino"
 
+echo "=== restore_shadow_conf: /etc in place, and left alone when nothing changed ==="
+base_conf
+ino=$(stat -c %i /etc/vision-gw.conf)
+( source "$FAKE/scripts/common.sh"; restore_shadow_conf )
+check "same inode (the WebUI sandbox binds it; sed -i swapped it)" "$(stat -c %i /etc/vision-gw.conf)" "$ino"
+check "GATEWAY_HOME re-asserted" "$(grep -c "^GATEWAY_HOME=$FAKE$" /etc/vision-gw.conf)" 1
+touch -d '2001-01-01' /etc/vision-gw.conf
+( source "$FAKE/scripts/common.sh"; restore_shadow_conf )
+check "unchanged config: not rewritten (no truncated moment for readers)" "$(stat -c %Y /etc/vision-gw.conf)" "$(date -d 2001-01-01 +%s)"
+echo "NETBIOS_NAME=NEW1" >> "$MIRROR/.state/vision-gw.conf"
+( source "$FAKE/scripts/common.sh"; restore_shadow_conf )
+check "a changed shadow is written over it" "$(grep -c '^NETBIOS_NAME=NEW1$' /etc/vision-gw.conf):$(stat -c %i /etc/vision-gw.conf)" "1:$ino"
+
 echo "=== golden_conf: seed > overlay lower > generic example ==="
 rm -f /etc/citostore-seed/vision-gw.conf /media/root-ro/etc/vision-gw.conf
 g() { ( source "$FAKE/scripts/common.sh"; golden_conf ); }
