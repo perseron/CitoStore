@@ -1071,7 +1071,9 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
 
     if dev_override:
         dev = dev_override
-        active = read_active()
+        # No active-device file yet: the gadget has not started, nothing is
+        # exported (an interrupted export resumed at boot failed on this).
+        active = read_active() if os.path.exists(ACTIVE_FILE) else ""
         if dev == active:
             raise RuntimeError("refusing to mount active device")
         active_offset = get_partition_offset(dev)

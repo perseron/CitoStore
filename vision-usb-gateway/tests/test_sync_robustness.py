@@ -149,3 +149,20 @@ def test_the_preseed_waits_its_turn_for_usb_maintenance(tmp_path, monkeypatch):
     got = s.usb_lock_nowait()
     assert got is not None
     got.close()
+
+
+def test_an_export_at_boot_before_the_gadget_runs(unit, monkeypatch, tmp_path):
+    # health-check resumes an interrupted export while the gadget has not
+    # written its active-device file yet: read_active() raised, every boot.
+    mirror, drive, conn, cfg = unit
+    put(drive, "a.jpg")
+    monkeypatch.setattr(s, "ACTIVE_FILE", str(tmp_path / "no-such-file"))
+    monkeypatch.setattr(s.os.path, "ismount", lambda p: True)
+    monkeypatch.setattr(s, "init_db", lambda p: conn)
+    monkeypatch.setattr(s, "get_partition_offset", lambda d: None)
+    monkeypatch.setattr(s, "mount_ro", lambda *a, **k: None)
+    monkeypatch.setattr(s, "umount", lambda *a, **k: None)
+    monkeypatch.setattr(s, "record_snapshot_usage", lambda *a, **k: None)
+    cfg.snapshot_mount = drive
+    s.run(cfg, "/dev/vg0/usb_1", offline=True)
+    assert synced(conn) == ["a.jpg"]

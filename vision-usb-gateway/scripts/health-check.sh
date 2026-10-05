@@ -189,6 +189,12 @@ if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
         FSCK_RESULTS+=("{\"lv\":\"$lv\",\"status\":\"skipped (active)\"}")
         continue
       fi
+      # A blank drive (formatted below): fsck.fat exits 1 on it too, which
+      # read as "repaired the FAT".
+      if [[ -e "$dev" ]] && usb_is_blank "$dev"; then
+        FSCK_RESULTS+=("{\"lv\":\"$lv\",\"status\":\"blank\"}")
+        continue
+      fi
       if [[ -e "$dev" ]]; then
         log "fsck.fat on $dev"
         # rc captured properly: "$(...) || true; rc=$?" always read 0, so a

@@ -4,6 +4,9 @@ After=local-fs.target
 # Never without the mirror: the export would go into the bare mount point (the
 # RAM root) and the drive then be formatted — its images gone at the next boot.
 RequiresMountsFor=/srv/vision_mirror
+# After the gadget: health-check resumes an interrupted export at boot, and
+# which drive the AOI has is only known once the gadget is up.
+After=usb-gadget.service
 
 [Service]
 Type=oneshot
