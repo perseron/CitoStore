@@ -181,6 +181,11 @@ fi
 
 meta_raw=$(lvs --noheadings -o metadata_percent "/dev/$LVM_VG/$THINPOOL_LV" 2>/dev/null | awk 'NF{print $1; exit}')
 meta=$(to_int_percent "$meta_raw")
+# The pool's DATA too: full, every USB LV in it fails writes — the AOI gets
+# I/O errors (a discard that keeps failing, an oversized resize leave old
+# blocks behind). Only its metadata used to be watched.
+pool_raw=$(lvs --noheadings -o data_percent "/dev/$LVM_VG/$THINPOOL_LV" 2>/dev/null | awk 'NF{print $1; exit}')
+pool_data=$(to_int_percent "$pool_raw")
 if [[ -z "$meta" ]]; then
   meta=0
 fi
@@ -305,6 +310,13 @@ write_health() {
   elif [[ $meta -ge $META_HI ]]; then
     [[ "$health_status" == "ok" ]] && health_status="warn"
     issues+=("Thinpool metadata high (${meta}%)")
+  fi
+  if [[ "${pool_data:-0}" -ge 95 ]]; then
+    health_status="error"
+    issues+=("USB thin pool data ${pool_data}% full: the AOI's drive can fail writes")
+  elif [[ "${pool_data:-0}" -ge 85 ]]; then
+    [[ "$health_status" == "ok" ]] && health_status="warn"
+    issues+=("USB thin pool data ${pool_data}% full")
   fi
   # A failed sync cycle ($SERVICE_RESULT is set by systemd for ExecStopPost)
   # must surface as an error; otherwise a broken sync leaves stale "ok" health

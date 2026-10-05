@@ -64,16 +64,41 @@ if ! vgdisplay "$LVM_VG" >/dev/null 2>&1; then
   vgcreate "$LVM_VG" "$PART"
 fi
 
+create_thinpool() {
+  if ! lvdisplay "$LVM_VG/$THINPOOL_LV" >/dev/null 2>&1; then
+    log "creating thinpool $THINPOOL_LV"
+    lvcreate --type thin-pool -L "$THINPOOL_SIZE" --poolmetadatasize "$THINPOOL_META_SIZE" -n "$THINPOOL_LV" "$LVM_VG"
+  fi
+}
+
+# True for an LV with nothing on it at all: no signature (blkid rc 2) AND its
+# first 4 KiB zero, as lvcreate leaves it (an ext4 superblock sits at 1 KiB; an
+# I/O error reads as neither — never mkfs then).
+lv_blank() {  # <device>
+  local rc=0
+  blkid -p "$1" >/dev/null 2>&1 || rc=$?
+  ((rc == 2)) && cmp -s -n 4096 "$1" /dev/zero
+}
+
 if ! lvdisplay "$LVM_VG/$MIRROR_LV" >/dev/null 2>&1; then
   log "creating mirror LV $MIRROR_LV"
-  lvcreate -Wy -y -L "$MIRROR_SIZE" -n "$MIRROR_LV" "$LVM_VG"
+  if ! lvcreate -Wy -y -L "$MIRROR_SIZE" -n "$MIRROR_LV" "$LVM_VG"; then
+    # An NVMe smaller than the configured layout (a replacement drive): the
+    # factory reset / first boot failed here under set -e and left a unit with
+    # no mirror. The thin pool at its size first, then the mirror takes the rest.
+    log "mirror $MIRROR_SIZE does not fit this NVMe: thin pool first, the mirror takes what is left"
+    create_thinpool
+    lvcreate -Wy -y -l 100%FREE -n "$MIRROR_LV" "$LVM_VG"
+  fi
+fi
+# Also an LV left without a filesystem (power cut between lvcreate and mkfs):
+# it used to stay unmountable for good.
+if lv_blank "/dev/$LVM_VG/$MIRROR_LV"; then
+  log "mirror LV has no filesystem: creating it"
   mkfs.ext4 -F "/dev/$LVM_VG/$MIRROR_LV"
 fi
 
-if ! lvdisplay "$LVM_VG/$THINPOOL_LV" >/dev/null 2>&1; then
-  log "creating thinpool $THINPOOL_LV"
-  lvcreate --type thin-pool -L "$THINPOOL_SIZE" --poolmetadatasize "$THINPOOL_META_SIZE" -n "$THINPOOL_LV" "$LVM_VG"
-fi
+create_thinpool
 
 safe_mkdir "$MIRROR_MOUNT"
 if ! grep -q "^/dev/$LVM_VG/$MIRROR_LV" /etc/fstab; then

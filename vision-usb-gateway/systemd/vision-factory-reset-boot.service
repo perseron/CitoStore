@@ -4,7 +4,9 @@ Description=CitoStore factory reset — wipe the NVMe before the data plane, if 
 # gadget, sync, smbd or the mirror mount have opened anything on the NVMe. That is
 # the only point the wipe can free the disk. Gated on the marker so a normal boot
 # skips it with no cost.
-ConditionPathExists=/boot/firmware/factory-reset-pending
+ConditionPathExists=|/boot/firmware/factory-reset-pending
+# ...or a rebuild that did not finish (factory-reset.sh retries it, bounded).
+ConditionPathExists=|/boot/firmware/factory-reset-in-progress
 # Force /boot/firmware to be mounted before this unit is evaluated — without it
 # ConditionPathExists is checked before the FAT partition mounts, the marker is
 # not seen, and the wipe is silently skipped (observed exactly this). This adds

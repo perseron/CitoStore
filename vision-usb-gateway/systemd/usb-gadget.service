@@ -6,11 +6,18 @@ Description=USB Gadget for Vision Host
 # crashing on `USB_LVS: unbound variable`.
 After=local-fs.target vision-gw-config.service
 Wants=vision-gw-config.service
+# Retried (Restart= below), but not forever on a hard failure (no UDC).
+StartLimitIntervalSec=10min
+StartLimitBurst=10
 
 [Service]
 Type=oneshot
 TimeoutStartSec=3min
 RemainAfterExit=yes
+# A transient start failure (LV node not there yet) left the AOI without a
+# drive until the next reboot: nothing else ever starts the gadget again.
+Restart=on-failure
+RestartSec=15
 Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/usb-gadget.sh start

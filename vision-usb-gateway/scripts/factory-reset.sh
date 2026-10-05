@@ -32,6 +32,8 @@ LVM_VG="${LVM_VG:-vg0}"
 MIRROR_MOUNT="${MIRROR_MOUNT:-/srv/vision_mirror}"
 BOOT_MOUNT=/boot/firmware
 MARKER="$BOOT_MOUNT/factory-reset-pending"
+IN_PROGRESS="$BOOT_MOUNT/factory-reset-in-progress"
+MAX_ATTEMPTS=3
 
 MODE="${1:-}"
 
@@ -61,11 +63,27 @@ case "$MODE" in
   ;;
 
 --boot)
-  [[ -f "$MARKER" ]] || exit 0
-
   # Remove the marker FIRST, so a wipe that fails cannot turn into a boot loop.
-  # A degraded boot (mirror absent) is recoverable; a loop is not.
-  boot_write rm -f "$MARKER"
+  # A degraded boot (mirror absent) is recoverable; a loop is not. But a
+  # rebuild cut short (a power cut — seen on weak supplies during exactly this
+  # heavy NVMe work) left a half-built NVMe with nothing to finish it, and the
+  # WebUI locked out (its password lives on the missing mirror): so it is
+  # retried, a bounded number of times (IN_PROGRESS counts the attempts).
+  if [[ -f "$MARKER" ]]; then
+    attempt=1
+    boot_write rm -f "$MARKER"
+  elif [[ -f "$IN_PROGRESS" ]]; then
+    attempt=$(( $(tr -cd '0-9' < "$IN_PROGRESS" 2>/dev/null || echo 0) + 1 ))
+    if (( attempt > MAX_ATTEMPTS )); then
+      log "factory reset: rebuild failed $MAX_ATTEMPTS times — giving up (needs service)"
+      boot_write rm -f "$IN_PROGRESS"
+      exit 1
+    fi
+    log "factory reset: the previous rebuild did not finish — retrying ($attempt/$MAX_ATTEMPTS)"
+  else
+    exit 0
+  fi
+  boot_write sh -c "echo $attempt > '$IN_PROGRESS'"
 
   load_config
   NVME_DEVICE="${NVME_DEVICE:-/dev/nvme0n1}"
@@ -143,6 +161,7 @@ case "$MODE" in
   # after a bare mount mid-boot.
   sync
   umount "$MIRROR_MOUNT" >/dev/null 2>&1 || true
+  boot_write rm -f "$IN_PROGRESS"
   log "factory reset: NVMe rebuilt — rebooting into the fresh unit"
   systemctl reboot
   ;;
