@@ -3,6 +3,7 @@
 #   bash endurance.sh start    prepare the board, start the four components
 #   bash endurance.sh status   one screen: progress, last sample, alerts
 #   bash endurance.sh verify   integrity check now (the run keeps going)
+#   bash endurance.sh restart monitor|chaos   after editing one; writers keep going
 #   bash endurance.sh stop     stop everything, verify, restore the board
 #
 # Board preparation (undone by stop):
@@ -41,6 +42,14 @@ launch() {  # <name> <exe> <argument string>
   echo "  started $1 (pid $pid)"
 }
 alive() { grep -q " $1 " < <(tasklist //FI "PID eq $1" //NH 2>/dev/null); }
+# The two bash components (also restarted alone, e.g. after editing one).
+start_bash() {  # monitor | chaos
+  local gb; gb=$(win /usr/bin/bash.exe)
+  case "$1" in
+    monitor) launch monitor "$gb" "-c \"BOARD=$BOARD OUT=$OUT exec bash '$HERE/board-monitor.sh' >> '$OUT/monitor.out' 2>&1\"" ;;
+    chaos) launch chaos "$gb" "-c \"BOARD=$BOARD OUT=$OUT REBOOT_EVERY=$REBOOT_EVERY MODE=$MODE exec bash '$HERE/chaos.sh' >> '$OUT/chaos.out' 2>&1\"" ;;
+  esac
+}
 set_eth1() {  # <address>: the shadow config, applied as the WebUI's Save + Apply does
   sshb "sudo bash -c 'sed -i \"s/^ETH1_ADDRESS=.*/ETH1_ADDRESS=$1/\" $M/.state/vision-gw.conf && \
     /opt/CitoStore/vision-usb-gateway/scripts/apply-shadow-config.sh >/dev/null 2>&1; ip -4 -br addr show eth1'"
@@ -72,9 +81,8 @@ t, u, _ = shutil.disk_usage('$M'); print(f'mirror at {u * 100 / t:.1f}%')\""
   echo "== components"
   launch writer powershell.exe "-NoProfile -ExecutionPolicy Bypass -File \"$(win "$HERE/host-writer.ps1")\" -OutDir \"$(win "$OUT")\""
   [[ "$FTP" == 1 ]] && launch ftp-writer "$PY" "\"$(win "$HERE/ftp-writer.py")\" --host $ETH1_TEST --out \"$(win "$OUT")\""
-  GB=$(win /usr/bin/bash.exe 2>/dev/null || echo 'C:\Program Files\Git\bin\bash.exe')
-  launch monitor "$GB" "-c \"BOARD=$BOARD OUT=$OUT exec bash '$HERE/board-monitor.sh' >> '$OUT/monitor.out' 2>&1\""
-  [[ "$REBOOT_EVERY" -gt 0 ]] && launch chaos "$GB" "-c \"BOARD=$BOARD OUT=$OUT REBOOT_EVERY=$REBOOT_EVERY MODE=$MODE exec bash '$HERE/chaos.sh' >> '$OUT/chaos.out' 2>&1\""
+  start_bash monitor
+  [[ "$REBOOT_EVERY" -gt 0 ]] && start_bash chaos
   echo "running; data in $OUT. 'bash endurance.sh status' any time."
   ;;
 status)
@@ -96,6 +104,15 @@ status)
 verify)
   bash "$HERE/verify-mirror.sh"
   ;;
+restart)  # monitor | chaos: the writers keep going (chaos starts its timer over)
+  name=${2:-}; [[ "$name" == monitor || "$name" == chaos ]] || { echo "restart monitor|chaos" >&2; exit 1; }
+  pid=$(awk -v n="$name" '$1 == n {print $2}' "$OUT/pids.txt")
+  [[ -n "$pid" ]] && { taskkill //T //F //PID "$pid" >/dev/null 2>&1 || true; }
+  grep -v "^$name " "$OUT/pids.txt" > "$OUT/pids.tmp" || true
+  mv "$OUT/pids.tmp" "$OUT/pids.txt"
+  start_bash "$name"
+  echo "$(date -Is) RESTART $name" >> "$OUT/events.log"
+  ;;
 stop)
   [[ -f "$OUT/pids.txt" ]] || { echo "no run in $OUT"; exit 0; }
   echo "== stopping"
@@ -112,5 +129,5 @@ stop)
   exit $rc
   ;;
 *)
-  sed -n '2,8p' "$0"; exit 1 ;;
+  sed -n '2,9p' "$0"; exit 1 ;;
 esac

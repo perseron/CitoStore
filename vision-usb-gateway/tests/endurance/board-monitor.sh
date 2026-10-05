@@ -47,7 +47,13 @@ rows_stall=0; writer_stall=0; ftp_stall=0
 while true; do
   sample=$(sshb 'sudo bash -s' <<'EOF' 2>/dev/null
 M=/srv/vision_mirror
-j() { python3 -c "import json,sys;d=json.load(open(sys.argv[1]));print(d['status']+':'+str(len(d['issues'])))" "$1" 2>/dev/null || echo none; }
+# status:count — without "USB rotation pending" (the normal moment between 80%
+# and the switch); "USB usage critical" (92%, a forced rotation) as usbcrit.
+j() { python3 -c "
+import json, sys
+d = json.load(open(sys.argv[1])); iss = [i for i in d['issues'] if not i.startswith('USB rotation pending')]
+crit = [i for i in iss if i.startswith('USB usage critical')]
+print('usbcrit:1' if crit and len(iss) == 1 else ('ok' if not iss else d['status']) + ':' + str(len(iss)))" "$1" 2>/dev/null || echo none; }
 boot=$(cat /proc/sys/kernel/random/boot_id)
 up=$(cut -d. -f1 /proc/uptime)
 failed=$(systemctl --failed --no-legend 2>/dev/null | wc -l)
@@ -96,7 +102,11 @@ EOF
   settled=$(( now - boot_seen_at >= SETTLE && up >= SETTLE ))
 
   if ((settled)); then
-    [[ "$health" == "ok:0" ]]          || alert health "health=$health"
+    # A forced rotation at 92% is the design under nonstop writing; still
+    # critical after 3 samples means it did not happen.
+    if [[ "$health" == usbcrit:1 ]]; then crit_n=$(( ${crit_n:-0} + 1 )); else crit_n=0; fi
+    (( crit_n >= 3 )) && alert usbcrit "USB usage critical for $crit_n samples: the forced rotation did not happen"
+    [[ "$health" == "ok:0" || "$health" == usbcrit:1 ]] || alert health "health=$health"
     [[ "$failed" == 0 ]]               || alert failed "failed units: $failed"
     [[ "${age:-999}" -lt 180 ]]        || alert syncage "sync stalled: usage last written ${age}s ago"
     [[ "$pend" -lt 900 ]]              || alert pending "an export/reformat has been pending for ${pend}s"
