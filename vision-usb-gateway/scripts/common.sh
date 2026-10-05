@@ -313,6 +313,11 @@ fsck_fat_only_bookkeeping() {  # <fsck.fat -a output>
       "" | "fsck.fat "* | "*** Filesystem was changed ***" | "Writing changes." | *": "*" files, "*" clusters") ;;
       "Free cluster summary wrong ("* | "Free cluster summary uninitialized ("* | "  Auto-correcting." | "  Auto-setting.") ;;
       "Dirty bit is set. Fs was not properly unmounted and some data may be corrupt." | " Automatically removing dirty bit.") ;;
+      # Windows' own dirty flag (boot sector byte 65), set while mounted, is
+      # not in the backup copy; cleared with the dirty bit. Only byte 65 alone:
+      # any other differing byte prints on that line too ("13:10/08, 65:...").
+      "There are differences between boot sector and its backup." | "This is mostly harmless. Differences: (offset:original/backup)") ;;
+      "  65:"??"/"?? | "  Not automatically fixing this.") ;;
       "FATs differ but appear to be intact." | "  Using first FAT.") ;;
       *) return 1 ;;
     esac

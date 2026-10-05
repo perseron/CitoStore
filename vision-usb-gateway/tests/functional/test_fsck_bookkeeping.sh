@@ -42,6 +42,10 @@ if what == "free":   wr(fsinfo, rd(fsinfo) + 2)
 if what == "uninit": wr(fsinfo, 0xFFFFFFFF)
 if what == "dirty":  wr(fat1 + 4, rd(fat1 + 4) & ~0x08000000)   # clean-shutdown bit off
 if what == "lost":   wr(fat1 + 4 * 100, 0x0FFFFFFF)            # a cluster in use by nothing
+if what == "ntdirty":                                          # Windows' dirty flag, primary only
+    f.seek(65); f.write(bytes([1]))
+if what == "volid":                                            # another boot-sector byte than 65
+    f.seek(67); b = f.read(1)[0]; f.seek(67); f.write(bytes([b ^ 0xFF]))
 PY
 }
 classify() {  # fsck rc + verdict
@@ -55,11 +59,16 @@ fresh; poke free;                        check "free-cluster count off (Windows'
 fresh; poke uninit;                      check "free-cluster count uninitialized" "$(classify)" "rc1:bookkeeping"
 fresh; poke dirty;                       check "dirty flag (host had it mounted), with the FAT copy" "$(classify)" "rc1:bookkeeping"
 fresh; poke dirty; poke free;            check "both" "$(classify)" "rc1:bookkeeping"
+fresh; poke ntdirty; poke dirty; poke free
+check "Windows' dirty flag in the boot sector too (seen live: write, then reboot at once)" "$(classify)" "rc1:bookkeeping"
+check "  ... and fsck cleared it: clean on the next boot" "$(classify)" "rc0:repair"
 fresh;                                   check "clean: nothing to correct" "$(classify)" "rc0:repair"
 
 echo "=== real repairs still warn ==="
 fresh; poke lost;                        check "a lost cluster reclaimed" "$(classify)" "rc1:repair"
 fresh; poke lost; poke dirty; poke free; check "  ... also next to the bookkeeping" "$(classify)" "rc1:repair"
+fresh; poke volid; poke ntdirty; poke dirty
+check "a boot-sector byte other than 65 differing from its backup" "$(classify)" "rc1:repair"
 check "an unknown line counts as a repair" \
   "$(fsck_fat_only_bookkeeping $'fsck.fat 4.2\n/a.jpg\n  File size is 9 bytes, cluster chain length is 0.\n  Truncating file to 0 bytes.' && echo bookkeeping || echo repair)" repair
 
