@@ -94,6 +94,22 @@ retention
 check "row of a file on the mirror kept, though 100 days old" "$(db "SELECT count(*) FROM synced_files WHERE source_path='kept.jpg'")" 1
 check "a reclaimed (blank) 100-day row pruned" "$(db "SELECT count(*) FROM synced_files WHERE source_path='gone.jpg'")" 0
 
+echo "=== cannot get back to the target: said so at once, in the health banner too ==="
+fresh_fs 64M
+mkdir -p "$MIRROR/ingest/aoi_settings"
+n=0; while (($(usage) < 93)); do head -c 2000000 /dev/urandom > "$MIRROR/ingest/aoi_settings/s$n"; n=$((n+1)); done
+retention
+check "recorded (nothing protected: the AOI's settings folder is never pruned)" \
+  "$(grep -o '"protected": 0' "$MIRROR/.state/retention-blocked.json" 2>/dev/null)" '"protected": 0'
+check "  ... and logged" "$(grep -c 'nothing it may delete is left' "$TMP/out")" 1
+# shellcheck source=/dev/null
+alarm=$(source <(tr -d '\r' < "$GW/scripts/common.sh"); MIRROR_MOUNT=$MIRROR retention_blocked_issues)
+check "health banner: the reason and the consequence" \
+  "$([[ "$alarm" == *"cannot free space below 85%: nothing else may be deleted"*"recycled WITHOUT their images"* ]] && echo yes || echo "$alarm")" yes
+rm -f "$MIRROR"/ingest/aoi_settings/s*
+retention
+check "back under the target: the alarm is cleared" "$(test -e "$MIRROR/.state/retention-blocked.json" && echo still || echo cleared)" cleared
+
 echo "=== many protected files do not stall it (one walk, not one per deletion) ==="
 fresh_fs 256M 120000
 mkdir -p "$MIRROR/raw/keep" "$MIRROR/raw/new"

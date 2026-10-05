@@ -378,6 +378,29 @@ export_loss_issues() {
   echo "error|USB drive ${dev##*/} was recycled with images NOT saved on $(date -d "@$ts" '+%Y-%m-%d %H:%M'): $reason"
 }
 
+# Retention could not bring the mirror back to RETENTION_LO (mirror-retention.sh
+# writes retention-blocked.json): what is left is kept on purpose — protected
+# folders, the AOI's settings folder. Shown while the mirror is still above the
+# target, long before it is full: warn, error from 95%. Full, USB drives are
+# recycled without their images (export_loss_issues). "<level>|<message>".
+retention_blocked_issues() {
+  local m=${MIRROR_MOUNT:-/srv/vision_mirror}
+  local f=${RETENTION_BLOCKED_FILE:-$m/.state/retention-blocked.json}
+  [[ -f "$f" ]] || return 0
+  local target prot blocks bfree pct
+  target=$(sed -n 's/.*"target": *\([0-9]*\).*/\1/p' "$f")
+  prot=$(sed -n 's/.*"protected": *\([0-9]*\).*/\1/p' "$f")
+  [[ "$target" =~ ^[0-9]+$ ]] || target=${RETENTION_LO:-85}
+  # Used/total as retention counts it (shutil.disk_usage: blocks - free).
+  read -r blocks bfree < <(stat -f -c '%b %f' "$m" 2>/dev/null) || return 0
+  [[ "$blocks" =~ ^[0-9]+$ && "$bfree" =~ ^[0-9]+$ ]] && (( blocks > 0 )) || return 0
+  pct=$(( (blocks - bfree) * 100 / blocks ))
+  (( pct > target )) || return 0
+  local why="nothing else may be deleted"
+  [[ "${prot:-0}" =~ ^[1-9] ]] && why="$prot protected folder(s) hold the rest"
+  echo "$( ((pct >= 95)) && echo error || echo warn)|Mirror ${pct}% full and retention cannot free space below ${target}%: $why. Full, USB drives are recycled WITHOUT their images - unprotect or copy off and remove data."
+}
+
 # sshd drop-in for the service accounts: the ingest user (FTP_USER) and the SMB
 # user (SMB_USER) have passwords — factory default "citostore" — and a nologin
 # shell, which does not stop SSH: `ssh -N -L` as either opened port forwards

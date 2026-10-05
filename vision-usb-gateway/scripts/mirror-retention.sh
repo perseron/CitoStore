@@ -30,6 +30,11 @@ fi
 # 90–95% band where the loop's shutil check was still < HI and deleted nothing.
 usage=$(python3 -c "import shutil; t,u,_=shutil.disk_usage('$MIRROR_MOUNT'); print(int(u*100/t))")
 if [[ $usage -lt $RETENTION_HI ]]; then
+  # Back at the target by other means (something unprotected, deleted by
+  # hand): the "cannot free space" alarm is over.
+  if [[ $usage -le $RETENTION_LO ]]; then
+    rm -f "$MIRROR_MOUNT/.state/retention-blocked.json"
+  fi
   exit 0
 fi
 
@@ -298,26 +303,35 @@ flush_blanks()
 # and the AOI's images stop being captured while everything still looks green.
 # Say so loudly enough that it is noticed before that happens.
 final = usage_pct()
-if final >= ret_hi and protected:
-    health = Path(mirror) / ".state" / "retention-blocked.json"
+# Could not get back to RETENTION_LO: everything it may delete is gone and
+# what is left is kept on purpose — protected folders, or the AOI's settings
+# folder. Recorded for the health banner (vision-monitor: retention_blocked_
+# issues) the first time it happens, well before the mirror is full; it used
+# to be written only at >= HI and with protection, and shown only on the
+# /protected page. When the mirror does fill, USB drives are recycled
+# without their images.
+blocked_file = Path(mirror) / ".state" / "retention-blocked.json"
+if not dry and final > ret_lo:
     import json
     try:
-        health.parent.mkdir(parents=True, exist_ok=True)
-        health.write_text(
+        tmp = blocked_file.with_name(blocked_file.name + ".tmp")
+        tmp.write_text(
             json.dumps({"usage": final, "target": ret_lo, "protected": len(protected), "ts": now}),
             encoding="utf-8",
         )
+        tmp.replace(blocked_file)
     except OSError:
         pass
     print(
         f"CRITICAL: mirror at {final}% and retention cannot reach {ret_lo}% — "
-        f"{len(protected)} protected folder(s) are keeping the rest. Free space or "
-        f"unprotect something: when the mirror fills, the sync stops capturing.",
+        + (f"{len(protected)} protected folder(s) are keeping the rest. " if protected else
+           "nothing it may delete is left. ")
+        + "When the mirror fills, USB drives are recycled without their images.",
         flush=True,
     )
-else:
+elif not dry:
     try:
-        (Path(mirror) / ".state" / "retention-blocked.json").unlink(missing_ok=True)
+        blocked_file.unlink(missing_ok=True)
     except OSError:
         pass
 
