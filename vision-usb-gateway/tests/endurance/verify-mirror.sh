@@ -1,76 +1,162 @@
 #!/usr/bin/env bash
-# End-of-run integrity check: every file the writer produced must exist in the
-# mirror (raw/), and a random sample must hash-match the writer's recorded
-# SHA256. Files written in the last GRACE seconds are excluded — the sync's
-# stability gate (2 stable scans) legitimately hasn't copied them yet.
+# End-of-run (or any-time) integrity check of an endurance run.
 #
-# The grace cutoff is computed from THIS machine's clock (NOW below), never the
-# board's: the writer's timestamps are host-clock, and a board with a wrong
-# clock (no RTC cell + no NTP is the normal field state) once classified
-# 27,888 genuinely missing files as "too fresh" and reported missing: 0.
+# USB AOI (writer.csv): every file must have reached the sync DB. Retention
+# deletes the oldest files from the mirror but keeps their DB rows (raw_path
+# blanked), so "captured" = a DB row for its path; retention must also have
+# deleted strictly oldest-first (no blanked row copied after the oldest file
+# still on the mirror). A random sample of the files still there must match
+# the writer's SHA256, with its bydate link on the same inode.
+#
+# Ethernet AOI (ftp-writer.csv): every upload the server accepted must be in
+# ingest/, unless it is older than the oldest file still on the mirror (then
+# retention took it, in turn). A sample is hash-checked too.
+#
+# Not counted as missing: files written in the last GRACE seconds (the sync's
+# stability gate), and with MODE=hard reboots (events.log) the CRASH seconds
+# before each crash — those writes were acknowledged but not on disk yet
+# (accepted; reported separately). All host timestamps are compared on the
+# host clock; the board's clock offset is measured and applied.
 set -euo pipefail
 
-BOARD=${BOARD:-192.168.2.162}
+BOARD=${BOARD:-10.10.10.1}
 OUT=${OUT:-/d/endurance-run}
-SAMPLE=${SAMPLE:-50}
+SAMPLE=${SAMPLE:-200}
 GRACE=${GRACE:-180}
+CRASH=${CRASH:-60}
 NOW=$(date +%s)
 
 SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8
-          -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
+          -o LogLevel=ERROR -o IdentitiesOnly=yes -i "$HOME/.ssh/id_ed25519")
+for f in writer.csv ftp-writer.csv events.log; do
+  [[ -f "$OUT/$f" ]] || : > "$OUT/$f"
+done
+scp -q "${SSH_OPTS[@]}" "$OUT/writer.csv" "$OUT/ftp-writer.csv" "$OUT/events.log" "citostore@$BOARD:/tmp/"
+ssh "${SSH_OPTS[@]}" "citostore@$BOARD" sudo GRACE="$GRACE" SAMPLE="$SAMPLE" NOW="$NOW" CRASH="$CRASH" python3 - <<'PY'
+import csv, hashlib, os, random, re, sqlite3, sys, time
+from datetime import datetime
 
-scp "${SSH_OPTS[@]}" "$OUT/writer.csv" "citostore@$BOARD:/tmp/endurance-writer.csv"
-ssh "${SSH_OPTS[@]}" "citostore@$BOARD" sudo GRACE="$GRACE" SAMPLE="$SAMPLE" NOW="$NOW" python3 - <<'PY'
-import csv, hashlib, os, random, sys, time
-from pathlib import Path
+M = "/srv/vision_mirror"
+grace, sample_n, crash = int(os.environ["GRACE"]), int(os.environ["SAMPLE"]), int(os.environ["CRASH"])
+host_now = int(os.environ["NOW"])
+skew = time.time() - host_now          # board clock minus host clock (ssh delay included)
 
-grace = int(os.environ.get("GRACE", "180"))
-sample_n = int(os.environ.get("SAMPLE", "50"))
-host_now = int(os.environ.get("NOW") or time.time())
-skew = int(time.time()) - host_now
-if abs(skew) > 120:
-    print(f"WARNING: board clock is {skew:+d}s off the host clock -- "
-          f"board-side timestamps (bydate/, journals) are unreliable")
-raw = Path("/srv/vision_mirror/raw")
+def host_ts(s):
+    # PowerShell "o" has 7 fractional digits; Python takes 6.
+    return datetime.fromisoformat(re.sub(r"(\.\d{6})\d+", r"\1", s.strip())).timestamp()
 
-on_disk = {}
-for p in raw.rglob("END_*.jpg"):
-    on_disk[p.name] = p
+def rows(name):
+    with open(f"/tmp/{name}", newline="") as f:
+        return list(csv.DictReader(f)) if os.path.getsize(f"/tmp/{name}") else []
 
-rows = []
-cutoff = host_now - grace
-with open("/tmp/endurance-writer.csv", newline="") as f:
-    for row in csv.DictReader(f):
-        rows.append(row)
+crashes = []
+for line in open("/tmp/events.log"):
+    parts = line.split()
+    if len(parts) >= 3 and parts[1] == "REBOOT" and parts[2] == "hard":
+        crashes.append(host_ts(parts[0]))
+in_crash = lambda t: any(c - crash <= t <= c + 5 for c in crashes)
 
-missing, recent_skipped = [], 0
-for row in rows:
-    if row["name"] not in on_disk:
-        # ISO ts from powershell Get-Date -Format o
+# The oldest arrival still on the mirror (board clock): raw/ by mtime,
+# ingest/data by ctime — retention's own order.
+oldest = float("inf")
+def walk(top, ctime):
+    global oldest
+    stack = [top]
+    while stack:
+        d = stack.pop()
         try:
-            from datetime import datetime
-            ts = datetime.fromisoformat(row["ts"][:26]).timestamp()
-        except Exception:
-            ts = 0
-        if ts > cutoff:
-            recent_skipped += 1
-        else:
-            missing.append(row["name"])
+            with os.scandir(d) as it:
+                for e in it:
+                    if e.is_dir(follow_symlinks=False):
+                        stack.append(e.path)
+                    elif e.is_file(follow_symlinks=False):
+                        st = e.stat(follow_symlinks=False)
+                        oldest = min(oldest, st.st_ctime if ctime else st.st_mtime)
+        except OSError:
+            pass
+walk(f"{M}/raw", False)
+walk(f"{M}/ingest/data", True)
 
-candidates = [r for r in rows if r["name"] in on_disk]
-random.shuffle(candidates)
-bad_hash = []
-for row in candidates[:sample_n]:
-    h = hashlib.sha256(on_disk[row["name"]].read_bytes()).hexdigest()
-    if h != row["sha256"]:
-        bad_hash.append(row["name"])
+def sha(p):
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
 
-print(f"writer files: {len(rows)}  in mirror: {len(candidates)}  "
-      f"missing: {len(missing)}  in-grace (too fresh): {recent_skipped}")
-print(f"hash sample: {min(sample_n, len(candidates))} checked, {len(bad_hash)} mismatch")
-if missing[:10]:
-    print("first missing:", missing[:10])
-if bad_hash:
-    print("HASH MISMATCH:", bad_hash)
-sys.exit(1 if (missing or bad_hash) else 0)
+fail = False
+print(f"board clock offset {skew:+.0f}s; oldest file on the mirror: "
+      f"{datetime.fromtimestamp(oldest) if oldest != float('inf') else 'none'} (board clock)")
+
+# --- USB AOI ---
+w = rows("writer.csv")
+db = sqlite3.connect(f"file:{M}/.state/vision.db?mode=ro", uri=True, timeout=30)
+known = {}
+for src, rawp, byd, synced in db.execute("SELECT source_path, raw_path, bydate_path, synced_at FROM synced_files"):
+    known[src] = (rawp, byd, synced)
+missing, fresh, crashed, on_mirror, deleted = [], 0, 0, [], []
+for r in w:
+    rel, t = r["relpath"].replace("\\", "/"), host_ts(r["ts"])
+    if rel in known:
+        rawp, byd, synced = known[rel]
+        (on_mirror if rawp else deleted).append((r, rawp, byd, synced))
+    elif t > host_now - grace:
+        fresh += 1
+    elif in_crash(t):
+        crashed += 1
+    else:
+        missing.append(rel)
+late_deletes = [d for d in deleted if (d[3] or 0) > oldest + 120]
+# Every file the DB places on the mirror must be there (a cheap stat each);
+# the content is checked on a sample below.
+missing += [rawp for _, rawp, _, _ in on_mirror if not os.path.exists(rawp)]
+bad, damaged = [], 0
+for r, rawp, byd, _ in random.sample(on_mirror, min(sample_n, len(on_mirror))):
+    try:
+        if sha(rawp) != r["sha256"] or (byd and os.stat(byd).st_ino != os.stat(rawp).st_ino):
+            if in_crash(host_ts(r["ts"])):
+                damaged += 1          # written in the seconds before a crash: accepted
+            else:
+                bad.append(rawp)
+    except OSError as e:
+        bad.append(f"{rawp} ({e.strerror})")
+print(f"USB AOI: written {len(w)}  captured {len(on_mirror) + len(deleted)} "
+      f"(on the mirror {len(on_mirror)}, deleted by retention {len(deleted)})  MISSING {len(missing)}  "
+      f"too fresh {fresh}  crash window {crashed}")
+print(f"  hash+bydate sample: {min(sample_n, len(on_mirror))} checked, {len(bad)} bad"
+      f"{f', {damaged} damaged in a crash window' if damaged else ''};  deleted out of order: {len(late_deletes)}")
+for x in missing[:10]: print("  missing:", x)
+for x in bad[:10]: print("  BAD:", x)
+for d in late_deletes[:5]: print("  deleted although newer than the oldest kept:", d[0]["relpath"])
+fail |= bool(missing or bad or late_deletes)
+
+# --- Ethernet AOI ---
+fw = rows("ftp-writer.csv")
+present, missing, fresh, crashed, gone, bad = [], [], 0, 0, 0, []
+for r in fw:
+    p, t = f"{M}/ingest/{r['relpath']}", host_ts(r["ts"])
+    if os.path.exists(p):
+        present.append((r, p))
+    elif t + skew <= oldest + 30:
+        # Not newer than the oldest file kept: retention took it in turn
+        # (30 s: the clock offset is measured over ssh, the ts taken after STOR).
+        gone += 1
+    elif t > host_now - grace:
+        fresh += 1
+    elif in_crash(t):
+        crashed += 1
+    else:
+        missing.append(r["relpath"])
+for r, p in random.sample(present, min(sample_n, len(present))):
+    if sha(p) != r["sha256"]:
+        bad.append(p)
+print(f"Ethernet AOI: uploaded {len(fw)}  on the mirror {len(present)}  deleted by retention {gone}  "
+      f"MISSING {len(missing)}  too fresh {fresh}  crash window {crashed}")
+print(f"  hash sample: {min(sample_n, len(present))} checked, {len(bad)} bad")
+for x in missing[:10]: print("  missing:", x)
+for x in bad[:10]: print("  BAD:", x)
+fail |= bool(missing or bad)
+
+print("VERIFY", "FAILED" if fail else "PASSED")
+sys.exit(1 if fail else 0)
 PY

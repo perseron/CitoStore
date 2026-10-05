@@ -45,6 +45,7 @@ if (-not $Drive) {
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 $csv    = Join-Path $OutDir "writer.csv"
 $alerts = Join-Path $OutDir "alerts.log"
+$werrs  = Join-Path $OutDir "write-errors.log"
 
 function Append-Line([string]$path, [string]$line) {
   for ($a = 0; $a -lt 5; $a++) {
@@ -105,24 +106,30 @@ function Write-OneProbe {
   $okng  = if ((Get-Random -Minimum 0.0 -Maximum 1.0) -lt $OkRatio) { "OK" } else { "NG" }
   $relDir = Join-Path (Join-Path (Join-Path $dateFolder $sg) $scene) $okng
   if ($PrefixPath) { $relDir = Join-Path $PrefixPath $relDir }
-  $destDir = Join-Path "$Drive\" $relDir
 
   $t0 = Get-Date
   try {
-    New-Item -ItemType Directory -Force $destDir | Out-Null
+    # -ErrorAction Stop: with the drive gone (board rebooting) Join-Path only
+    # warned, and the alert then read "parameter 'Path' is null".
+    $destDir = Join-Path "$Drive\" $relDir -ErrorAction Stop
+    New-Item -ItemType Directory -Force $destDir -ErrorAction Stop | Out-Null
     [IO.File]::WriteAllBytes((Join-Path $destDir $name), $body)
     $ms = [int]((Get-Date) - $t0).TotalMilliseconds
     $script:dateFolderCount++
     Append-Line $csv ("{0},{1},{2},{3},{4},{5}" -f (Get-Date -Format o), $name, $hash, $body.Length, $ms, (Join-Path $relDir $name)) | Out-Null
     $script:failStreak = 0
   } catch {
-    # The drive can vanish for real (PC sleep, cable pulled) and come back
-    # under a different letter — re-detect it, and throttle the alert stream
-    # to one line per 30 consecutive failures so an unattended outage does
-    # not flood the log at the write cadence.
+    # A failed write is what the AOI sees during a reboot or a drive rotation
+    # (expected: it retries) — logged to write-errors.log, one line per streak.
+    # An ALERT only for an outage: failing without a break for 5 minutes,
+    # then every 10. The drive can also come back under another letter.
     $script:failStreak++
-    if ($script:failStreak -eq 1 -or ($script:failStreak % 30) -eq 0) {
-      Append-Line $alerts ("{0} ALERT writer: write failed (streak {1}) for {2}: {3}" -f (Get-Date -Format o), $script:failStreak, $name, $_.Exception.Message) | Out-Null
+    if ($script:failStreak -eq 1) {
+      $script:failSince = Get-Date; $script:failAlerted = $script:failSince
+      Append-Line $werrs ("{0} writer: write failed for {1}: {2}" -f (Get-Date -Format o), $name, $_.Exception.Message) | Out-Null
+    } elseif (((Get-Date) - $script:failAlerted).TotalSeconds -ge $(if ($script:failAlerted -eq $script:failSince) { 300 } else { 600 })) {
+      $script:failAlerted = Get-Date
+      Append-Line $alerts ("{0} ALERT writer: no write accepted for {1:N0}s ({2} attempts): {3}" -f (Get-Date -Format o), ((Get-Date) - $script:failSince).TotalSeconds, $script:failStreak, $_.Exception.Message) | Out-Null
     }
     $vol = Get-Volume -ErrorAction SilentlyContinue | Where-Object FileSystemLabel -eq "VISIONUSB" | Select-Object -First 1
     if ($vol -and $vol.DriveLetter) { $script:Drive = "$($vol.DriveLetter):" }
