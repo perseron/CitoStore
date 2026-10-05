@@ -59,6 +59,8 @@ def init_db(db_path: Path) -> sqlite3.Connection:
         "CREATE INDEX IF NOT EXISTS idx_synced_at_live ON synced_files(synced_at)"
         " WHERE raw_path != '' OR bydate_path != ''"
     )
+    # Retention looks each deleted file up by its mirror path (its bydate link).
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_synced_raw ON synced_files(raw_path)")
     conn.commit()
     return conn
 

@@ -4,7 +4,8 @@ After=local-fs.target
 # Triggered on demand by the WebUI; never enabled at boot.
 
 [Service]
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 Type=oneshot
 EnvironmentFile=-/etc/vision-gw.env
-ExecStart=/bin/bash -c '"${GATEWAY_HOME:-/opt/vision-usb-gateway}"/scripts/provision-from-bundle.sh /run/vision-provision/bundle.citostore --provision --confirm'
+ExecStart=/bin/bash -c '"${GATEWAY_HOME}"/scripts/provision-from-bundle.sh /run/vision-provision/bundle.citostore --provision --confirm'
 TimeoutStartSec=1800

@@ -3,6 +3,7 @@ Description=Vision Wipe All Data
 After=local-fs.target
 
 [Service]
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 Type=oneshot
 EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/wipe-all-data.sh --i-know-what-im-doing --force-umount

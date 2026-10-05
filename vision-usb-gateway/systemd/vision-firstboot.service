@@ -11,6 +11,7 @@ Before=vision-gw-health.service
 DefaultDependencies=yes
 
 [Service]
+Environment=GATEWAY_HOME=/opt/CitoStore/vision-usb-gateway
 Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=-/etc/vision-gw.env

@@ -121,6 +121,14 @@ add)
   ;;
 
 remove)
+  # Only the export drive's own removal (or its whole disk's): pulling any other
+  # USB stick used to unmount the export drive too, in the middle of a copy.
+  src=$(findmnt -n -o SOURCE "$USB_EXPORT_MOUNT" 2>/dev/null || true)
+  rec=$(cat /run/citostore-usb-export.dev 2>/dev/null || true)
+  if [[ -n "$src" && "$src" != "$dev" && "$rec" != "$dev" && "${src#"$dev"}" == "$src" ]]; then
+    log "usb-export: $dev removed — not the export drive ($src), left mounted"
+    exit 0
+  fi
   if mountpoint -q "$USB_EXPORT_MOUNT"; then
     sync
     if umount "$USB_EXPORT_MOUNT" 2>/dev/null; then

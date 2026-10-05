@@ -82,23 +82,6 @@ def load_protected() -> list:
 
 protected = load_protected()
 
-def is_protected(path: Path) -> bool:
-    # path.resolve() walks and stats EVERY path component from / down (Python
-    # checks each one for a symlink) -- ~30 syscalls per call at this mirror's
-    # path depth, x2 (raw_path + bydate_path) per file the delete loop looks
-    # at. With no protected folders configured (the common case) this bought
-    # nothing: caught live on the endurance board, a retention run that
-    # should free ~100GB (tens of thousands of files) never got past 100%
-    # CPU in resolve() after 15+ minutes. Skip it entirely when there is
-    # nothing to protect against.
-    if not protected:
-        return False
-    try:
-        rp = path.resolve()
-    except OSError:
-        return False
-    return any(rp == r or r in rp.parents for r in protected)
-
 def usage_pct():
     total, used, _ = shutil.disk_usage(mirror)
     return int(used * 100 / total)
@@ -131,75 +114,26 @@ def save_maint_state(data: dict) -> None:
     except Exception:
         pass
 
-def file_fallback_delete_one() -> bool:
-    raw_root = Path(mirror) / "raw"
-    bydate_root = Path(mirror) / "bydate"
-    # FTP/SFTP ingest data lives here and is not tracked in the DB.
-    ingest_data = Path(os.environ.get("INGEST_DIR", str(Path(mirror) / "ingest"))) / "data"
-    prune_roots = [r for r in (raw_root, ingest_data) if r.exists()]
-    if not prune_roots:
-        return False
-
-    inode_links: dict[tuple[int, int], list[Path]] = {}
-    if bydate_root.exists():
-        for p in bydate_root.rglob("*"):
-            if not p.is_file():
-                continue
-            try:
-                st = p.stat()
-            except OSError:
-                continue
-            inode_links.setdefault((st.st_dev, st.st_ino), []).append(p)
-
-    candidates: list[tuple[float, Path, tuple[int, int], Path]] = []
-    for root in prune_roots:
-        for p in root.rglob("*"):
-            if not p.is_file():
-                continue
-            try:
-                st = p.stat()
-            except OSError:
-                continue
-            inode = (st.st_dev, st.st_ino)
-            # raw/ and bydate/ are the same inodes (hardlinks), so protection is
-            # about the data, not a path: an image is protected if EITHER its raw
-            # file or ANY of its bydate links is protected. Freeing space means
-            # deleting every link, so if one link is kept none may go — checking
-            # only the raw path would let an unprotected raw file drag a protected
-            # bydate link to deletion with it.
-            if is_protected(p) or any(is_protected(l) for l in inode_links.get(inode, [])):
-                continue
-            candidates.append((st.st_mtime, p, inode, root))
-    candidates.sort(key=lambda x: x[0])
-
-    for _, raw_path, inode, root in candidates:
-        if dry:
-            print(f"DRY fallback delete: {raw_path}")
-            return True
-        try:
-            raw_path.unlink(missing_ok=True)
-        except OSError:
-            continue
-        for link in inode_links.get(inode, []):
-            try:
-                link.unlink(missing_ok=True)
-            except OSError:
-                pass
-            remove_empty_ancestors(link, bydate_root)
-        remove_empty_ancestors(raw_path, root)
-        return True
-    return False
-
-conn = sqlite3.connect(str(state_db))
+# timeout/busy_timeout: the sync holds the DB write lock for a whole cycle, an
+# LV export for minutes; with sqlite3's default 5 s retention failed then.
+conn = sqlite3.connect(str(state_db), timeout=60)
 conn.row_factory = sqlite3.Row
+conn.execute("PRAGMA busy_timeout=60000")
+# One raw_path lookup per deleted file (to find its bydate link).
+conn.execute("CREATE INDEX IF NOT EXISTS idx_synced_raw ON synced_files(raw_path)")
+conn.commit()
 
 if not dry:
-    # Prune synced_files rows by age (bounds the DB). Rows are intentionally
-    # kept even after their mirror copy is reclaimed below, so a file still on
-    # the active USB LV is not re-copied (is_already_synced stays true). A row
-    # older than the TTL has surely rotated away, so dropping it is safe.
+    # Prune synced_files rows by age (bounds the DB) — only rows whose files
+    # retention already reclaimed (blanked); they are kept that long so a file
+    # still on the active USB LV is not re-copied. The prune used to drop rows
+    # of files still on the mirror (on a mirror holding over 90 days), and
+    # every clock correction after a dead RTC aged rows at once.
     row_ttl = max(1, row_ttl_days) * 86400
-    conn.execute("DELETE FROM synced_files WHERE synced_at < ?", (now - row_ttl,))
+    conn.execute(
+        "DELETE FROM synced_files WHERE synced_at < ? AND raw_path = '' AND bydate_path = ''",
+        (now - row_ttl,),
+    )
     conn.commit()
 
     # Prune old file_state entries to keep DB bounded.
@@ -207,77 +141,157 @@ if not dry:
     conn.execute("DELETE FROM file_state WHERE last_seen < ?", (now - ttl,))
     conn.commit()
 
-# We are here only because the bash gate above already saw usage >=
-# RETENTION_HI. Delete oldest-first down to RETENTION_LO (the target; the old
-# `while usage_pct() >= ret_hi` exited the instant usage dropped below HI, so
-# it only ever freed to ~HI and re-triggered on the next timer). Process in
-# batches with ONE commit per batch, and NEVER walk the whole tree per file:
-# an orphaned DB row (file already gone, e.g. a killed earlier run deleted the
-# file but never blanked the row) is blanked here just like a real delete —
-# self-clearing in O(1) — instead of dropping to the O(whole-tree) fallback
-# every few rows, which is what pinned a real run at 100% CPU for 15+ minutes
-# while the mirror barely moved off 97%.
-BATCH = 500
-while usage_pct() > ret_lo:
-    rows = conn.execute(
-        "SELECT id, raw_path, bydate_path FROM synced_files "
-        "WHERE raw_path != '' OR bydate_path != '' "
-        "ORDER BY synced_at ASC LIMIT ?",
-        (BATCH,),
-    ).fetchall()
+base = Path(mirror).resolve()
+raw_root = base / "raw"
+bydate_root = base / "bydate"
+# FTP/SFTP ingest data lives here and is not tracked in the DB.
+ingest_data = Path(os.environ.get("INGEST_DIR", str(base / "ingest"))).resolve() / "data"
+protected_strs = [str(r) for r in protected]
 
-    if not rows:
-        # DB has no more deletable rows; reclaim any non-DB data (e.g. FTP/SFTP
-        # ingest, which isn't tracked in synced_files) directly. Stops when it
-        # can free nothing more.
-        if not file_fallback_delete_one():
-            break
-        continue
 
-    blanked = []
-    for row in rows:
-        if protected:
-            # SQL can't know the protected roots; skip them here. (is_protected
-            # short-circuits to False when nothing is protected, so this whole
-            # branch is free in the common case.)
-            paths = [Path(p) for p in (row["raw_path"], row["bydate_path"]) if p]
-            if any(is_protected(p) for p in paths):
-                continue
-        if dry:
-            print(f"DRY delete: {row['raw_path']} and {row['bydate_path']}")
-            blanked.append(row["id"])
+def under_protected(path: str) -> bool:
+    # Walked paths are real (from the resolved mirror, links never followed),
+    # so a string prefix is exact — no per-file resolve().
+    return any(path == r or path.startswith(r + "/") for r in protected_strs)
+
+
+def scan(root: Path, only_single_link: bool = False) -> list:
+    """(ctime, path, inode, nlink) of every regular file under root that is not
+    protected. ctime, not mtime: the time the file arrived on the mirror (the
+    sync's copy+rename+link, or the FTP upload). mtime is whatever the AOI's
+    clock said — a factory PC set to 2030 would have kept its files forever."""
+    out = []
+    stack = [str(root)]
+    while stack:
+        d = stack.pop()
+        if under_protected(d):
             continue
-        bydate = Path(row["bydate_path"]) if row["bydate_path"] else None
-        raw = Path(row["raw_path"]) if row["raw_path"] else None
-        for p in (bydate, raw):
-            if p is None:
-                continue
-            try:
-                p.unlink(missing_ok=True)
-            except OSError:
-                pass
-        if bydate is not None:
-            remove_empty_ancestors(bydate, Path(mirror) / "bydate")
-        blanked.append(row["id"])
+        try:
+            it = os.scandir(d)
+        except OSError:
+            continue
+        with it:
+            for e in it:
+                try:
+                    if e.is_dir(follow_symlinks=False):
+                        stack.append(e.path)
+                    elif e.is_file(follow_symlinks=False):
+                        if under_protected(e.path):
+                            continue
+                        st = e.stat(follow_symlinks=False)
+                        if only_single_link and st.st_nlink != 1:
+                            continue
+                        out.append((st.st_ctime, e.path, st.st_ino, st.st_nlink))
+                except OSError:
+                    continue
+    return out
 
+
+_bydate_links = None
+
+
+def bydate_links(ino: int) -> list:
+    """bydate paths of an inode, for files the DB cannot place (DB lost,
+    rows from an older version). Built once, only if ever needed."""
+    global _bydate_links
+    if _bydate_links is None:
+        _bydate_links = {}
+        if bydate_root.exists():
+            for _, p, i, n in scan(bydate_root):
+                if n > 1:
+                    _bydate_links.setdefault(i, []).append(p)
+    return _bydate_links.get(ino, [])
+
+
+pending_blank = []
+
+
+def flush_blanks() -> None:
     # Keep the identity rows (blank their paths, not delete) so a file still on
-    # the active USB LV is not re-synced back into the mirror; the age-prune
-    # above clears them later. One executemany+commit per batch, not per file.
-    if not dry and blanked:
+    # the active USB LV is not re-synced back into the mirror; the TTL prune
+    # above clears them later. One executemany+commit per batch.
+    if pending_blank and not dry:
         conn.executemany(
             "UPDATE synced_files SET raw_path='', bydate_path='' WHERE id=?",
-            [(i,) for i in blanked],
+            [(i,) for i in pending_blank],
         )
         conn.commit()
+    pending_blank.clear()
 
-    if not blanked:
-        # Every row in this window was protected; the DB can't free anything.
-        # Direct file deletion (also protection-aware) handles the rest.
-        if not file_fallback_delete_one():
-            break
 
+def delete(path: str, ino: int, nlink: int, root: Path) -> bool:
+    """Delete one file and every bydate link of it — the space comes back only
+    when the last link goes. False if one of its links is protected."""
+    rows = conn.execute(
+        "SELECT id, bydate_path FROM synced_files WHERE raw_path = ?", (path,)
+    ).fetchall()
+    links = []
+    for row in rows:
+        bp = row["bydate_path"]
+        if bp and bp != path:
+            try:
+                if os.lstat(bp).st_ino == ino:
+                    links.append(bp)
+            except OSError:
+                pass
+    if nlink > 1 + len(links):
+        links = sorted(set(links) | {p for p in bydate_links(ino) if p != path})
+    # Protection is about the data, not a path: one protected link keeps it.
+    if any(under_protected(p) for p in links):
+        return False
     if dry:
-        break
+        print(f"DRY delete: {path} {links}")
+        return True
+    for p, stop in [(path, root)] + [(p, bydate_root) for p in links]:
+        try:
+            os.unlink(p)
+        except OSError:
+            pass
+        remove_empty_ancestors(Path(p), stop)
+    pending_blank.extend(row["id"] for row in rows)
+    if len(pending_blank) >= 500:
+        flush_blanks()
+    return True
+
+
+def free_space(candidates: list) -> None:
+    """Oldest first until usage is back at RETENTION_LO."""
+    candidates.sort()
+    shown = 0
+    for _, path, ino, nlink, root in candidates:
+        if not dry and usage_pct() <= ret_lo:  # statvfs: one cheap syscall
+            return
+        if delete(path, ino, nlink, root) and dry:
+            shown += 1
+            if shown >= 20:
+                return
+
+
+# We are here only because the bash gate above saw usage >= RETENTION_HI.
+# One walk of the trees, then oldest-first deletion down to RETENTION_LO, in
+# arrival order across everything:
+# - USB images (raw/, with their bydate links) and the Ethernet AOI's files
+#   (ingest/data, never in the DB) interleaved — before, ingest data went only
+#   after every USB image, down to minutes-old ones;
+# - files the DB no longer knows (a lost/corrupt vision.db, rows an older
+#   version pruned while the files were still there) in their place by age —
+#   before, they could only go once the DB had nothing left, so the NEWEST
+#   images were deleted while the oldest stayed;
+# - protected folders skipped in the walk itself. The old DB loop re-selected
+#   the same protected rows forever and then deleted ONE file per walk of the
+#   whole tree: K deletions cost K full walks, and a run freed a few hundred
+#   files in its 30 minutes while the mirror filled.
+candidates = []
+for root in (raw_root, ingest_data):
+    if root.exists():
+        candidates += [(c, p, i, n, root) for c, p, i, n in scan(root)]
+print(f"retention: {len(candidates)} files considered, usage {usage_pct()}% -> target {ret_lo}%", flush=True)
+free_space(candidates)
+# Last: bydate links whose raw copy is already gone (single link left).
+if dry or usage_pct() > ret_lo:
+    if bydate_root.exists():
+        free_space([(c, p, i, n, bydate_root) for c, p, i, n in scan(bydate_root, only_single_link=True)])
+flush_blanks()
 
 # Protection holds: protected data is never deleted to make room. But retention
 # giving up quietly is how the mirror fills, the sync's free-space guard trips,

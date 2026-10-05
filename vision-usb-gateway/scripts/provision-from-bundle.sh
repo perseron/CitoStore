@@ -341,6 +341,10 @@ if [[ -f "$STAGE/samba/passdb.tdb" ]] && mountpoint -q /var/lib/samba; then
   log "restored Samba passdb (SMB users/passwords carried over)"
 fi
 
+# The restored settings to disk before anything else: a power cut in the next
+# ~30 s (ext4 delayed allocation) could leave them zero-length.
+sync -f "$STATE_DIR" 2>/dev/null || sync
+
 # 8) Bring the stack up — everything step 2 stopped (the monitor and retention
 #    timers used to stay off until the next reboot).
 systemctl start usb-gadget.service 2>/dev/null || true

@@ -477,7 +477,12 @@ def start_usb_copy(sources: list, dest_rel: str) -> tuple:
 
     srcs = []
     for item in sources:
+        # Never the mirror's root: that copied .state too (the session key, the
+        # password hashes, the Samba passdb, every credential) onto the stick —
+        # the .state check only looks below the root. The page offers folders.
         path = resolve_export_path(item.get("root", "mirror"), item.get("path", ""))
+        if item.get("root", "mirror") == "mirror" and path == export_root("mirror").resolve():
+            return 1, "", "pick folders inside the mirror, not the mirror itself"
         if not path.exists():
             return 1, "", f"source not found: {item.get('path')}"
         # A trailing slash would copy a directory's *contents*; keep the folder.

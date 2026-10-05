@@ -241,3 +241,15 @@ def test_protected_writes_a_list_retention_can_parse(roots, monkeypatch, tmp_pat
     assert code == 0
     data = json.loads(target.read_text(encoding="utf-8"))
     assert data["paths"] == ["raw", "raw/2026"], "deduped, normalised, sorted"
+
+
+def test_the_mirror_root_itself_is_never_copied(roots, monkeypatch):
+    # The .state check only looks below the root: copying "" took .state
+    # (session key, password hashes, passdb, credentials) onto the stick.
+    ran = []
+    monkeypatch.setattr(server, "run_cmd", lambda args, **kw: (ran.append(args), (0, "", ""))[1])
+    monkeypatch.setattr(server, "run_privileged", lambda args, **kw: (ran.append(args), (0, "", ""))[1])
+    for path in ("", " ", "./", "raw/..", "raw/2026/../.."):
+        code, _, err = server.start_usb_copy([{"root": "mirror", "path": path}], "")
+        assert code == 1, path
+    assert not [a for a in ran if a and a[0] == "systemd-run"]

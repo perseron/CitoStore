@@ -94,6 +94,12 @@ restart_stack() {
   systemctl start vision-sync.service vision-monitor.service vision-rotator.service || true
   # Not the rotator timer: it is off by design (the rotator runs after each sync).
   systemctl enable --now vision-sync.timer vision-monitor.timer || true
+  # Stopped above with the rest; left off, retention never ran again until a
+  # reboot and the mirror filled until capture stopped. NAS only if it ran.
+  systemctl start mirror-retention.timer || true
+  if [[ "${NAS_TIMER_WAS_ACTIVE:-false}" == true ]]; then
+    systemctl start nas-sync.timer || true
+  fi
 }
 # Any failure from here on (mirror busy, mkfs refused) used to exit with the
 # whole stack stopped — WebUI included, so the operator could not even see the
@@ -115,6 +121,8 @@ on_exit() {
 }
 trap on_exit EXIT
 
+NAS_TIMER_WAS_ACTIVE=false
+systemctl is-active --quiet nas-sync.timer 2>/dev/null && NAS_TIMER_WAS_ACTIVE=true
 # The fast-sync timer too: left running it started a sync between the stops,
 # and stopping that sync then waited on the timer it toggles (see
 # vision-monitor.sh set_fast_sync_mode).
@@ -203,6 +211,10 @@ fi
 if [[ ! -f "$MIRROR_MOUNT/.state/vision-nas.creds" && -f "$BACKUP_DIR/vision-nas.creds" ]]; then
   cp "$BACKUP_DIR/vision-nas.creds" "$MIRROR_MOUNT/.state/vision-nas.creds"
 fi
+# On disk now: the only other copy is in RAM (/run). Without this a power cut
+# in the next ~30 s (ext4 delayed allocation) could leave them zero-length — an
+# empty webui.passwd locks the admin out for good.
+sync -f "$MIRROR_MOUNT/.state" 2>/dev/null || sync
 
 for lv in "${USB_LVS[@]}"; do
   dev="/dev/$VG/$lv"

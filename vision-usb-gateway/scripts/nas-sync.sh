@@ -33,17 +33,28 @@ EOF
 last_error=""
 attempt=1
 while [[ $attempt -le $NAS_RETRY_MAX ]]; do
-  if timeout 5 ls "$NAS_MOUNT" >/dev/null 2>&1; then
+  # `ls` triggers the automount; only a real share mounted there counts. With
+  # the mount down, the path is a plain directory on the RAM root, and rsync
+  # copied the whole mirror into RAM.
+  if timeout 5 ls "$NAS_MOUNT" >/dev/null 2>&1 \
+     && findmnt -n -o FSTYPE -M "$NAS_MOUNT" 2>/dev/null | grep -qvx autofs; then
     log "NAS mounted, starting rsync (attempt $attempt)"
-    if rsync $NAS_RSYNC_OPTS "$MIRROR_MOUNT/" "$NAS_MOUNT/"; then
+    # Never .state: the session key (admin login forgeable), password hashes,
+    # Samba passdb and every credential — on a share others can read, without
+    # the 0600 modes — and a torn copy of the live vision.db.
+    rc=0
+    # shellcheck disable=SC2086  # NAS_RSYNC_OPTS is a list of options
+    rsync $NAS_RSYNC_OPTS --exclude=/.state/ "$MIRROR_MOUNT/" "$NAS_MOUNT/" || rc=$?
+    # 24 = files vanished during the copy (retention, rotation): normal here.
+    if ((rc == 0 || rc == 24)); then
       log "NAS sync complete"
       write_nas_status "ok" "$attempt"
       exit 0
     else
-      last_error="rsync failed"
+      last_error="rsync failed (rc=$rc)"
     fi
   else
-    log "NAS not reachable (attempt $attempt)"
+    log "NAS not mounted (attempt $attempt)"
     last_error="NAS not reachable"
   fi
   sleep "$NAS_RETRY_BACKOFF"
