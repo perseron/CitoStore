@@ -81,6 +81,11 @@ if [[ "$DRY_RUN" == "true" ]]; then
 fi
 
 restart_stack() {
+  # Mounted for the system first: this service's own `mount` stays in its
+  # private namespace (ProtectSystem), so the gadget, started next, saw the bare
+  # mount point and its active-drive record (.state/vision-usb-active) was
+  # lost — the next boot handed the AOI usb_0, whichever drive it had.
+  systemctl start srv-vision_mirror.mount || true
   systemctl start usb-gadget.service || true
   # The Samba bind (.state/samba -> /var/lib/samba) went down with the mirror
   # mount; without it smbd ran on the overlay's RAM copy of its databases.

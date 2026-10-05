@@ -88,6 +88,8 @@ check "SMB users kept" "$(st samba/private/passdb.tdb)" smbusers
 check "FTP password kept" "$(st ftp.creds)" ftp
 check "AOI settings kept" "$(st aoi_settings/r.ini)" recipe
 check "AOI settings pushed onto the new USB drive" "$(cat /mnt/vision_wipe_usb_1/aoi_settings/r.ini 2>/dev/null)" recipe
+check "the mirror mounted for the system before the gadget starts (it records the active drive there)" \
+  "$(grep -n -e 'start srv-vision_mirror.mount' -e 'start usb-gadget' "$TMP/calls" | tail -2 | head -1 | grep -c srv-vision_mirror)" 1
 check "Samba bind restarted before smbd" "$(grep -n -e 'start var-lib-samba.mount' -e 'start smbd' "$TMP/calls" | head -1 | grep -c var-lib-samba)" 1
 check "fast-sync timer stopped too" "$(grep -c 'stop .*vision-sync-fast.timer' "$TMP/calls")" 1
 check "the Ethernet AOI's settings kept" "$(cat "$M/ingest/aoi_settings/line.cfg" 2>/dev/null)" eth-aoi
