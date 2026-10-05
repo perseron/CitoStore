@@ -3,6 +3,7 @@ import base64
 import contextlib
 import hashlib
 import hmac
+import html
 import ipaddress
 import json
 import os
@@ -16,7 +17,7 @@ import threading
 import time
 from contextlib import contextmanager
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -149,15 +150,21 @@ def log(msg: str) -> None:
         f.write(f"[{timestamp}] {msg}\n")
 
 
-def run_cmd(args, input_text=None, timeout=120):
-    result = subprocess.run(
-        args,
-        input=input_text,
-        text=True,
-        capture_output=True,
-        timeout=timeout,
-        check=False,
-    )
+def run_cmd(args, input_text=None, timeout=120, env=None):
+    try:
+        result = subprocess.run(
+            args,
+            input=input_text,
+            text=True,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+            env=env,
+        )
+    except subprocess.TimeoutExpired:
+        # Uncaught, it dropped the connection: the page got no answer at all
+        # instead of an error saying the operation did not finish.
+        return 124, "", f"{args[0]}: no answer within {timeout} s"
     return result.returncode, result.stdout.strip(), result.stderr.strip()
 
 
@@ -208,6 +215,11 @@ def set_system_time(value):
     reproduces intermittently), so retry across the window instead of sleeping a
     guessed interval. Any other failure is real and is returned as-is.
     """
+    # Checked first: a value timedatectl then refused still left NTP off.
+    try:
+        time.strptime(value, "%Y-%m-%d %H:%M:%S" if value.count(":") == 2 else "%Y-%m-%d %H:%M")
+    except ValueError:
+        return 1, "", "the time must look like 2026-07-17 08:30 (or 08:30:00)"
     run_cmd(["/usr/bin/timedatectl", "set-ntp", "false"])
     code, out, err = 1, "", ""
     for attempt in range(TIME_SET_ATTEMPTS):
@@ -338,18 +350,36 @@ def set_protected_paths(paths: list) -> tuple:
     return 0, "", ""
 
 
+# The protected page polls every 15 s, and `du` walks every protected tree:
+# a protected year of images held this single-threaded server for seconds on
+# each poll. One du over all of them (hard links — bydate — counted once),
+# reused for a few minutes; a changed list is measured at once.
+PROTECTED_DU_TTL = 300
+_protected_du = {"key": None, "ts": 0.0, "total": 0}
+
+
+def protected_bytes(paths: list) -> int:
+    key = tuple(paths)
+    if _protected_du["key"] == key and time.time() - _protected_du["ts"] < PROTECTED_DU_TTL:
+        return _protected_du["total"]
+    targets = []
+    for rel in paths:
+        with contextlib.suppress(ValueError, OSError):
+            targets.append(str(resolve_export_path("mirror", rel)))
+    total = 0
+    if targets:
+        _, out, _ = run_cmd(["/usr/bin/du", "-sbc", "--", *targets])
+        lines = out.strip().splitlines()
+        if lines and lines[-1].endswith("total"):
+            with contextlib.suppress(ValueError):
+                total = int(lines[-1].split()[0])
+    _protected_du.update(key=key, ts=time.time(), total=total)
+    return total
+
+
 def get_protected_status() -> dict:
     paths, list_error = read_protected_list()
-    total = 0
-    for rel in paths:
-        try:
-            target = resolve_export_path("mirror", rel)
-        except (ValueError, OSError):
-            continue
-        code, out, _ = run_cmd(["/usr/bin/du", "-sb", str(target)])
-        if code == 0 and out:
-            with contextlib.suppress(ValueError):
-                total += int(out.split()[0])
+    total = protected_bytes(paths)
     usage = get_disk_usage(str(EXPORT_ROOTS["mirror"]))
     blocked = None
     with contextlib.suppress(OSError, ValueError):
@@ -422,6 +452,13 @@ def usb_copy_running() -> bool:
     return out.strip() in ("active", "activating")
 
 
+def usb_drive_mounted() -> bool:
+    """A drive is mounted on the export mount point. The directory itself
+    stays behind on the RAM root after a drive was pulled: a copy started then
+    (as root, outside the sandbox) wrote into RAM until the unit ran out."""
+    return os.path.ismount(EXPORT_ROOTS["usb"])
+
+
 def start_usb_copy(sources: list, dest_rel: str) -> tuple:
     """Copy into the USB drive in the background, as a transient unit.
 
@@ -432,6 +469,8 @@ def start_usb_copy(sources: list, dest_rel: str) -> tuple:
     """
     if usb_copy_running():
         return 1, "", "a copy is already running"
+    if not usb_drive_mounted():
+        return 1, "", "no USB drive is plugged in"
     dest = resolve_export_path("usb", dest_rel)
     if not dest.is_dir():
         return 1, "", "destination is not a directory on the USB drive"
@@ -790,18 +829,31 @@ def update_config_file(base_text: str, updates: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+# Requests run in threads: two first requests must not both create a key (each
+# signing with its own, one of them overwritten).
+_SECRET_LOCK = threading.Lock()
+
+
 def ensure_secret() -> bytes:
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    if SECRET_FILE.exists():
-        secret = SECRET_FILE.read_bytes()
-        # A short key (an empty file left by a power cut) would sign sessions
-        # with a guessable HMAC key: anyone could forge an admin cookie.
-        if len(secret) >= 32:
-            return secret
-        log("session secret too short; regenerating (all sessions end)")
-    secret = secrets.token_bytes(32)
-    atomic_write(SECRET_FILE, secret, 0o600)
-    return secret
+    with _SECRET_LOCK:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        if SECRET_FILE.exists():
+            secret = SECRET_FILE.read_bytes()
+            # A short key (an empty file left by a power cut) would sign sessions
+            # with a guessable HMAC key: anyone could forge an admin cookie.
+            if len(secret) >= 32:
+                return secret
+            log("session secret too short; regenerating (all sessions end)")
+        secret = secrets.token_bytes(32)
+        atomic_write(SECRET_FILE, secret, 0o600)
+        return secret
+
+
+def rotate_secret() -> None:
+    """A new session key: every session signed with the old one ends."""
+    with _SECRET_LOCK:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        atomic_write(SECRET_FILE, secrets.token_bytes(32), 0o600)
 
 
 def hash_password(password: str, salt: bytes) -> str:
@@ -871,9 +923,12 @@ def verify_smb_password(password: str) -> bool:
     user = cfg.get("SMB_USER", "smbuser")
     if "%" in user:
         return False
+    # The password in PASSWD, not in -U user%password: argv is world-readable
+    # in /proc while smbclient runs.
     code, _, _ = run_cmd(
-        ["/usr/bin/smbclient", "-L", "localhost", "-U", f"{user}%{password}"],
+        ["/usr/bin/smbclient", "-L", "localhost", "-U", user],
         timeout=20,
+        env={**os.environ, "PASSWD": password},
     )
     return code == 0
 
@@ -1578,6 +1633,10 @@ _login_attempts: dict[str, list[float]] = {}
 
 class WebHandler(BaseHTTPRequestHandler):
     server_version = "VisionWebUI/1.0"
+    # Per socket operation. The server is single-threaded: a connection that
+    # opened and sent nothing (or stalled mid-body) held every other page
+    # forever. A slow but moving upload is unaffected.
+    timeout = 30
 
     def _send_security_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -1596,12 +1655,14 @@ class WebHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def send_json(self, obj: dict, status=200):
+    def send_json(self, obj: dict, status=200, cookies: list | None = None):
         data = json.dumps(obj).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
+        for cookie in cookies or []:
+            self.send_header("Set-Cookie", cookie)
         self._send_security_headers()
         self.end_headers()
         self.wfile.write(data)
@@ -1839,7 +1900,8 @@ class WebHandler(BaseHTTPRequestHandler):
             self.wfile.write(data)
             return
         if self.path.startswith("/api/config/bundle"):
-            return self.handle_bundle_export()
+            with POST_LOCK:  # one fixed output file in /run
+                return self.handle_bundle_export()
         if self.path.startswith("/api/maintenance-mode"):
             return self.send_json({"enabled": MAINT_MODE_FLAG.exists()})
         if self.path.startswith("/api/update/status"):
@@ -1854,7 +1916,21 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
     def do_POST(self):
-        content_length = int(self.headers.get("Content-Length", 0))
+        # One change at a time (pages and status reads run alongside, see main).
+        with POST_LOCK:
+            return self._do_post()
+
+    def _do_post(self):
+        # Every handler reads exactly Content-Length bytes: a negative one was
+        # read(-1) — until the client closes — and this server is single-
+        # threaded, so one such request (no login needed) stalled every page.
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except ValueError:
+            content_length = -1
+        if content_length < 0:
+            self.send_error(HTTPStatus.BAD_REQUEST, "invalid Content-Length")
+            return
         if self.path == "/api/update":
             max_size = MAX_UPDATE_SIZE
         elif self.path == "/api/config/bundle/plan":
@@ -2033,6 +2109,18 @@ class WebHandler(BaseHTTPRequestHandler):
         log(f"config updated: {', '.join(sorted(updates.keys()))}")
         return self.send_json({"ok": True})
 
+    def end_other_sessions(self) -> list:
+        """After a password change: a new session key, so every session signed
+        with the old one — an 8 h admin or export login by whoever knew the old
+        password — ends now. The admin who made the change keeps working: the
+        returned cookies re-issue their session under the new key."""
+        rotate_secret()
+        token = make_session("admin")
+        return [
+            f"session={token}; HttpOnly; Path=/; SameSite=Strict",
+            f"csrf={make_csrf(token)}; Path=/; SameSite=Strict",
+        ]
+
     def local_address(self) -> str:
         """The unit's address this request came in on ("" if unknown)."""
         try:
@@ -2094,7 +2182,7 @@ class WebHandler(BaseHTTPRequestHandler):
             return self.send_json({"ok": False, "error": "invalid password"}, status=400)
         store_password(password)
         log("webui password changed")
-        return self.send_json({"ok": True})
+        return self.send_json({"ok": True}, cookies=self.end_other_sessions())
 
     def handle_smb_password(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -2136,7 +2224,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 status=500,
             )
         log(f"smb password changed for {smb_user}")
-        return self.send_json({"ok": True})
+        return self.send_json({"ok": True}, cookies=self.end_other_sessions())
 
     def handle_ftp_password(self):
         length = int(self.headers.get("Content-Length", 0))
@@ -2317,7 +2405,7 @@ class WebHandler(BaseHTTPRequestHandler):
                 )
             except (ValueError, OSError) as exc:
                 return self.send_json({"ok": False, "error": str(exc)}, status=400)
-            if not parent.is_dir():
+            if not usb_drive_mounted() or not parent.is_dir():
                 return self.send_json({"ok": False, "error": "no USB drive here"}, status=400)
             if target.exists():
                 return self.send_json({"ok": False, "error": "already exists"}, status=400)
@@ -2479,11 +2567,10 @@ class WebHandler(BaseHTTPRequestHandler):
         if not ok:
             return self.send_json({"ok": False, "error": f"imported config: {err}"}, status=400)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        # Atomic, and last-good is left alone: it is what health-check rolls back
-        # to if this file turns out bad, so it must not become this file too.
-        tmp = SHADOW_CONF.with_suffix(".import-tmp")
-        tmp.write_text(normalized, encoding="utf-8")
-        os.replace(tmp, SHADOW_CONF)
+        # Atomic (with fsync), and last-good is left alone: it is what
+        # health-check rolls back to if this file turns out bad, so it must not
+        # become this file too.
+        atomic_write(SHADOW_CONF, normalized)
         log(f"config imported ({len(parsed)} keys)")
         return self.send_json(
             {"ok": True, "message": "Config imported — press Save + Apply in any section or restart to apply it"}
@@ -2604,6 +2691,9 @@ class WebHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.OK)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        # The admin, export and protected pages are served from here: without
+        # the CSP they were the only pages with none (no inline scripts in them).
+        self._send_security_headers()
         self.end_headers()
         self.wfile.write(data)
 
@@ -2617,7 +2707,7 @@ class WebHandler(BaseHTTPRequestHandler):
         what is stored here.
         """
         cfg = parse_config(load_config_text())
-        name = cfg.get("NETBIOS_NAME", "CitoStore")
+        name = html.escape(str(cfg.get("NETBIOS_NAME", "CitoStore")))
         return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -2764,7 +2854,16 @@ def _watchdog_thread(interval: float) -> None:
         time.sleep(interval)
 
 
-class DualStackHTTPServer(HTTPServer):
+# Threaded server: a request per thread. Single-threaded, every page froze for
+# as long as any request took — a resize or wipe (up to an hour), an apply,
+# an update upload — and one idle connection (a browser's speculative
+# preconnect, or anyone on the LAN) held them all. Changes still run one at a
+# time (POST_LOCK, plus require_lock around the system-changing ones); only
+# reads run alongside them.
+POST_LOCK = threading.Lock()
+
+
+class DualStackHTTPServer(ThreadingHTTPServer):
     """Serve on both IPv4 and IPv6.
 
     Binding an IPv6 wildcard socket with IPV6_V6ONLY disabled also accepts IPv4
@@ -2780,7 +2879,7 @@ class DualStackHTTPServer(HTTPServer):
             self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 0)
         except (AttributeError, OSError):
             pass
-        HTTPServer.server_bind(self)
+        ThreadingHTTPServer.server_bind(self)
 
 
 def main():
@@ -2793,7 +2892,7 @@ def main():
     if host in ("", "0.0.0.0", "::"):
         server = DualStackHTTPServer(("::", port), WebHandler)
     else:
-        server = HTTPServer((host, port), WebHandler)
+        server = ThreadingHTTPServer((host, port), WebHandler)
     log(f"webui started on {host}:{port}")
     sd_notify("READY=1")
     watchdog_usec = os.environ.get("WATCHDOG_USEC")

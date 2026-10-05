@@ -71,9 +71,19 @@ def test_a_real_error_is_not_retried(monkeypatch):
 
     calls = record_run_cmd(monkeypatch, responder)
 
-    code, _, err = server.set_system_time("nonsense")
+    code, _, err = server.set_system_time(TIME)
 
     assert code == 1
     assert "parse" in err
     # A bad time is not the race; spinning on it just delays the error.
     assert len(set_time_calls(calls)) == 1
+
+
+def test_a_malformed_time_leaves_ntp_alone(monkeypatch):
+    # Checked before NTP is switched off: a value timedatectl refused still
+    # left the clock without NTP.
+    calls = record_run_cmd(monkeypatch, lambda args, _: (0, "", ""))
+    for bad in ("nonsense", "2026-13-01 08:30", "2026-07-17", "2026-07-17 08:30:00; reboot"):
+        code, _, err = server.set_system_time(bad)
+        assert code == 1 and "must look like" in err
+    assert calls == []

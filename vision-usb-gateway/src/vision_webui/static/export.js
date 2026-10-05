@@ -13,6 +13,12 @@ function getCookie(name) {
   return "";
 }
 
+// Names come from the drives and the FTP ingest (any character a Linux file
+// name may hold): never into HTML unescaped.
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 function showToast(text, kind) {
   let c = document.getElementById("toast-container");
   if (!c) {
@@ -81,9 +87,9 @@ function fmtSize(n) {
 
 function renderCrumb(el, root, path) {
   const parts = path ? path.split("/") : [];
-  const bits = [`<a href="#" data-root="${root}" data-path="">${root === "mirror" ? "mirror" : "usb"}</a>`];
+  const bits = [`<a href="#" data-root="${esc(root)}" data-path="">${root === "mirror" ? "mirror" : "usb"}</a>`];
   parts.forEach((p, i) => {
-    bits.push(`<a href="#" data-root="${root}" data-path="${parts.slice(0, i + 1).join("/")}">${p}</a>`);
+    bits.push(`<a href="#" data-root="${esc(root)}" data-path="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</a>`);
   });
   el.innerHTML = bits.join(" / ");
   el.querySelectorAll("a").forEach((a) => {
@@ -100,11 +106,11 @@ async function loadDir(root, path) {
     const rows = d.entries.map((e) => {
       const full = d.path ? `${d.path}/${e.name}` : e.name;
       const box = root === "mirror"
-        ? `<input type="checkbox" data-path="${full}"${usbState.picked.has(full) ? " checked" : ""}>`
+        ? `<input type="checkbox" data-path="${esc(full)}"${usbState.picked.has(full) ? " checked" : ""}>`
         : "";
       const name = e.dir
-        ? `<a href="#" data-root="${root}" data-path="${full}"><b>${e.name}/</b></a>`
-        : e.name;
+        ? `<a href="#" data-root="${esc(root)}" data-path="${esc(full)}"><b>${esc(e.name)}/</b></a>`
+        : esc(e.name);
       return `<div class="file-row">${box} ${name} <span class="hint">${e.dir ? "" : fmtSize(e.size)}</span></div>`;
     });
     listEl.innerHTML = rows.join("") || '<div class="hint">(empty)</div>';
@@ -118,7 +124,7 @@ async function loadDir(root, path) {
       };
     });
   } catch (err) {
-    listEl.innerHTML = `<div class="hint">${err.message}</div>`;
+    listEl.innerHTML = `<div class="hint">${esc(err.message)}</div>`;
   }
 }
 
@@ -143,8 +149,8 @@ function renderProgress(job) {
     bar.classList.remove("hidden");
     bar.innerHTML = has
       ? `<div class="prog-head"><b>Copying… ${p.percent}%</b>` +
-        `<span>${p.rate} · ${fmtEta(p.eta)}</span></div>` +
-        `<div class="prog-track"><div class="prog-fill" style="width:${p.percent}%"></div></div>`
+        `<span>${esc(p.rate)} · ${esc(fmtEta(p.eta))}</span></div>` +
+        `<div class="prog-track"><div class="prog-fill" style="width:${Number(p.percent)}%"></div></div>`
       : "<b>Copying…</b> <span class='hint'>counting files…</span>";
     return;
   }
@@ -152,7 +158,7 @@ function renderProgress(job) {
     const ok = job && job.result === "success";
     bar.innerHTML = ok
       ? "<b>Copy finished.</b> Press <b>Safely remove</b> before unplugging."
-      : `<b>Copy ended:</b> ${(job && job.result) || "unknown"}`;
+      : `<b>Copy ended:</b> ${esc((job && job.result) || "unknown")}`;
     loadDir("usb", usbState.usb);
     setTimeout(() => bar.classList.add("hidden"), 8000);
   }

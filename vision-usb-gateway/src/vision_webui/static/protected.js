@@ -9,6 +9,12 @@ function getCookie(name) {
   return "";
 }
 
+// Folder names come from the mirror, which the FTP ingest writes into (any
+// character a Linux file name may hold): never into HTML unescaped.
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 function showToast(text, kind) {
   let c = document.getElementById("toast-container");
   if (!c) {
@@ -83,7 +89,7 @@ function fmtSize(n) {
 function renderPicked() {
   const el = document.getElementById("protected-list");
   const rows = [...state.picked].sort().map(
-    (p) => `<div class="file-row">${p}<button class="link-btn" data-drop="${p}">remove</button></div>`
+    (p) => `<div class="file-row">${esc(p)}<button class="link-btn" data-drop="${esc(p)}">remove</button></div>`
   );
   el.innerHTML = rows.join("") || '<div class="hint">Nothing protected — the unit may delete any of it to make room.</div>';
   el.querySelectorAll("button[data-drop]").forEach((b) => {
@@ -106,7 +112,7 @@ async function loadDir(path) {
     state.path = d.path;
     const parts = d.path ? d.path.split("/") : [];
     const crumb = [`<a href="#" data-path="">mirror</a>`].concat(
-      parts.map((p, i) => `<a href="#" data-path="${parts.slice(0, i + 1).join("/")}">${p}</a>`)
+      parts.map((p, i) => `<a href="#" data-path="${esc(parts.slice(0, i + 1).join("/"))}">${esc(p)}</a>`)
     );
     const crumbEl = document.getElementById("mirror-crumb");
     crumbEl.innerHTML = crumb.join(" / ");
@@ -120,9 +126,9 @@ async function loadDir(path) {
     listEl.innerHTML = dirs.map((e) => {
       const full = d.path ? `${d.path}/${e.name}` : e.name;
       const covered = [...state.picked].some((p) => full === p || full.startsWith(p + "/"));
-      const box = `<input type="checkbox" data-path="${full}"${state.picked.has(full) ? " checked" : ""}${covered && !state.picked.has(full) ? " disabled" : ""}>`;
+      const box = `<input type="checkbox" data-path="${esc(full)}"${state.picked.has(full) ? " checked" : ""}${covered && !state.picked.has(full) ? " disabled" : ""}>`;
       const note = covered && !state.picked.has(full) ? ' <span class="hint">(already covered)</span>' : "";
-      return `<div class="file-row">${box} <a href="#" data-path="${full}"><b>${e.name}/</b></a>${note}</div>`;
+      return `<div class="file-row">${box} <a href="#" data-path="${esc(full)}"><b>${esc(e.name)}/</b></a>${note}</div>`;
     }).join("") || '<div class="hint">(no folders here)</div>';
 
     listEl.querySelectorAll("a").forEach((a) => {
@@ -138,7 +144,7 @@ async function loadDir(path) {
       };
     });
   } catch (err) {
-    listEl.innerHTML = `<div class="hint">${err.message}</div>`;
+    listEl.innerHTML = `<div class="hint">${esc(err.message)}</div>`;
   }
 }
 
@@ -171,7 +177,7 @@ async function refresh() {
   } else if (s.blocked) {
     bb.classList.remove("hidden");
     bb.innerHTML =
-      `<b>The unit cannot free up space.</b> The disk is at ${s.blocked.usage}% and everything` +
+      `<b>The unit cannot free up space.</b> The disk is at ${esc(s.blocked.usage)}% and everything` +
       ` else has already been deleted. <b>New images may stop being saved.</b>` +
       ` Un-protect something, or copy it off and remove it.`;
   } else {

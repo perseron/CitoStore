@@ -20,7 +20,19 @@ def roots(tmp_path, monkeypatch):
     usb.mkdir()
     (tmp_path / "outside.txt").write_text("do not reach me", encoding="utf-8")
     monkeypatch.setattr(server, "EXPORT_ROOTS", {"mirror": mirror, "usb": usb})
+    monkeypatch.setattr(server, "usb_drive_mounted", lambda: True)
     return tmp_path, mirror, usb
+
+
+def test_no_copy_without_a_mounted_drive(roots, monkeypatch):
+    # The mount point stays on the RAM root after a drive is pulled; a copy
+    # into it (rsync as root) filled RAM.
+    monkeypatch.setattr(server, "usb_drive_mounted", lambda: False)
+    ran = []
+    monkeypatch.setattr(server, "run_cmd", lambda args, **kw: (ran.append(args), (0, "", ""))[1])
+    code, _, err = server.start_usb_copy([{"root": "mirror", "path": "raw"}], "")
+    assert code == 1 and "no USB drive" in err
+    assert not [a for a in ran if a and a[0] == "systemd-run"]
 
 
 @pytest.mark.parametrize(
