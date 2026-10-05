@@ -41,7 +41,8 @@ EOF
 stub() { printf '#!/bin/bash\n%s\n' "$2" > "$B/$1"; chmod +x "$B/$1"; }
 stub systemctl 'echo "systemctl $*" >> '"$TMP"'/calls'
 stub python3 'echo "export $*" >> '"$TMP"'/calls; exit $(cat '"$TMP"'/export_rc 2>/dev/null || echo 0)'
-stub blkid 'd=${@: -1}; [[ -f '"$TMP"'/nofat_${d##*/} ]] || echo vfat'
+# blkid -p: rc 2 = nothing found (blank); an exFAT drive is not blank.
+stub blkid 'd=${@: -1}; [[ -f '"$TMP"'/nofat_${d##*/} ]] && exit 2; [[ -f '"$TMP"'/exfat_${d##*/} ]] && { echo TYPE=exfat; exit 0; }; echo TYPE=vfat'
 stub mountpoint '[[ ! -f '"$TMP"'/no_mirror ]]'
 stub mkfs.vfat 'echo "mkfs ${@: -1}" >> '"$TMP"'/calls'
 stub blkdiscard 'echo "discard $1" >> '"$TMP"'/calls'
@@ -50,7 +51,7 @@ export PATH="$B:$PATH" GATEWAY_HOME=$FAKE
 
 marker() { echo "$M/.state/usb-maint-pending.$1"; }
 reset() {
-  : > "$TMP/calls"; rm -f "$TMP"/nofat_* "$TMP/export_rc" "$TMP/no_mirror" "$M"/.state/usb-maint-pending.*
+  : > "$TMP/calls"; rm -f "$TMP"/nofat_* "$TMP"/exfat_* "$TMP/export_rc" "$M/.state/export-not-saved.json" "$TMP/no_mirror" "$M"/.state/usb-maint-pending.*
   echo /dev/vg0/usb_0 > /run/vision-usb-active; echo "state=panic" > /run/vision-rotate.state
 }
 rotate() { bash "$FAKE/scripts/vision-rotator.sh" >"$TMP/out" 2>&1 && echo rc=0 || echo "rc=$?"; }
@@ -82,11 +83,20 @@ check "finished first, then switched" "$(rotate):$(calls)" \
 reset; touch "$(marker usb_1)"; echo 1 > "$TMP/export_rc"
 check "...and if that export fails: no switch, nothing formatted, the AOI keeps its drive" "$(rotate):$(calls):$(cat /run/vision-usb-active)" \
   "rc=1:export -m vision_sync.sync --config /etc/vision-gw.conf --dev /dev/vg0/usb_1 --offline;:/dev/vg0/usb_0"
+check "  ... kept for another try (attempt 1 of 3)" "$(cat "$(marker usb_1)")" 1
+echo "state=panic" > /run/vision-rotate.state; rotate >/dev/null
+check "  ... tried again (attempt 2): still kept, still no switch" "$(cat "$(marker usb_1)"):$(cat /run/vision-usb-active)" "2:/dev/vg0/usb_0"
+echo "state=panic" > /run/vision-rotate.state; : > "$TMP/calls"
+check "  ... the 3rd failure: an unreadable drive is recycled anyway (the AOI must get a drive)" "$(rotate):$(grep -c mkfs "$TMP/calls"):$(cat /run/vision-usb-active)" "rc=0:1:/dev/vg0/usb_1"
+check "  ... and the loss is recorded for the health banner" "$(grep -o 'could not be read' "$M/.state/export-not-saved.json")" "could not be read"
 
-echo "=== the next drive has no FAT ==="
+echo "=== the next drive is blank (no filesystem) ==="
 reset; touch "$TMP/nofat_usb_1"
 check "formatted (nothing exported), then switched" "$(rotate):$(calls)" \
   "rc=0:discard /dev/vg0/usb_1;mkfs /dev/vg0/usb_1;switch /dev/vg0/usb_0 -> /dev/vg0/usb_1;systemctl start offline-maint@usb_0.service;"
+
+reset; touch "$TMP/exfat_usb_1"
+check "a drive someone reformatted (exFAT) is not taken for blank: not formatted" "$(rotate):$(grep -c mkfs "$TMP/calls")" "rc=0:0"
 
 echo "=== no mirror: nothing is formatted ==="
 reset; touch "$(marker usb_1)" "$TMP/no_mirror"

@@ -67,17 +67,19 @@ fresh_fs 64M
 orphan o1                       # untracked (DB lost) — the oldest
 ingest_file i1.bin              # FTP, older than the next USB image
 usb_image a2.jpg
-touch -d 2099-01-01 "$MIRROR/raw/a2.jpg"   # the AOI's clock: irrelevant
 ingest_file i2.bin
+touch -d 2099-01-01 "$MIRROR/ingest/data/i2.bin"   # the FTP client set the AOI's clock (MDTM): irrelevant
 n=0; while (($(usage) < 93)); do usb_image "late$n.jpg"; n=$((n+1)); done
+# What versions before 64b62cb did on every boot: every raw/bydate ctime is now.
+chown -R root:root "$MIRROR/raw" "$MIRROR/bydate"
 echo "  (filled to $(usage)%)"
 order=("$MIRROR/raw/old/o1" "$MIRROR/ingest/data/i1.bin" "$MIRROR/raw/a2.jpg" "$MIRROR/ingest/data/i2.bin")
 for ((k = 0; k < n; k++)); do order+=("$MIRROR/raw/late$k.jpg"); done
 retention
-check "ran" "$(grep -c 'files considered' "$TMP/out")" 1
+check "ran" "$(grep -c 'oldest files listed' "$TMP/out")" 1
 gone=$(exists "${order[@]}")
 echo "  (oldest -> newest, 0 = deleted: $gone)"
-check "deleted exactly the oldest, in arrival order (USB, FTP and untracked alike, mtime 2099 too)" \
+check "deleted exactly the oldest, in arrival order (USB, FTP and untracked alike; an FTP mtime of 2099 and an old chown -R change nothing)" \
   "$([[ "$gone" =~ ^000+1+$ ]] && echo yes || echo no)" yes
 check "  ... with their bydate links (space really freed)" \
   "$(exists "$MIRROR/bydate/2026-01-01-o1" "$MIRROR/bydate/2026-10-05/a2.jpg")" "00"
@@ -109,6 +111,25 @@ check "health banner: the reason and the consequence" \
 rm -f "$MIRROR"/ingest/aoi_settings/s*
 retention
 check "back under the target: the alarm is cleared" "$(test -e "$MIRROR/.state/retention-blocked.json" && echo still || echo cleared)" cleared
+
+echo "=== empty folders: removed once empty for a day, also when nothing needs deleting ==="
+fresh_fs 64M
+mkdir -p "$MIRROR/raw/2026-05/Scene001/OK" "$MIRROR/raw/2026-05/Scene002" "$MIRROR/raw/fresh" \
+  "$MIRROR/bydate/2026/05/01" "$MIRROR/raw/keep_empty" "$MIRROR/ingest/data/aoi_made"
+echo x > "$MIRROR/raw/2026-05/Scene002/img.jpg"
+touch -d '-3 days' "$MIRROR/raw/2026-05/Scene001/OK" "$MIRROR/raw/2026-05/Scene001" "$MIRROR/bydate/2026/05/01" \
+  "$MIRROR/raw/keep_empty" "$MIRROR/ingest/data/aoi_made"
+printf '{"paths": ["raw/keep_empty"]}' > "$MIRROR/.state/retention-protected.json"
+retention
+check "an old empty folder removed (usage far below HI: the daily sweep)" "$(exists "$MIRROR/raw/2026-05/Scene001/OK" "$MIRROR/bydate/2026/05/01")" "00"
+check "  ... its parent only once empty for a day too (next days)" "$(exists "$MIRROR/raw/2026-05/Scene001")" 1
+check "a folder emptied just now kept (an AOI may be about to fill it)" "$(exists "$MIRROR/raw/fresh")" 1
+check "a protected empty folder kept" "$(exists "$MIRROR/raw/keep_empty")" 1
+check "the Ethernet AOI's own folders not touched" "$(exists "$MIRROR/ingest/data/aoi_made")" 1
+check "folders with files kept" "$(exists "$MIRROR/raw/2026-05/Scene002/img.jpg")" 1
+retention
+check "once a day only (stamp)" "$(grep -c 'empty folder' "$TMP/out")" 0
+rm -f "$MIRROR/.state/retention-protected.json"
 
 echo "=== many protected files do not stall it (one walk, not one per deletion) ==="
 fresh_fs 256M 120000

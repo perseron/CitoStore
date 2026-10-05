@@ -14,6 +14,10 @@ EnvironmentFile=-/etc/vision-gw.env
 ExecStart=/bin/bash ${GATEWAY_HOME}/scripts/mirror-retention.sh
 ProtectSystem=strict
 PrivateTmp=true
+# A walk of every image on the mirror: behind the sync and the AOI.
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
 ReadWritePaths=/srv/vision_mirror /run
 NoNewPrivileges=true
 CapabilityBoundingSet=CAP_SYS_ADMIN

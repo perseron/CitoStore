@@ -26,6 +26,8 @@ fi
 
 : "${MIRROR_MOUNT:=/srv/vision_mirror}"
 MARKER=$(usb_maint_marker "$lv_name")
+# Export attempts before a drive that cannot be read is recycled anyway.
+EXPORT_ATTEMPTS=3
 
 # One switch/export/format at a time (usb_lock): the state below is only
 # trusted once it is held.
@@ -98,7 +100,24 @@ log "fsck FAT32 (auto-fix)"
 fsck.fat -a "$fs_dev" || true
 
 log "offline export"
-python3 -m vision_sync.sync --config /etc/vision-gw.conf --dev "$dev" --offline
+if ! python3 -m vision_sync.sync --config /etc/vision-gw.conf --dev "$dev" --offline; then
+  if ! mountpoint -q "$MIRROR_MOUNT"; then
+    echo "mirror gone during the export: $lv_name kept as it is" >&2
+    exit 1
+  fi
+  attempts=$(tr -cd '0-9' < "$MARKER" 2>/dev/null || true)
+  attempts=$(( ${attempts:-0} + 1 ))
+  if (( attempts < EXPORT_ATTEMPTS )); then
+    echo "$attempts" > "$MARKER" || true
+    echo "export of $lv_name failed ($attempts/$EXPORT_ATTEMPTS): kept for another try" >&2
+    exit 1
+  fi
+  # A drive that cannot be read (reformatted by someone as exFAT/NTFS, a FAT
+  # damaged beyond fsck) would be kept for good — and with it every rotation
+  # onto it blocked, until the AOI's drive filled. Availability first: it is
+  # recycled, the loss recorded and shown as an error.
+  record_export_loss "$dev" "its images could not be read (export failed $attempts times); recycled without them"
+fi
 fi
 
 if persist_enabled && [[ "$mode" != "--format-only" ]]; then

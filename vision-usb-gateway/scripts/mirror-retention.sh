@@ -35,9 +35,20 @@ if [[ $usage -lt $RETENTION_HI ]]; then
   if [[ $usage -le $RETENTION_LO ]]; then
     rm -f "$MIRROR_MOUNT/.state/retention-blocked.json"
   fi
-  exit 0
+  # Once a day the empty-folder sweep runs anyway (nothing deleted).
+  stamp="$MIRROR_MOUNT/.state/retention-sweep.stamp"
+  if [[ -f "$stamp" && -z "$(find "$stamp" -mmin +1440 2>/dev/null)" ]]; then
+    exit 0
+  fi
+  SWEEP_ONLY=true
 fi
+export SWEEP_ONLY="${SWEEP_ONLY:-false}"
 
+# SQLite's temporary files (VACUUM, index builds) on the NVMe: the service's
+# /tmp is the RAM root, and a DB of millions of rows needed more than a 2 GB
+# unit has. (SQLite deletes them as soon as it opens them.)
+export SQLITE_TMPDIR="$MIRROR_MOUNT/.state/tmp"
+mkdir -p "$SQLITE_TMPDIR"
 export MIRROR_MOUNT RETENTION_HI RETENTION_LO DRY_RUN DB_MAINT_INTERVAL_SEC FILE_STATE_PRUNE_DAYS
 export RETENTION_ROW_TTL_DAYS INGEST_DIR
 
@@ -46,11 +57,14 @@ import os
 import sqlite3
 from pathlib import Path
 import shutil
+import heapq
 
 mirror = os.environ.get("MIRROR_MOUNT", "/srv/vision_mirror")
 ret_hi = int(os.environ.get("RETENTION_HI", "90"))
 ret_lo = int(os.environ.get("RETENTION_LO", "85"))
 dry = os.environ.get("DRY_RUN", "false") == "true"
+# The daily empty-folder sweep alone (the bash gate: usage below HI).
+sweep_only = os.environ.get("SWEEP_ONLY", "false") == "true"
 db_maint_interval = int(os.environ.get("DB_MAINT_INTERVAL_SEC", "86400"))
 file_state_prune_days = int(os.environ.get("FILE_STATE_PRUNE_DAYS", "30"))
 row_ttl_days = int(os.environ.get("RETENTION_ROW_TTL_DAYS", "90"))
@@ -93,9 +107,7 @@ def usage_pct():
 
 def remove_empty_ancestors(path: Path, stop: Path) -> None:
     d = path.parent
-    for _ in range(8):
-        if d == stop:
-            break
+    while d != stop and stop in d.parents:
         try:
             d.rmdir()
         except OSError:
@@ -160,12 +172,9 @@ def under_protected(path: str) -> bool:
     return any(path == r or path.startswith(r + "/") for r in protected_strs)
 
 
-def scan(root: Path, only_single_link: bool = False) -> list:
-    """(ctime, path, inode, nlink) of every regular file under root that is not
-    protected. ctime, not mtime: the time the file arrived on the mirror (the
-    sync's copy+rename+link, or the FTP upload). mtime is whatever the AOI's
-    clock said — a factory PC set to 2030 would have kept its files forever."""
-    out = []
+def walk_files(root: Path, visit) -> None:
+    """visit(path, stat) for every regular file under root that is not
+    protected; links are never followed, protected trees not even entered."""
     stack = [str(root)]
     while stack:
         d = stack.pop()
@@ -180,16 +189,95 @@ def scan(root: Path, only_single_link: bool = False) -> list:
                 try:
                     if e.is_dir(follow_symlinks=False):
                         stack.append(e.path)
-                    elif e.is_file(follow_symlinks=False):
-                        if under_protected(e.path):
-                            continue
-                        st = e.stat(follow_symlinks=False)
-                        if only_single_link and st.st_nlink != 1:
-                            continue
-                        out.append((st.st_ctime, e.path, st.st_ino, st.st_nlink))
+                    elif e.is_file(follow_symlinks=False) and not under_protected(e.path):
+                        visit(e.path, e.stat(follow_symlinks=False))
                 except OSError:
                     continue
+
+
+def arrival(st, root: Path) -> float:
+    """When a file arrived on the mirror. raw/ and bydate/: its mtime — the
+    sync never copies the drive's timestamps, so it is the copy's own time,
+    and a chown leaves it alone: versions before 64b62cb chown -R'd raw/ and
+    bydate/ on every boot and Save + Apply, so on a unit updated from them
+    every file's ctime is that of its last old boot. ingest/data: its ctime —
+    an FTP client may set the mtime (MDTM, the AOI's clock: a PC set to 2030
+    would have kept its files forever), and nothing ever chown'd those."""
+    return st.st_ctime if root == ingest_data else st.st_mtime
+
+
+def scan(root: Path, only_single_link: bool = False) -> list:
+    """(arrival, path, inode, nlink) of the files under root (walk_files)."""
+    out = []
+
+    def visit(path, st):
+        if only_single_link and st.st_nlink != 1:
+            return
+        out.append((arrival(st, root), path, st.st_ino, st.st_nlink))
+
+    walk_files(root, visit)
     return out
+
+
+def oldest_files(roots: list, want: float) -> list:
+    """The fewest oldest files (by arrival) whose space adds up to `want`
+    bytes, as (arrival, path, inode, nlink, root) — one walk, through a
+    heap that drops the newest as soon as the rest cover `want`. Listing every
+    file cost ~350 MB of RAM per million (measured): a mirror of small images
+    holds several million, more than a 2 GB unit can spare."""
+    heap: list = []  # (-arrival, bytes, path, inode, nlink, root index)
+    kept = 0
+
+    for k, root in enumerate(roots):
+        def visit(path, st, k=k):
+            nonlocal kept
+            t = arrival(st, roots[k])
+            if kept >= want and heap and t >= -heap[0][0]:
+                return  # newer than every file already enough
+            size = st.st_blocks * 512
+            heapq.heappush(heap, (-t, size, path, st.st_ino, st.st_nlink, k))
+            kept += size
+            while heap and kept - heap[0][1] >= want:
+                kept -= heapq.heappop(heap)[1]
+
+        walk_files(root, visit)
+    return [(-c, path, ino, nlink, roots[k]) for c, _, path, ino, nlink, k in heap]
+
+
+def sweep_empty_dirs(root: Path, min_age: int) -> int:
+    """Remove folders that have been empty for `min_age` seconds — left by
+    older versions (they never removed the raw/ folders they emptied) or
+    created and never used. One level per run: a parent emptied now has a
+    fresh mtime, so nested empty trees go over the following days. Files are
+    not stat'ed (d_type): a cheap walk."""
+    removed = 0
+    now_ts = __import__("time").time()
+    stack = [str(root)]
+    while stack:
+        d = stack.pop()
+        if under_protected(d):
+            continue
+        try:
+            with os.scandir(d) as it:
+                entries = list(it)
+        except OSError:
+            continue
+        if not entries:
+            if d != str(root):
+                try:
+                    if now_ts - os.lstat(d).st_mtime >= min_age:
+                        os.rmdir(d)
+                        removed += 1
+                except OSError:
+                    pass
+            continue
+        for e in entries:
+            try:
+                if e.is_dir(follow_symlinks=False):
+                    stack.append(e.path)
+            except OSError:
+                continue
+    return removed
 
 
 _bydate_links = None
@@ -272,9 +360,23 @@ def free_space(candidates: list) -> None:
                 return
 
 
-# We are here only because the bash gate above saw usage >= RETENTION_HI.
-# One walk of the trees, then oldest-first deletion down to RETENTION_LO, in
-# arrival order across everything:
+# Folders left empty, in the trees this unit builds itself (raw/, bydate/):
+# once they have been empty for a day. Not ingest/data — that structure is the
+# Ethernet AOI's, which may expect a folder it made to still be there.
+EMPTY_DIR_MIN_AGE = 86400
+if not dry:
+    swept = sum(sweep_empty_dirs(r, EMPTY_DIR_MIN_AGE) for r in (raw_root, bydate_root) if r.exists())
+    if swept:
+        print(f"retention: removed {swept} empty folder(s)", flush=True)
+    try:
+        (Path(mirror) / ".state" / "retention-sweep.stamp").touch()
+    except OSError:
+        pass
+
+# We are here only because the bash gate above saw usage >= RETENTION_HI (or
+# for the daily empty-folder sweep alone). Oldest-first deletion down to
+# RETENTION_LO, in arrival order across everything:
+# - by arrival on the mirror (arrival(): never the AOI's clock)
 # - USB images (raw/, with their bydate links) and the Ethernet AOI's files
 #   (ingest/data, never in the DB) interleaved — before, ingest data went only
 #   after every USB image, down to minutes-old ones;
@@ -286,17 +388,32 @@ def free_space(candidates: list) -> None:
 #   the same protected rows forever and then deleted ONE file per walk of the
 #   whole tree: K deletions cost K full walks, and a run freed a few hundred
 #   files in its 30 minutes while the mirror filled.
-candidates = []
-for root in (raw_root, ingest_data):
-    if root.exists():
-        candidates += [(c, p, i, n, root) for c, p, i, n in scan(root)]
-print(f"retention: {len(candidates)} files considered, usage {usage_pct()}% -> target {ret_lo}%", flush=True)
-free_space(candidates)
-# Last: bydate links whose raw copy is already gone (single link left).
-if dry or usage_pct() > ret_lo:
-    if bydate_root.exists():
-        free_space([(c, p, i, n, bydate_root) for c, p, i, n in scan(bydate_root, only_single_link=True)])
-flush_blanks()
+# Listed: only the oldest files that cover what must go (+25%; oldest_files).
+# Short (files protected through a bydate link, files changed meanwhile):
+# wider, then all.
+roots = [r for r in (raw_root, ingest_data) if r.exists()]
+if not sweep_only:
+    for factor in (1.25, 2.5, 5, None):
+        total, used, _ = shutil.disk_usage(mirror)
+        need = max(used - total * ret_lo // 100, 1 if dry else 0)
+        if need <= 0:
+            break
+        want = float("inf") if factor is None else int(need * factor) + (64 << 20)
+        candidates = oldest_files(roots, want)
+        print(
+            f"retention: {len(candidates)} oldest files listed, usage {usage_pct()}% -> target {ret_lo}%",
+            flush=True,
+        )
+        free_space(candidates)
+        del candidates
+        if dry or usage_pct() <= ret_lo or factor is None:
+            break
+    # Last: bydate links whose raw copy is already gone (single link left).
+    if dry or usage_pct() > ret_lo:
+        if bydate_root.exists():
+            free_space([(c, p, i, n, bydate_root) for c, p, i, n in scan(bydate_root, only_single_link=True)])
+    flush_blanks()
+
 
 # Protection holds: protected data is never deleted to make room. But retention
 # giving up quietly is how the mirror fills, the sync's free-space guard trips,
@@ -311,7 +428,9 @@ final = usage_pct()
 # /protected page. When the mirror does fill, USB drives are recycled
 # without their images.
 blocked_file = Path(mirror) / ".state" / "retention-blocked.json"
-if not dry and final > ret_lo:
+if sweep_only:
+    pass
+elif not dry and final > ret_lo:
     import json
     try:
         tmp = blocked_file.with_name(blocked_file.name + ".tmp")
@@ -341,7 +460,14 @@ if not dry and db_maint_interval > 0:
     if now - last_vacuum_ts >= db_maint_interval:
         try:
             conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            conn.execute("VACUUM")
+            # VACUUM rewrites the whole DB (rows of every image on the mirror:
+            # ~340 MB per million) through a temporary copy — only when a
+            # quarter of it is free pages, and never in /tmp (RAM on this unit;
+            # SQLITE_TMPDIR points at the NVMe, see the bash part).
+            pages = conn.execute("PRAGMA page_count").fetchone()[0]
+            free = conn.execute("PRAGMA freelist_count").fetchone()[0]
+            if pages and free * 4 >= pages:
+                conn.execute("VACUUM")
             save_maint_state({"last_vacuum_ts": now})
         except Exception:
             pass

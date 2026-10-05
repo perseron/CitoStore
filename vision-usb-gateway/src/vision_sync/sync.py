@@ -1,4 +1,5 @@
 import argparse
+import contextlib
 import errno
 import fcntl
 import hashlib
@@ -1059,6 +1060,13 @@ def run(cfg, dev_override: str | None, offline: bool) -> None:
     # exit non-zero, so offline-maint keeps the drive's images too.
     if not os.path.ismount(cfg.mirror_mount):
         raise SystemExit(f"mirror not mounted at {cfg.mirror_mount}: nothing copied")
+    # SQLite's temporary files (building a new index over millions of rows
+    # after an update) on the NVMe, not the service's /tmp: the RAM root.
+    # Read once, when SQLite first opens a database — so before init_db.
+    tmpdir = cfg.state_dir / "tmp"
+    with contextlib.suppress(OSError):
+        tmpdir.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault("SQLITE_TMPDIR", str(tmpdir))
     conn = init_db(cfg.state_dir / "vision.db")
 
     if dev_override:

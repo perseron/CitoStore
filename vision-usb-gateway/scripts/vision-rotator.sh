@@ -184,7 +184,7 @@ log "switching USB gadget from $old_lv to $next_name"
 # The next drive must be ready before the AOI gets it:
 # - its last export/reformat finished (interrupted: power, timeout, error) —
 #   otherwise the AOI got its old images back with 10-20% free;
-# - it holds a FAT at all (a power cut between discard and mkfs left none,
+# - it is not blank (a power cut between discard and mkfs left no filesystem,
 #   and an unformatted drive was handed to the AOI).
 # Both are done here, on a drive the AOI does not see. If either fails the
 # switch is not made: the AOI keeps its current drive.
@@ -194,8 +194,8 @@ if [[ -e "$(usb_maint_marker "$next_name")" ]]; then
     log "ERROR: $next_name could not be exported/reformatted; staying on $old_lv"
     exit 1
   fi
-elif ! usb_has_fat "$next_dev"; then
-  log "$next_name holds no FAT filesystem; formatting it first"
+elif usb_is_blank "$next_dev"; then
+  log "$next_name is blank (no filesystem); formatting it first"
   if ! /bin/bash "$SCRIPT_DIR/offline-maint.sh" "$next_name" --format-only; then
     log "ERROR: $next_name could not be formatted; staying on $old_lv"
     exit 1
@@ -211,7 +211,7 @@ fi
 
 # Marked BEFORE the switch: whatever happens after it, the old drive's images
 # get exported before the drive is used again.
-touch "$(usb_maint_marker "$old_lv")" || log "WARNING: could not mark $old_lv for export"
+: > "$(usb_maint_marker "$old_lv")" || log "WARNING: could not mark $old_lv for export"   # (export attempts from 0)
 
 /bin/bash "$SCRIPT_DIR/usb-gadget.sh" switch
 

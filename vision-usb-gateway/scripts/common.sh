@@ -288,13 +288,25 @@ usb_maint_marker() {  # <lv name>
   echo "${MIRROR_MOUNT:-/srv/vision_mirror}/.state/usb-maint-pending.$1"
 }
 
-# True if the LV holds a FAT the AOI can use (blkid's verdict on its
-# filesystem device). A power cut between discard/create and mkfs left LVs
-# with none — exported anyway, and nothing ever reformatted them.
-usb_has_fat() {  # <lv device>
-  local fs
+# True if the LV is blank: no filesystem or partition signature at all — what
+# a power cut between discard/create and mkfs leaves (exported anyway before,
+# and never reformatted). blkid's "nothing found" (rc 2) only: an I/O error,
+# or a drive someone reformatted as exFAT/NTFS (its images are still on it),
+# is never taken for blank.
+usb_is_blank() {  # <lv device>
+  local fs rc=0
   fs=$(resolve_usb_device "$1" 2>/dev/null || echo "$1")
-  [[ "$(blkid -p -o value -s TYPE "$fs" 2>/dev/null)" == vfat ]]
+  blkid -p "$fs" >/dev/null 2>&1 || rc=$?
+  ((rc == 2))
+}
+
+# Record that a drive was recycled without its images on the mirror (same file
+# as vision_sync's record_not_saved; shown by export_loss_issues).
+record_export_loss() {  # <lv device> <reason>
+  local f=${MIRROR_MOUNT:-/srv/vision_mirror}/.state/export-not-saved.json
+  printf '{"ts": %s, "dev": "%s", "reason": "%s"}\n' "$(date +%s)" "$1" "${2//\"/\'}" > "$f.tmp" \
+    && mv -f "$f.tmp" "$f" || true
+  log "EXPORT INCOMPLETE: $1: $2"
 }
 
 # The Ethernet AOI's own settings folder: in the FTP/SFTP root next to data/,
