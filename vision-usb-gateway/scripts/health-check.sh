@@ -203,7 +203,9 @@ if [[ "$HEALTHCHECK_FSCK_USB" == "true" ]]; then
         fsck_rc=0
         fsck_out=$(fsck.fat -a "$dev" 2>&1) || fsck_rc=$?
         fsck_status="ok"
-        if [[ $fsck_rc -eq 1 ]]; then
+        if [[ $fsck_rc -eq 1 ]] && fsck_fat_only_bookkeeping "$fsck_out"; then
+          fsck_status="ok (free-space count / dirty flag corrected)"
+        elif [[ $fsck_rc -eq 1 ]]; then
           fsck_status="repaired"
           health_warn "fsck.fat repaired the FAT on $lv"
         elif [[ $fsck_rc -ne 0 ]]; then

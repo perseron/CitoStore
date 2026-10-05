@@ -300,6 +300,25 @@ usb_is_blank() {  # <lv device>
   ((rc == 2))
 }
 
+# True if `fsck.fat -a` (output in $1) corrected only bookkeeping, nothing
+# damaged: the free-cluster count in FSInfo (Windows and Win98 update it
+# lazily, so it is off on the drive the host had when the power went — every
+# reboot showed "repaired the FAT"), and the dirty flag set while mounted, with
+# the FAT copy that carries it. Lost clusters, broken chains, file sizes, long
+# names: real repairs, false here.
+fsck_fat_only_bookkeeping() {  # <fsck.fat -a output>
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+      "" | "fsck.fat "* | "*** Filesystem was changed ***" | "Writing changes." | *": "*" files, "*" clusters") ;;
+      "Free cluster summary wrong ("* | "Free cluster summary uninitialized ("* | "  Auto-correcting." | "  Auto-setting.") ;;
+      "Dirty bit is set. Fs was not properly unmounted and some data may be corrupt." | " Automatically removing dirty bit.") ;;
+      "FATs differ but appear to be intact." | "  Using first FAT.") ;;
+      *) return 1 ;;
+    esac
+  done <<< "$1"
+}
+
 # Record that a drive was recycled without its images on the mirror (same file
 # as vision_sync's record_not_saved; shown by export_loss_issues).
 record_export_loss() {  # <lv device> <reason>
