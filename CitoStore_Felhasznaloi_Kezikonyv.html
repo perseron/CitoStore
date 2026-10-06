@@ -812,7 +812,13 @@
           <code>aoiftp</code> / <code>citostore</code> — éles használat előtt változtasd meg.</li>
         <li><h4>Állítsd be a vizsgáló gépet</h4>
           A gépen add meg a CitoStore eth1-címét, a felhasználót és a jelszót. Passzív
-          FTP portok: <code>30000–30020</code>.</li>
+          FTP portok: <code>30000–30020</code>.<br>
+          A gép feltöltési (cél)mappáját <code>data/</code> előtaggal add meg, például
+          <code>data/Line1</code>: FTP-n a gyökérmappa nem írható, csak a benne lévő
+          <code>data</code>. Előtag nélkül a gép mappa-létrehozási hibát jelez, miközben a
+          belépés sikeres — a Keyence például ezt írja: „Failed to create folder. Please
+          check authentication setting of the FTP”. SFTP-n a kapcsolat eleve a
+          <code>data</code> mappában indul.</li>
       </ol>
 
       <div class="note">
