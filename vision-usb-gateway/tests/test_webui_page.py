@@ -56,3 +56,19 @@ def test_the_eth1_gateway_may_be_left_empty():
     # Server side of the same save: an isolated AOI network has no gateway.
     updates = {"ETH1_ENABLED": "true", "ETH1_ADDRESS": "192.168.100.1", "ETH1_PREFIX": "24", "ETH1_GATEWAY": ""}
     assert server.validate_config_updates(updates) == (True, "")
+
+
+def test_a_refusal_never_reads_as_success():
+    # Reported with the same unit: two empty password fields answered "FTP
+    # passwords do not match" with a green tick, replaced by "OK" by the 10 s
+    # status poll. Only a message starting with Error/Warning is shown as one
+    # and kept; every refusal the page gives on its own must start that way.
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    refusals = [
+        text for _, text in re.findall(r'setStatus\((["`])(.*?)\1', js)
+        if re.search(r"invalid|do not match|not changed|\bfix\b", text, re.I)
+    ]
+    assert len(refusals) >= 6
+    assert [t for t in refusals if not t.lower().startswith(("error", "warning"))] == []
+    body = re.search(r"function passwordRefused\(.*?\n}", js, re.S).group(0)
+    assert "both fields are empty" in body and "do not match" in body

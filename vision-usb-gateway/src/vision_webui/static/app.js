@@ -454,7 +454,7 @@ async function refreshLogs() {
   const linesEl = document.getElementById("LOG_LINES");
   if (!sel || !linesEl) return;
   if (!validateField(linesEl)) {
-    setStatus("Invalid log line count");
+    setStatus("Error: invalid log line count (10-2000)");
     return;
   }
   const service = sel.value;
@@ -469,7 +469,7 @@ async function refreshLogs() {
 
 async function applyNetwork() {
   if (!validateFields(["NET_IFACE", "NET_METHOD", "NET_ADDR", "NET_PREFIX", "NET_GW", "NET_DNS"])) {
-    setStatus("Fix invalid network fields before applying");
+    setStatus("Error: fix the invalid network fields before applying");
     return;
   }
   const rawDns = document.getElementById("NET_DNS").value;
@@ -507,13 +507,20 @@ async function applyNetwork() {
   setStatus("Warning: network saved, but the unit has not reported applying it yet");
 }
 
+// Why a password pair is refused before it is sent ("" = fine). These used to
+// read "passwords do not match" in a green OK toast — for two empty fields too —
+// and the status poll then replaced it with "OK".
+function passwordRefused(password, confirm) {
+  if (!password && !confirm) return "both fields are empty";
+  if (password !== confirm) return "the two fields do not match";
+  return "";
+}
+
 async function changeWebuiPassword() {
   const password = document.getElementById("WEBUI_PASS").value;
   const confirm = document.getElementById("WEBUI_PASS2").value;
-  if (!password || password !== confirm) {
-    setStatus("Web UI passwords do not match");
-    return;
-  }
+  const refused = passwordRefused(password, confirm);
+  if (refused) { setStatus("Error: Web UI password not changed — " + refused); return; }
   await api("/api/password/webui", { method: "POST", body: JSON.stringify({ password, confirm }) });
   document.getElementById("WEBUI_PASS").value = "";
   document.getElementById("WEBUI_PASS2").value = "";
@@ -523,10 +530,8 @@ async function changeWebuiPassword() {
 async function changeSmbPassword() {
   const password = document.getElementById("SMB_PASS").value;
   const confirm = document.getElementById("SMB_PASS2").value;
-  if (!password || password !== confirm) {
-    setStatus("SMB passwords do not match");
-    return;
-  }
+  const refused = passwordRefused(password, confirm);
+  if (refused) { setStatus("Error: SMB password not changed — " + refused); return; }
   await api("/api/password/smb", { method: "POST", body: JSON.stringify({ password, confirm }) });
   document.getElementById("SMB_PASS").value = "";
   document.getElementById("SMB_PASS2").value = "";
@@ -536,10 +541,8 @@ async function changeSmbPassword() {
 async function setFtpPassword() {
   const password = document.getElementById("FTP_PASSWORD").value;
   const confirm = document.getElementById("FTP_PASSWORD_CONFIRM").value;
-  if (!password || password !== confirm) {
-    setStatus("FTP passwords do not match");
-    return;
-  }
+  const refused = passwordRefused(password, confirm);
+  if (refused) { setStatus("Error: FTP password not changed — " + refused); return; }
   await api("/api/password/ftp", { method: "POST", body: JSON.stringify({ password, confirm }) });
   document.getElementById("FTP_PASSWORD").value = "";
   document.getElementById("FTP_PASSWORD_CONFIRM").value = "";
@@ -553,7 +556,7 @@ async function setManualTime() {
   const timeEl = document.getElementById("MANUAL_CLOCK");
   const ok = validateField(dateEl) && validateField(timeEl);
   if (!ok) {
-    setStatus("Invalid date/time format");
+    setStatus("Error: invalid date/time format");
     return;
   }
   const value = `${dateEl.value} ${timeEl.value}`;
@@ -578,7 +581,7 @@ async function maintenance(action) {
   if (action === "resize") {
     const sizeField = document.getElementById("RESIZE_SIZE");
     if (!validateField(sizeField)) {
-      setStatus("Invalid resize size");
+      setStatus("Error: invalid resize size (e.g. 100G, 512M)");
       return;
     }
     payload.size = sizeField.value;
@@ -610,7 +613,7 @@ function validateFields(ids) {
   return ok;
 }
 async function saveAndApply(keys, label) {
-  if (!validateFields(keys)) { setStatus("Fix invalid fields in " + label); return; }
+  if (!validateFields(keys)) { setStatus("Error: fix the invalid fields in " + label); return; }
   const payload = {};
   keys.forEach(k => { const el = document.getElementById(k); if (el) payload[k] = el.value; });
   await api("/api/config", { method: "POST", body: JSON.stringify(payload) });
@@ -640,7 +643,7 @@ const SYSTEM_KEYS = ["WEBUI_BIND", "WEBUI_PORT"];
 async function saveNas() {
   const cfgKeys = ["NAS_ENABLED", "NAS_REMOTE", "NAS_MOUNT"];
   if (!validateFields([...cfgKeys, "NAS_USERNAME", "NAS_PASSWORD", "NAS_DOMAIN"])) {
-    setStatus("Fix invalid NAS fields");
+    setStatus("Error: fix the invalid NAS fields");
     return;
   }
   const payload = {};
