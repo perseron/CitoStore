@@ -107,9 +107,15 @@
         <label>eth1 enabled
           <select id="ETH1_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
         </label>
-        <label>eth1 address <input id="ETH1_ADDRESS" placeholder="192.168.100.1" data-validate="ip-optional"></label>
-        <label>eth1 prefix <input id="ETH1_PREFIX" placeholder="24" data-validate="prefix"></label>
-        <label>eth1 gateway <input id="ETH1_GATEWAY" placeholder="(empty when isolated)" data-validate="ip-optional"></label>
+        <label>eth1 address <input id="ETH1_ADDRESS" placeholder="192.168.100.1" data-validate="ip-optional">
+          <span class="hint">IPv4, the unit's address on the AOI network</span>
+        </label>
+        <label>eth1 prefix <input id="ETH1_PREFIX" placeholder="24" data-validate="prefix">
+          <span class="hint">1-32</span>
+        </label>
+        <label>eth1 gateway <input id="ETH1_GATEWAY" placeholder="(empty when isolated)" data-validate="ip-optional">
+          <span class="hint">optional</span>
+        </label>
         <label>Ingest enabled
           <select id="INGEST_ENABLED"><option value="false">No</option><option value="true">Yes</option></select>
         </label>

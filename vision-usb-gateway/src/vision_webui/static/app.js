@@ -103,13 +103,11 @@ function setStatus(text) {
 function setFieldValidity(el, ok, message = "") {
   const label = el.closest("label");
   if (!label) return;
-  if (ok) {
-    label.classList.remove("invalid");
-    if (message) label.querySelector(".hint").textContent = message;
-  } else {
-    label.classList.add("invalid");
-    if (message) label.querySelector(".hint").textContent = message;
-  }
+  label.classList.toggle("invalid", !ok);
+  // A label without a hint must not break the save: the eth1 fields had none,
+  // so validating them threw and "Save + Apply" never sent anything.
+  const hint = label.querySelector(".hint");
+  if (message && hint) hint.textContent = message;
 }
 
 function validateField(el) {
